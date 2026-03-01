@@ -1,0 +1,120 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Universal Controller Viewport</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h2 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #e0e0e0;
+        }
+
+        #toolbar {
+            margin-bottom: 15px;
+        }
+
+        button {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            border: 1px solid #404040;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+            button:hover {
+                background-color: #3d3d3d;
+            }
+
+        #canvasContainer {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            overflow: hidden;
+            background-color: #000000;
+            border: 1px solid #333333;
+            border-radius: 4px;
+        }
+
+        canvas {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <h2>Agent Viewport</h2>
+    <div id="toolbar">
+        <button id="captureBtn">Manual Capture</button>
+    </div>
+
+    <div id="canvasContainer">
+        <canvas id="screenCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('screenCanvas');
+        const ctx = canvas.getContext('2d');
+        const captureBtn = document.getElementById('captureBtn');
+
+        async function fetchScreenshot() {
+            try {
+                // Append a timestamp query to bypass browser caching
+                const response = await fetch('/api/screenshot?t=' + new Date().getTime());
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const blob = await response.blob();
+                const img = new Image();
+                const url = URL.createObjectURL(blob);
+
+                img.onload = () => {
+                    // Resize canvas to match the native screen resolution
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+
+                    // Draw the image onto the canvas
+                    ctx.drawImage(img, 0, 0);
+
+                    // Clean up memory
+                    URL.revokeObjectURL(url);
+                };
+
+                img.src = url;
+            } catch (error) {
+                console.error('Failed to load screenshot:', error);
+                ctx.fillStyle = '#121212';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ff5555';
+                ctx.font = '20px sans-serif';
+                ctx.fillText('Connection lost. Is the agent server running?', 20, 40);
+            }
+        }
+
+        captureBtn.addEventListener('click', fetchScreenshot);
+
+        // Initial capture on load
+        fetchScreenshot();
+    </script>
+</body>
+</html>
