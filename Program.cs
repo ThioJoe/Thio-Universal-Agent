@@ -5,7 +5,7 @@ using Thio_Universal_Agent.AI_API.Gemini;
 using Thio_Universal_Agent.Endpoints;
 using Thio_Universal_Agent.OS_Windows;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // OS Strategy routing
 if (OperatingSystem.IsWindows())

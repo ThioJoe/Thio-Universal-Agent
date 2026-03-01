@@ -5,8 +5,23 @@ using Thio_Universal_Agent.AI_API;
 
 namespace Thio_Universal_Agent.Endpoints;
 
+//TODO: Eventually lock these endpoints off so they are only accessible either with a special launch flag, or even a certain build configuration for debugging.
+//      I don't want the low level commands like screenshot or chat to be programatically controlled remotely by default for security reasons
+
 internal static class TestEndpoints
 {
+
+    // Might flesh this out later which is why it's its own function
+    private static bool CheckTestingEnabled()
+    {
+        if (Globals.ENABLE_TESTING == true)
+            return true;
+        else
+            return false;
+    }
+
+    private static readonly string TestingDisabledErrorMsg = "Testing endpoints are disabled. To enable, set Globals.ENABLE_TESTING to true.";
+
     internal static void MapTestEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/test");
@@ -15,6 +30,9 @@ internal static class TestEndpoints
         // Production agent code calls these C# classes directly — never through these endpoints.
         group.MapGet("/screenshot", (IScreenProvider screenProvider) =>
         {
+            if (!CheckTestingEnabled())
+                return Results.Problem(TestingDisabledErrorMsg);
+
             try
             {
                 byte[] imageBytes = screenProvider.CaptureScreen();
@@ -30,6 +48,9 @@ internal static class TestEndpoints
         // Production agent code calls IAiProvider directly in C# — never through this endpoint.
         group.MapPost("/chat", async (TestChatRequest req, IAiProvider aiProvider, IHttpClientFactory httpClientFactory, IConfiguration config, CancellationToken ct) =>
         {
+            if (!CheckTestingEnabled())
+                return Results.Problem(TestingDisabledErrorMsg);
+
             try
             {
                 if (!string.IsNullOrWhiteSpace(req.ApiKey))
