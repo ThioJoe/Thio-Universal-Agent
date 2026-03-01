@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Test — Thio Agent</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ---- Header ---- */
+        header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 10px 20px;
+            background-color: #1a1a1a;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+
+        header h1 { font-size: 16px; font-weight: 600; color: #e0e0e0; }
+
+        header a { font-size: 13px; color: #4a9eff; text-decoration: none; }
+        header a:hover { text-decoration: underline; }
+
+        /* ---- Config bar ---- */
+        #config-bar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            padding: 8px 20px;
+            background-color: #161616;
+            border-bottom: 1px solid #2a2a2a;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        #config-bar label { font-size: 12px; color: #888; white-space: nowrap; }
+
+        #config-bar input {
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 5px 10px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        #config-bar input:focus { outline: none; border-color: #4a9eff; }
+
+        #apiKeyInput { width: 300px; }
+        #modelInput  { width: 180px; }
+
+        .config-hint { font-size: 11px; color: #555; }
+
+        /* ---- Messages area ---- */
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .msg-row {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .msg-row.user  { align-items: flex-end; }
+        .msg-row.ai    { align-items: flex-start; }
+        .msg-row.error { align-items: flex-start; }
+        .msg-row.system { align-items: center; }
+
+        .msg-label {
+            font-size: 11px;
+            color: #555;
+            margin-bottom: 3px;
+            padding: 0 4px;
+        }
+
+        .bubble {
+            max-width: 75%;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .bubble.user {
+            background-color: #1e3a5f;
+            border: 1px solid #2a5080;
+            color: #d0e8ff;
+        }
+
+        .bubble.ai {
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            color: #e0e0e0;
+        }
+
+        .bubble.error {
+            background-color: #2d1515;
+            border: 1px solid #5c2020;
+            color: #ff7070;
+        }
+
+        .bubble.system {
+            background: none;
+            border: none;
+            color: #555;
+            font-size: 12px;
+            font-style: italic;
+            padding: 4px;
+        }
+
+        /* Thinking dots */
+        .thinking {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            padding: 12px 14px;
+        }
+
+        .thinking span {
+            width: 7px;
+            height: 7px;
+            background-color: #4a9eff;
+            border-radius: 50%;
+            animation: bounce 1.2s infinite ease-in-out;
+        }
+
+        .thinking span:nth-child(2) { animation-delay: 0.2s; }
+        .thinking span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0.7); opacity: 0.35; }
+            40%            { transform: scale(1);   opacity: 1; }
+        }
+
+        /* ---- Input bar ---- */
+        #input-bar {
+            display: flex;
+            gap: 8px;
+            padding: 12px 20px;
+            background-color: #1a1a1a;
+            border-top: 1px solid #333;
+            align-items: flex-end;
+            flex-shrink: 0;
+        }
+
+        #promptInput {
+            flex: 1;
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 42px;
+            max-height: 160px;
+            line-height: 1.4;
+        }
+
+        #promptInput:focus { outline: none; border-color: #4a9eff; }
+
+        button {
+            font-family: inherit;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            padding: 10px 16px;
+            transition: background-color 0.15s;
+        }
+
+        #sendBtn {
+            background-color: #1a4a7a;
+            color: #d0e8ff;
+            border: 1px solid #2a5080;
+            white-space: nowrap;
+        }
+
+        #sendBtn:hover:not(:disabled) { background-color: #215a96; }
+
+        #sendBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        #clearBtn {
+            background-color: #2d2d2d;
+            color: #888;
+            border: 1px solid #404040;
+        }
+
+        #clearBtn:hover { background-color: #3a3a3a; color: #ccc; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🧪 Chat Test</h1>
+        <a href="/">← Viewport</a>
+    </header>
+
+    <div id="config-bar">
+        <label for="apiKeyInput">API Key</label>
+        <input type="password" id="apiKeyInput" placeholder="Leave blank to use server config" autocomplete="off" spellcheck="false" />
+        <label for="modelInput">Model</label>
+        <input type="text" id="modelInput" value="gemini-2.0-flash" spellcheck="false" />
+        <span class="config-hint">Key is stored in localStorage and sent per-request — never persisted server-side.</span>
+    </div>
+
+    <div id="messages"></div>
+
+    <div id="input-bar">
+        <textarea id="promptInput" placeholder="Type a prompt… (Ctrl+Enter to send)" rows="1"></textarea>
+        <button id="clearBtn">Clear</button>
+        <button id="sendBtn">Send</button>
+    </div>
+
+    <script>
+        const messagesEl  = document.getElementById('messages');
+        const promptInput = document.getElementById('promptInput');
+        const sendBtn     = document.getElementById('sendBtn');
+        const clearBtn    = document.getElementById('clearBtn');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const modelInput  = document.getElementById('modelInput');
+
+        // Restore config from localStorage so it survives page refreshes.
+        apiKeyInput.value = localStorage.getItem('test_apiKey') || '';
+        modelInput.value  = localStorage.getItem('test_model')  || 'gemini-2.0-flash';
+
+        apiKeyInput.addEventListener('change', () => localStorage.setItem('test_apiKey', apiKeyInput.value));
+        modelInput.addEventListener('change',  () => localStorage.setItem('test_model',  modelInput.value));
+
+        appendSystem('Session started. Ctrl+Enter to send.');
+
+        // ---- DOM helpers ----
+
+        function appendSystem(text) {
+            const row = document.createElement('div');
+            row.className = 'msg-row system';
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble system';
+            bubble.textContent = text;
+            row.appendChild(bubble);
+            messagesEl.appendChild(row);
+            scrollToBottom();
+        }
+
+        function appendBubble(role, text) {
+            const row = document.createElement('div');
+            row.className = `msg-row ${role}`;
+
+            if (role !== 'system') {
+                const label = document.createElement('div');
+                label.className = 'msg-label';
+                label.textContent = role === 'user' ? 'You' : 'AI';
+                row.appendChild(label);
+            }
+
+            const bubble = document.createElement('div');
+            bubble.className = `bubble ${role}`;
+            bubble.textContent = text;
+            row.appendChild(bubble);
+            messagesEl.appendChild(row);
+            scrollToBottom();
+            return bubble;
+        }
+
+        function appendThinking() {
+            const row = document.createElement('div');
+            row.className = 'msg-row ai';
+
+            const label = document.createElement('div');
+            label.className = 'msg-label';
+            label.textContent = 'AI';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble ai thinking';
+            bubble.innerHTML = '<span></span><span></span><span></span>';
+
+            row.appendChild(label);
+            row.appendChild(bubble);
+            messagesEl.appendChild(row);
+            scrollToBottom();
+            return row;
+        }
+
+        function scrollToBottom() {
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        // ---- Send logic ----
+
+        async function sendPrompt() {
+            const prompt = promptInput.value.trim();
+            if (!prompt) return;
+
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+            sendBtn.disabled = true;
+
+            appendBubble('user', prompt);
+            const thinkingRow = appendThinking();
+
+            try {
+                const response = await fetch('/api/test/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt,
+                        apiKey: apiKeyInput.value.trim() || null,
+                        model:  modelInput.value.trim()  || null
+                    })
+                });
+
+                thinkingRow.remove();
+
+                if (!response.ok) {
+                    const body = await response.text();
+                    appendBubble('error', `HTTP ${response.status}: ${body}`);
+                    return;
+                }
+
+                const data = await response.json();
+                appendBubble('ai', data.text ?? data.Text ?? '(empty response)');
+
+            } catch (err) {
+                thinkingRow.remove();
+                appendBubble('error', `Network error: ${err.message}`);
+            } finally {
+                sendBtn.disabled = false;
+                promptInput.focus();
+            }
+        }
+
+        sendBtn.addEventListener('click', sendPrompt);
+
+        promptInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                sendPrompt();
+            }
+        });
+
+        // Auto-expand the textarea as the user types.
+        promptInput.addEventListener('input', () => {
+            promptInput.style.height = 'auto';
+            promptInput.style.height = Math.min(promptInput.scrollHeight, 160) + 'px';
+        });
+
+        clearBtn.addEventListener('click', () => {
+            messagesEl.innerHTML = '';
+            appendSystem('Chat cleared.');
+        });
+    </script>
+
+</body>
+</html>
