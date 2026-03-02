@@ -12,6 +12,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<IScreenProvider, WindowsScreenProvider>();
+    builder.Services.AddSingleton<IInputProvider, WindowsInputProvider>();
 }
 else if (OperatingSystem.IsMacOS())
 {
