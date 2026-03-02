@@ -1,3 +1,4 @@
+// GeminiProvider.cs
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -6,6 +7,14 @@ using Microsoft.Extensions.Logging;
 using Thio_Universal_Agent.AI_API;
 
 namespace Thio_Universal_Agent.AI_API.Gemini;
+
+public enum GeminiMediaResolution
+{
+    Unspecified,
+    Low,
+    Medium,
+    High
+}
 
 /// <summary>
 /// Gemini REST API implementation of <see cref="IAiProvider"/>.
@@ -23,12 +32,53 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
     };
     private readonly string _apiKey = configuration["Gemini:ApiKey"] ?? throw new InvalidOperationException("Gemini:ApiKey is not configured.");
     private readonly string _model = configuration["Gemini:Model"] ?? "gemini-2.0-flash";
+    private readonly GeminiGenerationConfig? _generationConfig = BuildGenerationConfig(configuration, configuration["Gemini:Model"] ?? "gemini-2.0-flash");
+
+    private static GeminiGenerationConfig? BuildGenerationConfig(IConfiguration configuration, string model)
+    {
+        string? resString = null;
+        if (Enum.TryParse<GeminiMediaResolution>(configuration["Gemini:MediaResolution"], true, out var resolution) &&
+            resolution is not GeminiMediaResolution.Unspecified)
+        {
+            resString = resolution switch
+            {
+                GeminiMediaResolution.Low => "MEDIA_RESOLUTION_LOW",
+                GeminiMediaResolution.Medium => "MEDIA_RESOLUTION_MEDIUM",
+                GeminiMediaResolution.High => "MEDIA_RESOLUTION_HIGH",
+                _ => null
+            };
+        }
+
+        float? temp = float.TryParse(configuration["Gemini:Temperature"], out var t) ? t : null;
+        float? topP = float.TryParse(configuration["Gemini:TopP"], out var p) ? p : null;
+        int? topK = int.TryParse(configuration["Gemini:TopK"], out var k) ? k : null;
+        int? maxTokens = int.TryParse(configuration["Gemini:MaxOutputTokens"], out var m) ? m : null;
+
+        GeminiThinkingConfig? thinkingConfig = null;
+
+        if (model.Contains("gemini-3", StringComparison.OrdinalIgnoreCase))
+        {
+            string? thinkingLevel = configuration["Gemini:ThinkingLevel"];
+            if (!string.IsNullOrWhiteSpace(thinkingLevel))
+                thinkingConfig = new GeminiThinkingConfig(null, thinkingLevel);
+        }
+        else
+        {
+            if (int.TryParse(configuration["Gemini:ThinkingBudget"], out var tb))
+                thinkingConfig = new GeminiThinkingConfig(tb, null);
+        }
+
+        if (resString is null && temp is null && topP is null && topK is null && maxTokens is null && thinkingConfig is null)
+            return null;
+
+        return new GeminiGenerationConfig(resString, temp, topP, topK, maxTokens, thinkingConfig);
+    }
 
     public Task<AiResponse> SendPromptAsync(string prompt, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
 
-        var request = new GeminiRequest([new GeminiContent("user", [new GeminiPart(prompt, null)])]);
+        var request = new GeminiRequest([new GeminiContent("user", [new GeminiPart(prompt, null)])], _generationConfig);
         return SendRequestAsync(request, cancellationToken);
     }
 
@@ -44,7 +94,7 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
                 new GeminiPart(prompt, null),
                 new GeminiPart(null, new GeminiInlineData(mimeType, Convert.ToBase64String(imageBytes)))
             ])
-        ]);
+        ], _generationConfig);
 
         return SendRequestAsync(request, cancellationToken);
     }
@@ -155,7 +205,7 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
         return new AiResponse(true, text);
     }
 
-    private static GeminiRequest BuildRequest(AiConversation conversation, AiChatMessage additionalMessage)
+    private GeminiRequest BuildRequest(AiConversation conversation, AiChatMessage additionalMessage)
     {
         var contents = new List<GeminiContent>(conversation.Messages.Count + 1);
 
@@ -163,7 +213,7 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
             contents.Add(ToGeminiContent(message));
 
         contents.Add(ToGeminiContent(additionalMessage));
-        return new GeminiRequest(contents);
+        return new GeminiRequest(contents, _generationConfig);
     }
 
     private static GeminiContent ToGeminiContent(AiChatMessage message)
@@ -182,7 +232,9 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
 
     // --- Private request DTOs ---
 
-    private record GeminiRequest(List<GeminiContent> Contents);
+    private record GeminiRequest(List<GeminiContent> Contents, GeminiGenerationConfig? GenerationConfig = null);
+    private record GeminiGenerationConfig(string? MediaResolution, float? Temperature, float? TopP, int? TopK, int? MaxOutputTokens, GeminiThinkingConfig? ThinkingConfig);
+    private record GeminiThinkingConfig(int? ThinkingBudget, string? ThinkingLevel);
     private record GeminiContent(string Role, List<GeminiPart> Parts);
     private record GeminiPart(string? Text, GeminiInlineData? InlineData);
     private record GeminiInlineData(string MimeType, string Data);
