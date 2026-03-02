@@ -11,7 +11,7 @@ namespace Thio_Universal_Agent.AI_API.Gemini;
 /// Gemini REST API implementation of <see cref="IAiProvider"/>.
 /// Communicates with the Gemini generateContent endpoint using <see cref="HttpClient"/>.
 /// </summary>
-public sealed class GeminiProvider : IAiProvider
+public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configuration, ILogger<GeminiProvider> logger) : IAiProvider
 {
     private const string BaseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -21,19 +21,8 @@ public sealed class GeminiProvider : IAiProvider
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
-
-    private readonly HttpClient _httpClient;
-    private readonly ILogger<GeminiProvider> _logger;
-    private readonly string _apiKey;
-    private readonly string _model;
-
-    public GeminiProvider(HttpClient httpClient, IConfiguration configuration, ILogger<GeminiProvider> logger)
-    {
-        _httpClient = httpClient;
-        _logger = logger;
-        _apiKey = configuration["Gemini:ApiKey"] ?? throw new InvalidOperationException("Gemini:ApiKey is not configured.");
-        _model = configuration["Gemini:Model"] ?? "gemini-2.0-flash";
-    }
+    private readonly string _apiKey = configuration["Gemini:ApiKey"] ?? throw new InvalidOperationException("Gemini:ApiKey is not configured.");
+    private readonly string _model = configuration["Gemini:Model"] ?? "gemini-2.0-flash";
 
     public Task<AiResponse> SendPromptAsync(string prompt, CancellationToken cancellationToken = default)
     {
@@ -132,14 +121,15 @@ public sealed class GeminiProvider : IAiProvider
     {
         var url = $"{BaseUrl}/{_model}:generateContent?key={_apiKey}";
 
-        _logger.LogDebug("Sending prompt to Gemini model {Model}.", _model);
+        if (logger.IsEnabled(LogLevel.Debug))
+            logger.LogDebug("Sending prompt to Gemini model {Model}.", _model);
 
-        using var response = await _httpClient.PostAsJsonAsync(url, request, JsonOptions, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.PostAsJsonAsync(url, request, JsonOptions, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogError("Gemini API returned {StatusCode}. Body: {ErrorBody}", (int)response.StatusCode, errorBody);
+            logger.LogError("Gemini API returned {StatusCode}. Body: {ErrorBody}", (int)response.StatusCode, errorBody);
             return new AiResponse(false, string.Empty, $"HTTP {(int)response.StatusCode}: {errorBody}");
         }
 
@@ -150,7 +140,8 @@ public sealed class GeminiProvider : IAiProvider
         if (geminiResponse?.Candidates is not { Count: > 0 })
         {
             var blockReason = geminiResponse?.PromptFeedback?.BlockReason ?? "No candidates returned.";
-            _logger.LogWarning("Gemini returned no candidates. Reason: {BlockReason}", blockReason);
+            if (logger.IsEnabled(LogLevel.Warning))
+                logger.LogWarning("Gemini returned no candidates. Reason: {BlockReason}", blockReason);
             return new AiResponse(false, string.Empty, $"Blocked: {blockReason}");
         }
 
@@ -159,7 +150,8 @@ public sealed class GeminiProvider : IAiProvider
             .Select(p => p.Text!)
             .FirstOrDefault() ?? string.Empty;
 
-        _logger.LogDebug("Received response from Gemini model {Model}.", _model);
+        if (logger.IsEnabled(LogLevel.Debug))
+            logger.LogDebug("Received response from Gemini model {Model}.", _model);
         return new AiResponse(true, text);
     }
 
