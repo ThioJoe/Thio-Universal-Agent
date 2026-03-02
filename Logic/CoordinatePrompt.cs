@@ -115,6 +115,18 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
         return CalculateScreenCoordinates(view, coordinate);
     }
 
+    /// <summary>
+    /// Produces the full-image grid overlay PNG from raw screenshot bytes with no AI calls or zooming.
+    /// Used by the test endpoint to preview what the first-iteration grid image looks like.
+    /// </summary>
+    public byte[] CreateFullGridOverlayImage(byte[] screenshotBytes)
+    {
+        ArgumentNullException.ThrowIfNull(screenshotBytes);
+        using IImage source = LoadImage(screenshotBytes);
+        ViewRegion view = CreateFullView(source);
+        return CreateGridOverlayImage(source, view);
+    }
+
     /// <summary>Decodes raw image bytes into an <see cref="IImage"/> for use with the canvas.</summary>
     private static IImage LoadImage(byte[] imageBytes)
     {
@@ -336,6 +348,7 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
         canvas.StrokeSize = thickness;
         canvas.Antialias = true;
         canvas.FontColor = Colors.White;
+        canvas.FillColor = Colors.White;
         canvas.FontSize = labelSize;
         canvas.Font = labelFont;
 
@@ -350,10 +363,11 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
             canvas.DrawLine(x, RulerOffset, x, RulerOffset + imageHeight);
 
             string label = c.ToString(CultureInfo.InvariantCulture);
-            SizeF sz = canvas.GetStringSize(label, labelFont, labelSize);
+            float textW = labelSize * label.Length * 0.75f;
+            float textH = labelSize * 1.3f;
             canvas.DrawString(label,
-                x - sz.Width / 2, RulerOffset - 15 - sz.Height, sz.Width, sz.Height,
-                HorizontalAlignment.Center, VerticalAlignment.Bottom);
+                x - textW / 2, RulerOffset - 15 - textH, textW, textH,
+                HorizontalAlignment.Center, VerticalAlignment.Center);
 
             canvas.DrawLine(x, RulerOffset - 8, x, RulerOffset);
         }
@@ -366,9 +380,10 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
             canvas.DrawLine(RulerOffset, y, RulerOffset + imageWidth, y);
 
             string label = r.ToString(CultureInfo.InvariantCulture);
-            SizeF sz = canvas.GetStringSize(label, labelFont, labelSize);
+            float textW = labelSize * label.Length * 0.75f;
+            float textH = labelSize * 1.3f;
             canvas.DrawString(label,
-                RulerOffset - 25 - sz.Width, y - sz.Height / 2, sz.Width, sz.Height,
+                RulerOffset - 25 - textW, y - textH / 2, textW, textH,
                 HorizontalAlignment.Right, VerticalAlignment.Center);
 
             canvas.DrawLine(RulerOffset - 8, y, RulerOffset, y);

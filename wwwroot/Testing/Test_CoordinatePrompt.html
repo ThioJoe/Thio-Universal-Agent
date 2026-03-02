@@ -341,6 +341,7 @@
                 <button class="btn-secondary" id="captureBtn">📸 Capture Screen</button>
                 <button class="btn-secondary" id="uploadBtn">📁 Upload Image</button>
                 <input type="file" id="fileInput" accept="image/*" style="display:none" />
+                <button class="btn-secondary" id="previewGridBtn" disabled>🔲 Preview Grid</button>
                 <button class="btn-danger" id="clearScreenshotBtn" style="display:none">✕ Clear</button>
             </div>
         </div>
@@ -349,6 +350,11 @@
             <textarea id="itemInput" placeholder="e.g. the Chrome icon in the taskbar"></textarea>
             <button class="btn-primary" id="runBtn" disabled>▶ Run Coordinate Prompt</button>
         </div>
+    </div>
+
+    <div id="grid-preview-panel" style="display:none; padding: 16px 20px; background-color: #161616; border-bottom: 1px solid #2a2a2a;">
+        <div style="font-size: 12px; color: #888; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">Grid Overlay Preview</div>
+        <img id="grid-preview-img" alt="grid preview" style="max-width: 100%; max-height: 350px; border-radius: 4px; border: 1px solid #333; object-fit: contain; background-color: #000; cursor: pointer;" />
     </div>
 
     <div id="loading">
@@ -365,22 +371,25 @@
     <div id="lightbox"><img id="lightbox-img" alt="full size" /></div>
 
     <script>
-        const dropZone       = document.getElementById('drop-zone');
-        const preview        = document.getElementById('screenshot-preview');
-        const captureBtn     = document.getElementById('captureBtn');
-        const uploadBtn      = document.getElementById('uploadBtn');
-        const fileInput      = document.getElementById('fileInput');
-        const clearBtn       = document.getElementById('clearScreenshotBtn');
-        const itemInput      = document.getElementById('itemInput');
-        const runBtn         = document.getElementById('runBtn');
-        const loadingEl      = document.getElementById('loading');
-        const resultsPanel   = document.getElementById('results-panel');
-        const stepsContainer = document.getElementById('steps-container');
-        const finalResultEl  = document.getElementById('final-result');
-        const lightbox       = document.getElementById('lightbox');
-        const lightboxImg    = document.getElementById('lightbox-img');
-        const apiKeyInput    = document.getElementById('apiKeyInput');
-        const modelInput     = document.getElementById('modelInput');
+        const dropZone         = document.getElementById('drop-zone');
+        const preview          = document.getElementById('screenshot-preview');
+        const captureBtn       = document.getElementById('captureBtn');
+        const uploadBtn        = document.getElementById('uploadBtn');
+        const fileInput        = document.getElementById('fileInput');
+        const clearBtn         = document.getElementById('clearScreenshotBtn');
+        const previewGridBtn   = document.getElementById('previewGridBtn');
+        const gridPreviewPanel = document.getElementById('grid-preview-panel');
+        const gridPreviewImg   = document.getElementById('grid-preview-img');
+        const itemInput        = document.getElementById('itemInput');
+        const runBtn           = document.getElementById('runBtn');
+        const loadingEl        = document.getElementById('loading');
+        const resultsPanel     = document.getElementById('results-panel');
+        const stepsContainer   = document.getElementById('steps-container');
+        const finalResultEl    = document.getElementById('final-result');
+        const lightbox         = document.getElementById('lightbox');
+        const lightboxImg      = document.getElementById('lightbox-img');
+        const apiKeyInput      = document.getElementById('apiKeyInput');
+        const modelInput       = document.getElementById('modelInput');
 
         let screenshotBase64 = null;
 
@@ -409,11 +418,14 @@
             dropZone.style.display = '';
             clearBtn.style.display = 'none';
             fileInput.value = '';
+            gridPreviewPanel.style.display = 'none';
+            gridPreviewImg.src = '';
             updateRunBtn();
         }
 
         function updateRunBtn() {
             runBtn.disabled = !screenshotBase64 || !itemInput.value.trim();
+            previewGridBtn.disabled = !screenshotBase64;
         }
 
         function loadFile(file) {
@@ -477,6 +489,37 @@
             lightboxImg.src = src;
             lightbox.style.display = 'flex';
         }
+
+        // ---- Preview Grid ----
+
+        previewGridBtn.addEventListener('click', async () => {
+            if (!screenshotBase64) return;
+            previewGridBtn.disabled = true;
+            previewGridBtn.textContent = '⏳ Generating…';
+            try {
+                const resp = await fetch('/api/test/make-grid-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ screenshotBase64 })
+                });
+                if (!resp.ok) {
+                    const body = await resp.text();
+                    alert('Grid preview failed: ' + body);
+                    return;
+                }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                gridPreviewImg.src = url;
+                gridPreviewPanel.style.display = '';
+            } catch (err) {
+                alert('Grid preview failed: ' + err.message);
+            } finally {
+                previewGridBtn.textContent = '🔲 Preview Grid';
+                updateRunBtn();
+            }
+        });
+
+        gridPreviewImg.addEventListener('click', () => openLightbox(gridPreviewImg.src));
 
         // ---- Run ----
 

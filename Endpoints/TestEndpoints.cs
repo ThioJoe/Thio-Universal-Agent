@@ -181,6 +181,25 @@ internal static class TestEndpoints
             return Results.NoContent();
         });
 
+        // Doens't send a request but just uses attached screenshot image to create and display what grid image would be generated
+        group.MapPost("/make-grid-image", async (TestCoordinatePromptRequest req, CoordinatePrompter prompter, CancellationToken ct) =>
+        {
+            if (!CheckTestingEnabled())
+                return Results.Problem(TestingDisabledErrorMsg);
+            try
+            {
+                if (string.IsNullOrWhiteSpace(req.ScreenshotBase64))
+                    return Results.Problem("Screenshot image is required.");
+                byte[] screenshotBytes = Convert.FromBase64String(req.ScreenshotBase64);
+                byte[] gridImageBytes = prompter.CreateFullGridOverlayImage(screenshotBytes);
+                return Results.File(gridImageBytes, "image/png");
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        });
+
         // Runs the full coordinate-prompt loop against a screenshot and returns every intermediate step for debugging.
         group.MapPost("/coordinate-prompt", async (
             TestCoordinatePromptRequest req,
