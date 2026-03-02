@@ -255,7 +255,7 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
     /// <summary>
     /// Calculates a contextual zoom region around the given coordinate and returns
     /// the zoomed <see cref="ViewRegion"/> for the next iteration.
-    /// The zoom window extends from floor(val − 1) to ceil(val + 1) on each axis.
+    /// The zoom window extends ±1 grid cell on each axis from the coordinate.
     /// </summary>
     private static ViewRegion CalculateZoomRegion(
         ViewRegion currentView,
@@ -263,16 +263,20 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
         int cols = DefaultDivisions,
         int rows = DefaultDivisions)
     {
-        int xStart = Math.Max(0, (int)Math.Floor(coordinate.X - 1));
-        int xEnd = Math.Min(cols, (int)Math.Ceiling(coordinate.X + 1));
-        int yStart = Math.Max(0, (int)Math.Floor(coordinate.Y - 1));
-        int yEnd = Math.Min(rows, (int)Math.Ceiling(coordinate.Y + 1));
+        double spanX = 2.0;
+        double spanY = 2.0;
 
-        int spanX = xEnd - xStart;
-        int spanY = yEnd - yStart;
+        double xStart = coordinate.X - 1.0;
+        if (xStart < 0)
+            xStart = 0;
+        else if (xStart + spanX > cols)
+            xStart = cols - spanX;
 
-        if (spanX <= 0 || spanY <= 0)
-            return currentView;
+        double yStart = coordinate.Y - 1.0;
+        if (yStart < 0)
+            yStart = 0;
+        else if (yStart + spanY > rows)
+            yStart = rows - spanY;
 
         return ZoomToRegion(currentView, xStart, yStart, spanX, spanY, cols, rows);
     }
