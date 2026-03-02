@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coordinate Prompt Test — Thio Agent</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 10px 20px;
+            background-color: #1a1a1a;
+            border-bottom: 1px solid #333;
+        }
+
+        header h1 { font-size: 16px; font-weight: 600; }
+        header a { font-size: 13px; color: #4a9eff; text-decoration: none; }
+        header a:hover { text-decoration: underline; }
+
+        /* ---- Config bar ---- */
+        #config-bar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            padding: 8px 20px;
+            background-color: #161616;
+            border-bottom: 1px solid #2a2a2a;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        #config-bar label { font-size: 12px; color: #888; white-space: nowrap; }
+
+        #config-bar input {
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 5px 10px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        #config-bar input:focus { outline: none; border-color: #4a9eff; }
+
+        #apiKeyInput { width: 300px; }
+        #modelInput  { width: 180px; }
+
+        .config-hint { font-size: 11px; color: #555; }
+
+        /* ---- Input panel ---- */
+        #input-panel {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+            background-color: #161616;
+            border-bottom: 1px solid #2a2a2a;
+            flex-wrap: wrap;
+        }
+
+        #screenshot-area { flex: 1; min-width: 280px; }
+
+        #drop-zone {
+            border: 2px dashed #404040;
+            border-radius: 8px;
+            padding: 30px 20px;
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        #drop-zone.dragover { border-color: #4a9eff; color: #4a9eff; }
+
+        #screenshot-preview {
+            display: none;
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 6px;
+            border: 1px solid #333;
+            object-fit: contain;
+        }
+
+        #screenshot-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+
+        #prompt-area {
+            flex: 1;
+            min-width: 280px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #prompt-area label { font-size: 12px; color: #888; }
+
+        #itemInput {
+            flex: 1;
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 60px;
+            line-height: 1.4;
+        }
+
+        #itemInput:focus { outline: none; border-color: #4a9eff; }
+
+        button {
+            font-family: inherit;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            padding: 8px 14px;
+            transition: background-color 0.15s;
+        }
+
+        .btn-primary {
+            background-color: #1a4a7a;
+            color: #d0e8ff;
+            border: 1px solid #2a5080;
+        }
+        .btn-primary:hover:not(:disabled) { background-color: #215a96; }
+        .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        .btn-secondary {
+            background-color: #2d2d2d;
+            color: #888;
+            border: 1px solid #404040;
+        }
+        .btn-secondary:hover { background-color: #3a3a3a; color: #ccc; }
+
+        .btn-danger {
+            background-color: #2d1515;
+            border: 1px solid #5c2020;
+            color: #ff9090;
+        }
+        .btn-danger:hover { background-color: #5c2020; color: #ffcccc; }
+
+        /* ---- Results ---- */
+        #results-panel {
+            padding: 20px;
+        }
+
+        #results-panel h2 {
+            font-size: 15px;
+            color: #888;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* ---- Step card ---- */
+        .step-card {
+            background-color: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .step-header {
+            padding: 10px 16px;
+            background-color: #1e1e1e;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .step-header .step-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #4a9eff;
+        }
+
+        .step-header .step-coords {
+            font-size: 13px;
+            color: #888;
+            font-family: 'Consolas', monospace;
+        }
+
+        .step-header .step-coords.failed { color: #ff7070; }
+
+        .step-body {
+            display: flex;
+            gap: 12px;
+            padding: 12px 16px;
+            flex-wrap: wrap;
+        }
+
+        .step-img-col {
+            flex: 1;
+            min-width: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .step-img-col .img-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .step-img-col img {
+            width: 100%;
+            border-radius: 4px;
+            border: 1px solid #333;
+            object-fit: contain;
+            background-color: #000;
+            cursor: pointer;
+        }
+
+        .step-ai-text {
+            padding: 8px 16px 12px;
+            border-top: 1px solid #2a2a2a;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .step-ai-text span { color: #e0e0e0; font-family: 'Consolas', monospace; }
+
+        /* ---- Final result ---- */
+        #final-result {
+            background: linear-gradient(135deg, #0d2137 0%, #162436 100%);
+            border: 1px solid #1e4a6e;
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin-top: 8px;
+            text-align: center;
+        }
+
+        #final-result .label {
+            font-size: 12px;
+            color: #6aa3d4;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        #final-result .coords {
+            font-size: 28px;
+            font-weight: 700;
+            font-family: 'Consolas', monospace;
+            color: #d0e8ff;
+        }
+
+        /* ---- Loading ---- */
+        #loading {
+            display: none;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        #loading .spinner {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        #loading .spinner span {
+            width: 10px;
+            height: 10px;
+            background-color: #4a9eff;
+            border-radius: 50%;
+            animation: bounce 1.2s infinite ease-in-out;
+        }
+        #loading .spinner span:nth-child(2) { animation-delay: 0.2s; }
+        #loading .spinner span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0.7); opacity: 0.35; }
+            40%            { transform: scale(1);   opacity: 1; }
+        }
+
+        #loading .loading-text { font-size: 13px; color: #666; }
+
+        /* ---- Image lightbox ---- */
+        #lightbox {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            cursor: zoom-out;
+        }
+
+        #lightbox img {
+            max-width: 95vw;
+            max-height: 95vh;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🎯 Coordinate Prompt Test</h1>
+        <a href="/">← Viewport</a>
+        <a href="/Testing/Test_Chat.html">Chat Test</a>
+    </header>
+
+    <div id="config-bar">
+        <label for="apiKeyInput">API Key</label>
+        <input type="password" id="apiKeyInput" placeholder="Leave blank to use server config" autocomplete="off" spellcheck="false" />
+        <label for="modelInput">Model</label>
+        <input type="text" id="modelInput" value="gemini-2.0-flash" spellcheck="false" />
+        <span class="config-hint">Key is stored in localStorage and sent per-request — never persisted server-side.</span>
+    </div>
+
+    <div id="input-panel">
+        <div id="screenshot-area">
+            <div id="drop-zone">Drop a screenshot here, paste from clipboard, or use the buttons below</div>
+            <img id="screenshot-preview" alt="screenshot" />
+            <div id="screenshot-controls">
+                <button class="btn-secondary" id="captureBtn">📸 Capture Screen</button>
+                <button class="btn-secondary" id="uploadBtn">📁 Upload Image</button>
+                <input type="file" id="fileInput" accept="image/*" style="display:none" />
+                <button class="btn-danger" id="clearScreenshotBtn" style="display:none">✕ Clear</button>
+            </div>
+        </div>
+        <div id="prompt-area">
+            <label for="itemInput">What to find on screen:</label>
+            <textarea id="itemInput" placeholder="e.g. the Chrome icon in the taskbar"></textarea>
+            <button class="btn-primary" id="runBtn" disabled>▶ Run Coordinate Prompt</button>
+        </div>
+    </div>
+
+    <div id="loading">
+        <div class="spinner"><span></span><span></span><span></span></div>
+        <div class="loading-text">Running coordinate prompt… this involves multiple AI calls and may take a moment.</div>
+    </div>
+
+    <div id="results-panel" style="display:none">
+        <h2>Iteration Steps</h2>
+        <div id="steps-container"></div>
+        <div id="final-result"></div>
+    </div>
+
+    <div id="lightbox"><img id="lightbox-img" alt="full size" /></div>
+
+    <script>
+        const dropZone       = document.getElementById('drop-zone');
+        const preview        = document.getElementById('screenshot-preview');
+        const captureBtn     = document.getElementById('captureBtn');
+        const uploadBtn      = document.getElementById('uploadBtn');
+        const fileInput      = document.getElementById('fileInput');
+        const clearBtn       = document.getElementById('clearScreenshotBtn');
+        const itemInput      = document.getElementById('itemInput');
+        const runBtn         = document.getElementById('runBtn');
+        const loadingEl      = document.getElementById('loading');
+        const resultsPanel   = document.getElementById('results-panel');
+        const stepsContainer = document.getElementById('steps-container');
+        const finalResultEl  = document.getElementById('final-result');
+        const lightbox       = document.getElementById('lightbox');
+        const lightboxImg    = document.getElementById('lightbox-img');
+        const apiKeyInput    = document.getElementById('apiKeyInput');
+        const modelInput     = document.getElementById('modelInput');
+
+        let screenshotBase64 = null;
+
+        // Restore config from localStorage so it survives page refreshes (shared with Chat test page).
+        apiKeyInput.value = localStorage.getItem('test_apiKey') || '';
+        modelInput.value  = localStorage.getItem('test_model')  || 'gemini-2.0-flash';
+
+        apiKeyInput.addEventListener('change', () => localStorage.setItem('test_apiKey', apiKeyInput.value));
+        modelInput.addEventListener('change',  () => localStorage.setItem('test_model',  modelInput.value));
+
+        // ---- Screenshot handling ----
+
+        function loadScreenshotFromDataUrl(dataUrl) {
+            screenshotBase64 = dataUrl.split(',')[1];
+            preview.src = dataUrl;
+            preview.style.display = 'block';
+            dropZone.style.display = 'none';
+            clearBtn.style.display = '';
+            updateRunBtn();
+        }
+
+        function clearScreenshot() {
+            screenshotBase64 = null;
+            preview.src = '';
+            preview.style.display = 'none';
+            dropZone.style.display = '';
+            clearBtn.style.display = 'none';
+            fileInput.value = '';
+            updateRunBtn();
+        }
+
+        function updateRunBtn() {
+            runBtn.disabled = !screenshotBase64 || !itemInput.value.trim();
+        }
+
+        function loadFile(file) {
+            const reader = new FileReader();
+            reader.onload = e => loadScreenshotFromDataUrl(e.target.result);
+            reader.readAsDataURL(file);
+        }
+
+        uploadBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+        clearBtn.addEventListener('click', clearScreenshot);
+        itemInput.addEventListener('input', updateRunBtn);
+
+        captureBtn.addEventListener('click', async () => {
+            captureBtn.disabled = true;
+            captureBtn.textContent = '⏳ Capturing…';
+            try {
+                const resp = await fetch('/api/test/screenshot');
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const blob = await resp.blob();
+                const reader = new FileReader();
+                reader.onload = e => loadScreenshotFromDataUrl(e.target.result);
+                reader.readAsDataURL(blob);
+            } catch (err) {
+                alert('Capture failed: ' + err.message);
+            } finally {
+                captureBtn.disabled = false;
+                captureBtn.textContent = '📸 Capture Screen';
+            }
+        });
+
+        // Drag & drop
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+        });
+
+        // Paste
+        document.addEventListener('paste', e => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    e.preventDefault();
+                    const file = item.getAsFile();
+                    if (file) loadFile(file);
+                    break;
+                }
+            }
+        });
+
+        // ---- Lightbox ----
+
+        lightbox.addEventListener('click', () => lightbox.style.display = 'none');
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') lightbox.style.display = 'none'; });
+
+        function openLightbox(src) {
+            lightboxImg.src = src;
+            lightbox.style.display = 'flex';
+        }
+
+        // ---- Run ----
+
+        runBtn.addEventListener('click', runCoordinatePrompt);
+
+        async function runCoordinatePrompt() {
+            if (!screenshotBase64 || !itemInput.value.trim()) return;
+
+            runBtn.disabled = true;
+            loadingEl.style.display = '';
+            resultsPanel.style.display = 'none';
+            stepsContainer.innerHTML = '';
+            finalResultEl.innerHTML = '';
+
+            try {
+                const resp = await fetch('/api/test/coordinate-prompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        screenshotBase64,
+                        itemToIdentify: itemInput.value.trim(),
+                        apiKey: apiKeyInput.value.trim() || null,
+                        model:  modelInput.value.trim()  || null
+                    })
+                });
+
+                loadingEl.style.display = 'none';
+
+                if (!resp.ok) {
+                    const body = await resp.text();
+                    resultsPanel.style.display = '';
+                    stepsContainer.innerHTML = `<div class="step-card"><div class="step-header"><span class="step-title" style="color:#ff7070">Error</span></div><div class="step-ai-text"><span>${escapeHtml(body)}</span></div></div>`;
+                    return;
+                }
+
+                const data = await resp.json();
+                resultsPanel.style.display = '';
+
+                for (const step of data.steps) {
+                    const card = document.createElement('div');
+                    card.className = 'step-card';
+
+                    const hasParsed = step.parsedX != null && step.parsedY != null;
+                    const coordText = hasParsed
+                        ? `X: ${step.parsedX.toFixed(1)}, Y: ${step.parsedY.toFixed(1)}`
+                        : 'parse failed';
+
+                    card.innerHTML = `
+                        <div class="step-header">
+                            <span class="step-title">Step ${step.stepNumber}</span>
+                            <span class="step-coords ${hasParsed ? '' : 'failed'}">${coordText}</span>
+                        </div>
+                        <div class="step-body">
+                            <div class="step-img-col">
+                                <span class="img-label">Sent to AI</span>
+                                <img src="data:image/png;base64,${step.gridImageBase64}" alt="grid" />
+                            </div>
+                            <div class="step-img-col">
+                                <span class="img-label">AI's Answer Marked</span>
+                                <img src="data:image/png;base64,${step.annotatedImageBase64}" alt="annotated" />
+                            </div>
+                        </div>
+                        <div class="step-ai-text">AI response: <span>${escapeHtml(step.aiResponseText)}</span></div>
+                    `;
+
+                    card.querySelectorAll('img').forEach(img => {
+                        img.addEventListener('click', () => openLightbox(img.src));
+                    });
+
+                    stepsContainer.appendChild(card);
+                }
+
+                finalResultEl.innerHTML = `
+                    <div class="label">Final Screen Coordinates</div>
+                    <div class="coords">(${data.finalScreenX.toFixed(1)}, ${data.finalScreenY.toFixed(1)})</div>
+                `;
+
+            } catch (err) {
+                loadingEl.style.display = 'none';
+                resultsPanel.style.display = '';
+                stepsContainer.innerHTML = `<div class="step-card"><div class="step-header"><span class="step-title" style="color:#ff7070">Error</span></div><div class="step-ai-text"><span>${escapeHtml(err.message)}</span></div></div>`;
+            } finally {
+                runBtn.disabled = false;
+                updateRunBtn();
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+
+</body>
+</html>

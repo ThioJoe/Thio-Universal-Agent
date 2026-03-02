@@ -1,8 +1,11 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Thio_Universal_Agent;
 using Thio_Universal_Agent.AI_API;
+using Thio_Universal_Agent.AI_API.Gemini;
+using Thio_Universal_Agent.Logic;
 
 namespace Thio_Universal_Agent.Endpoints;
 
@@ -177,6 +180,76 @@ internal static class TestEndpoints
             _conversations.TryRemove(conversationId, out _);
             return Results.NoContent();
         });
+
+        // Runs the full coordinate-prompt loop against a screenshot and returns every intermediate step for debugging.
+        group.MapPost("/coordinate-prompt", async (
+            TestCoordinatePromptRequest req,
+            CoordinatePrompter defaultPrompter,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration config,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            if (!CheckTestingEnabled())
+                return Results.Problem(TestingDisabledErrorMsg);
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(req.ScreenshotBase64))
+                    return Results.Problem("Screenshot image is required.");
+                if (string.IsNullOrWhiteSpace(req.ItemToIdentify))
+                    return Results.Problem("Item description is required.");
+
+                CoordinatePrompter prompter;
+                if (!string.IsNullOrWhiteSpace(req.ApiKey))
+                {
+                    var model = string.IsNullOrWhiteSpace(req.Model) ? config["Gemini:Model"] ?? "gemini-2.0-flash" : req.Model;
+                    var overrideConfig = new ConfigurationBuilder()
+                        .AddInMemoryCollection(new Dictionary<string, string?>
+                        {
+                            ["Gemini:ApiKey"] = req.ApiKey,
+                            ["Gemini:Model"] = model
+                        })
+                        .Build();
+                    var httpClient = httpClientFactory.CreateClient();
+                    var logger = loggerFactory.CreateLogger<GeminiProvider>();
+                    IAiProvider provider = new GeminiProvider(httpClient, overrideConfig, logger);
+                    prompter = new CoordinatePrompter(provider);
+                }
+                else
+                {
+                    prompter = defaultPrompter;
+                }
+
+                byte[] screenshotBytes = Convert.FromBase64String(req.ScreenshotBase64);
+                var steps = new List<object>();
+
+                var (x, y) = await prompter.GetCoordinatesForItemAsync(
+                    screenshotBytes,
+                    req.ItemToIdentify,
+                    step =>
+                    {
+                        steps.Add(new
+                        {
+                            step.StepNumber,
+                            GridImageBase64 = Convert.ToBase64String(step.GridImage),
+                            step.AiResponseText,
+                            step.ParsedX,
+                            step.ParsedY,
+                            AnnotatedImageBase64 = Convert.ToBase64String(step.AnnotatedImage)
+                        });
+                        return Task.CompletedTask;
+                    },
+                    ct);
+
+                return Results.Ok(new { Steps = steps, FinalScreenX = x, FinalScreenY = y });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        })
+        .DisableAntiforgery();
     }
 
     private sealed class TestConversationSession(bool IsApiKeyMode)
@@ -189,3 +262,4 @@ internal static class TestEndpoints
 
 // Scoped to this file — it's a transport detail for the test endpoint, not a domain type.
 file record TestChatRequest(string? Prompt, string? ApiKey, string? Model, string? ImageBase64, string? ImageMimeType, string? ConversationId);
+file record TestCoordinatePromptRequest(string? ScreenshotBase64, string? ItemToIdentify, string? ApiKey, string? Model);

@@ -24,6 +24,15 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
     /// <summary>A parsed grid coordinate returned by the LLM.</summary>
     private record GridCoordinate(double X, double Y);
 
+    /// <summary>Diagnostic data for a single iteration of the coordinate prompting loop.</summary>
+    public record CoordinateStep(
+        int StepNumber,
+        byte[] GridImage,
+        string AiResponseText,
+        double? ParsedX,
+        double? ParsedY,
+        byte[] AnnotatedImage);
+
     /// <summary>
     /// Locates an item on screen by iteratively prompting the AI with grid-overlaid
     /// versions of the screenshot, returning the absolute screen pixel coordinates.
@@ -31,6 +40,7 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
     public async Task<(double X, double Y)> GetCoordinatesForItemAsync(
         byte[] screenshotBytes,
         string itemToIdentify,
+        Func<CoordinateStep, Task>? onStepCompleted = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(screenshotBytes);
@@ -38,6 +48,9 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
 
         using IImage source = LoadImage(screenshotBytes);
         ViewRegion view = CreateFullView(source);
+        int imageWidth = (int)source.Width;
+        int imageHeight = (int)source.Height;
+        int stepNumber = 0;
 
         byte[] gridImage = CreateGridOverlayImage(source, view);
         string prompt = MakeCoordinatePrompt(itemToIdentify);
@@ -49,6 +62,15 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
             .ConfigureAwait(false);
 
         GridCoordinate coordinate = ParseCoordinatesOrThrow(response);
+        stepNumber++;
+
+        if (onStepCompleted is not null)
+        {
+            byte[] annotated = CreateAnnotatedImage(gridImage, coordinate, imageWidth, imageHeight);
+            await onStepCompleted(new CoordinateStep(
+                stepNumber, gridImage, response.Text, coordinate.X, coordinate.Y, annotated))
+                .ConfigureAwait(false);
+        }
 
         // Iteratively zoom in until each grid cell is within the confidence threshold
         for (int i = 0; i < MaxZoomIterations && ShouldContinueZooming(view); i++)
@@ -61,10 +83,29 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
                 conversation, zoomedImage, "image/png", cancellationToken)
                 .ConfigureAwait(false);
 
+            stepNumber++;
+
             if (!response.Success)
+            {
+                if (onStepCompleted is not null)
+                    await onStepCompleted(new CoordinateStep(
+                        stepNumber, zoomedImage, response.ErrorMessage ?? "(failed)", null, null, zoomedImage))
+                        .ConfigureAwait(false);
                 break;
+            }
 
             GridCoordinate? parsed = ParseCoordinates(response.Text);
+
+            if (onStepCompleted is not null)
+            {
+                byte[] annotated = parsed is not null
+                    ? CreateAnnotatedImage(zoomedImage, parsed, imageWidth, imageHeight)
+                    : zoomedImage;
+                await onStepCompleted(new CoordinateStep(
+                    stepNumber, zoomedImage, response.Text, parsed?.X, parsed?.Y, annotated))
+                    .ConfigureAwait(false);
+            }
+
             if (parsed is null)
                 break;
 
@@ -78,6 +119,43 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
     private static IImage LoadImage(byte[] imageBytes)
     {
         return new SkiaImage(SKBitmap.Decode(imageBytes));
+    }
+
+    /// <summary>Returns a copy of the grid image with a crosshair marker drawn at the parsed coordinate.</summary>
+    private static byte[] CreateAnnotatedImage(
+        byte[] gridImageBytes,
+        GridCoordinate coordinate,
+        int imageWidth,
+        int imageHeight,
+        int cols = DefaultDivisions,
+        int rows = DefaultDivisions)
+    {
+        using IImage gridImage = LoadImage(gridImageBytes);
+        int w = (int)gridImage.Width;
+        int h = (int)gridImage.Height;
+
+        using var context = new SkiaBitmapExportContext(w, h, 1.0f);
+        ICanvas canvas = context.Canvas;
+
+        canvas.DrawImage(gridImage, 0, 0, w, h);
+
+        float cellW = (float)imageWidth / cols;
+        float cellH = (float)imageHeight / rows;
+        float cx = RulerOffset + (float)coordinate.X * cellW;
+        float cy = RulerOffset + (float)coordinate.Y * cellH;
+        float radius = Math.Max(10f, imageWidth / 150f);
+        float crossLen = radius * 2.5f;
+
+        canvas.StrokeColor = Colors.Red;
+        canvas.StrokeSize = Math.Max(3f, imageWidth / 500f);
+        canvas.Antialias = true;
+        canvas.DrawCircle(cx, cy, radius);
+        canvas.DrawLine(cx - crossLen, cy, cx + crossLen, cy);
+        canvas.DrawLine(cx, cy - crossLen, cx, cy + crossLen);
+
+        using var ms = new MemoryStream();
+        context.WriteToStream(ms);
+        return ms.ToArray();
     }
 
     /// <summary>Parses coordinates from <paramref name="response"/>, throwing if the request failed or the text could not be parsed.</summary>

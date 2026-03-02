@@ -3,6 +3,7 @@ using Thio_Universal_Agent;
 using Thio_Universal_Agent.AI_API;
 using Thio_Universal_Agent.AI_API.Gemini;
 using Thio_Universal_Agent.Endpoints;
+using Thio_Universal_Agent.Logic;
 using Thio_Universal_Agent.OS_Windows;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -26,6 +27,7 @@ else
 }
 
 builder.Services.AddHttpClient<IAiProvider, GeminiProvider>();
+builder.Services.AddTransient<CoordinatePrompter>();
 
 var app = builder.Build();
 
