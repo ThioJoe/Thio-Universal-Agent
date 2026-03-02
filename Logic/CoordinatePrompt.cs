@@ -17,6 +17,7 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
     private const int DefaultDivisions = 10;
     private const double DefaultConfidencePixels = 15.0;
     private const int MaxZoomIterations = 10;
+    private const double DefaultAIEstimatePrecision = 0.3; // Assume AI is accurate within ~0.3 of a grid cell
 
     /// <summary>Tracks a rectangular crop window in original image pixel coordinates.</summary>
     private record ViewRegion(double X, double Y, double Width, double Height);
@@ -298,19 +299,25 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
     }
 
     /// <summary>
-    /// Determines whether another zoom iteration is warranted based on the current
-    /// pixel precision per grid cell compared to a confidence threshold.
+    /// Determines whether another zoom iteration is warranted based on the AI's 
+    /// estimated precision in pixels compared to a confidence threshold.
     /// </summary>
     private static bool ShouldContinueZooming(
         ViewRegion currentView,
         int cols = DefaultDivisions,
         int rows = DefaultDivisions,
-        double confidencePixels = DefaultConfidencePixels)
+        double confidencePixels = DefaultConfidencePixels,
+        double aiEstimatePrecision = DefaultAIEstimatePrecision)
     {
         double cellPixelW = currentView.Width / cols;
         double cellPixelH = currentView.Height / rows;
 
-        return cellPixelW > confidencePixels || cellPixelH > confidencePixels;
+        // Calculate the actual pixel margin of error based on the AI's fractional accuracy
+        double errorMarginX = cellPixelW * aiEstimatePrecision;
+        double errorMarginY = cellPixelH * aiEstimatePrecision;
+
+        // Continue zooming only if the margin of error is still larger than our confidence threshold
+        return errorMarginX > confidencePixels || errorMarginY > confidencePixels;
     }
 
     /// <summary>Zooms the current view to a sub-region defined by grid-cell start and span.</summary>
