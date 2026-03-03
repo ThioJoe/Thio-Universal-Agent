@@ -1,5 +1,8 @@
 namespace Thio_Universal_Agent.AI_API;
 
+/// <summary>Optional per-request configuration overrides for AI provider calls.</summary>
+public record AiRequestOptions(int? MaxOutputTokens = null);
+
 /// <summary>Identifies the sender of a message in an AI conversation.</summary>
 public enum AiChatRole
 {

@@ -233,7 +233,7 @@ internal static class TestEndpoints
                     var httpClient = httpClientFactory.CreateClient();
                     var logger = loggerFactory.CreateLogger<GeminiProvider>();
                     IAiProvider provider = new GeminiProvider(httpClient, overrideConfig, logger);
-                    prompter = new CoordinatePrompter(provider);
+                    prompter = new CoordinatePrompter(provider, overrideConfig);
                 }
                 else
                 {

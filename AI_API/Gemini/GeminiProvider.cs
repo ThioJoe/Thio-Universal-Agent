@@ -76,15 +76,15 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
         return new GeminiGenerationConfig(resString, temp, topP, topK, maxTokens, thinkingConfig);
     }
 
-    public Task<AiResponse> SendPromptAsync(string prompt, CancellationToken cancellationToken = default)
+    public Task<AiResponse> SendPromptAsync(string prompt, CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
 
         var request = new GeminiRequest([new GeminiContent("user", [new GeminiPart(prompt, null)])], _generationConfig);
-        return SendRequestAsync(request, cancellationToken);
+        return SendRequestAsync(request, cancellationToken, options);
     }
 
-    public Task<AiResponse> SendPromptWithImageAsync(string prompt, byte[] imageBytes, string mimeType = "image/jpeg", CancellationToken cancellationToken = default)
+    public Task<AiResponse> SendPromptWithImageAsync(string prompt, byte[] imageBytes, string mimeType = "image/jpeg", CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
         ArgumentNullException.ThrowIfNull(imageBytes);
@@ -98,11 +98,11 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
             ])
         ], _generationConfig);
 
-        return SendRequestAsync(request, cancellationToken);
+        return SendRequestAsync(request, cancellationToken, options);
     }
 
     public async Task<(AiConversation Conversation, AiResponse Response)> StartConversationAsync(
-        string prompt, CancellationToken cancellationToken = default)
+        string prompt, CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
 
@@ -110,7 +110,7 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
         var userMessage = new AiChatMessage { Role = AiChatRole.User, Text = prompt };
 
         var request = BuildRequest(conversation, userMessage);
-        var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        var response = await SendRequestAsync(request, cancellationToken, options).ConfigureAwait(false);
 
         if (response.Success)
         {
@@ -122,43 +122,43 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
     }
 
     public Task<AiResponse> ContinueConversationAsync(
-        AiConversation conversation, string prompt, CancellationToken cancellationToken = default)
+        AiConversation conversation, string prompt, CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(conversation);
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
 
         var userMessage = new AiChatMessage { Role = AiChatRole.User, Text = prompt };
-        return ContinueConversationCoreAsync(conversation, userMessage, cancellationToken);
+        return ContinueConversationCoreAsync(conversation, userMessage, cancellationToken, options);
     }
 
     public Task<AiResponse> ContinueConversationAsync(
         AiConversation conversation, byte[] imageBytes, string mimeType = "image/jpeg",
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(conversation);
         ArgumentNullException.ThrowIfNull(imageBytes);
 
         var userMessage = new AiChatMessage { Role = AiChatRole.User, ImageBytes = imageBytes, MimeType = mimeType };
-        return ContinueConversationCoreAsync(conversation, userMessage, cancellationToken);
+        return ContinueConversationCoreAsync(conversation, userMessage, cancellationToken, options);
     }
 
     public Task<AiResponse> ContinueConversationAsync(
         AiConversation conversation, string prompt, byte[] imageBytes, string mimeType = "image/jpeg",
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(conversation);
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
         ArgumentNullException.ThrowIfNull(imageBytes);
 
         var userMessage = new AiChatMessage { Role = AiChatRole.User, Text = prompt, ImageBytes = imageBytes, MimeType = mimeType };
-        return ContinueConversationCoreAsync(conversation, userMessage, cancellationToken);
+        return ContinueConversationCoreAsync(conversation, userMessage, cancellationToken, options);
     }
 
     private async Task<AiResponse> ContinueConversationCoreAsync(
-        AiConversation conversation, AiChatMessage userMessage, CancellationToken cancellationToken)
+        AiConversation conversation, AiChatMessage userMessage, CancellationToken cancellationToken, AiRequestOptions? options = null)
     {
         var request = BuildRequest(conversation, userMessage);
-        var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        var response = await SendRequestAsync(request, cancellationToken, options).ConfigureAwait(false);
 
         if (response.Success)
         {
@@ -169,8 +169,14 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
         return response;
     }
 
-    private async Task<AiResponse> SendRequestAsync(GeminiRequest request, CancellationToken cancellationToken)
+    private async Task<AiResponse> SendRequestAsync(GeminiRequest request, CancellationToken cancellationToken, AiRequestOptions? options = null)
     {
+        if (options?.MaxOutputTokens is not null)
+        {
+            var baseConfig = request.GenerationConfig ?? new GeminiGenerationConfig(null, null, null, null, null, null);
+            request = request with { GenerationConfig = baseConfig with { MaxOutputTokens = options.MaxOutputTokens } };
+        }
+
         var url = $"{BaseUrl}/{_model}:generateContent?key={_apiKey}";
 
         if (logger.IsEnabled(LogLevel.Debug))
@@ -197,10 +203,14 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
             return new AiResponse(false, string.Empty, $"Blocked: {blockReason}");
         }
 
-        var text = geminiResponse.Candidates[0].Content.Parts
-            .Where(p => p.Text is not null)
-            .Select(p => p.Text!)
-            .FirstOrDefault() ?? string.Empty;
+        var candidate = geminiResponse.Candidates[0];
+
+        var text = string.Concat(candidate.Content.Parts
+            .Where(p => p.Text is not null && p.Thought is not true)
+            .Select(p => p.Text!));
+
+        if (string.Equals(candidate.FinishReason, "MAX_TOKENS", StringComparison.OrdinalIgnoreCase))
+            logger.LogWarning("Gemini response was truncated (finish reason: MAX_TOKENS). Consider increasing Gemini:MaxOutputTokens.");
 
         if (logger.IsEnabled(LogLevel.Debug))
             logger.LogDebug("Received response from Gemini model {Model}.", _model);
@@ -238,7 +248,7 @@ public sealed class GeminiProvider(HttpClient httpClient, IConfiguration configu
     private record GeminiGenerationConfig(string? MediaResolution, float? Temperature, float? TopP, int? TopK, int? MaxOutputTokens, GeminiThinkingConfig? ThinkingConfig);
     private record GeminiThinkingConfig(int? ThinkingBudget, string? ThinkingLevel);
     private record GeminiContent(string Role, List<GeminiPart> Parts);
-    private record GeminiPart(string? Text, GeminiInlineData? InlineData);
+    private record GeminiPart(string? Text, GeminiInlineData? InlineData, bool? Thought = null);
     private record GeminiInlineData(string MimeType, string Data);
 
     // --- Private response DTOs ---

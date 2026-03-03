@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Graphics.Skia;
 using SkiaSharp;
@@ -10,8 +11,13 @@ namespace Thio_Universal_Agent.Logic;
 /// Locates UI elements on screen by iteratively prompting an AI model
 /// with grid-overlaid screenshots and refining coordinates through zoom.
 /// </summary>
-public sealed class CoordinatePrompter(IAiProvider aiProvider)
+public sealed class CoordinatePrompter(IAiProvider aiProvider, IConfiguration configuration)
 {
+    private readonly AiRequestOptions? _coordinateRequestOptions =
+        int.TryParse(configuration["Gemini:CoordinateMaxOutputTokens"], out var maxTokens)
+            ? new AiRequestOptions(MaxOutputTokens: maxTokens)
+            : null;
+
     private const int RulerOffset = 100;
     private const int LabelBuffer = 60;
     private const int DefaultDivisions = 10;
@@ -59,7 +65,7 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
         // Start the conversation with the prompt + initial grid image
         var conversation = new AiConversation();
         AiResponse response = await aiProvider.ContinueConversationAsync(
-            conversation, prompt, gridImage, "image/png", cancellationToken)
+            conversation, prompt, gridImage, "image/png", cancellationToken, _coordinateRequestOptions)
             .ConfigureAwait(false);
 
         GridCoordinate coordinate = ParseCoordinatesOrThrow(response);
@@ -81,7 +87,7 @@ public sealed class CoordinatePrompter(IAiProvider aiProvider)
 
             // Send just the zoomed image; the AI continues from the same conversation
             response = await aiProvider.ContinueConversationAsync(
-                conversation, zoomedImage, "image/png", cancellationToken)
+                conversation, zoomedImage, "image/png", cancellationToken, _coordinateRequestOptions)
                 .ConfigureAwait(false);
 
             stepNumber++;
