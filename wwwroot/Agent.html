@@ -189,6 +189,35 @@
             letter-spacing: 1px;
             color: #555;
             margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        #btn-copy-steps {
+            padding: 3px 12px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #888;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+
+        #btn-copy-steps:hover {
+            background: #1e1e2e;
+            color: #c084fc;
+            border-color: #6040a0;
+        }
+
+        #btn-copy-steps.copied {
+            color: #55cc77;
+            border-color: #2c7a2c;
+            background: #1a2e1a;
         }
 
         .step-log {
@@ -374,7 +403,7 @@
         <div class="result" id="current-result"></div>
     </div>
 
-    <div class="step-log-header">Step History</div>
+    <div class="step-log-header"><span>Step History</span><button id="btn-copy-steps" title="Copy all steps as JSON">Copy</button></div>
     <div class="step-log" id="step-log"></div>
 </main>
 
@@ -395,6 +424,9 @@
     let sessionId = null;
     let eventSource = null;
     let debugEnabled = false;
+    let stepsData = [];
+    let sessionGoal = '';
+    let sessionFinalResult = '';
 
     // Restore API key from localStorage
     apiKeyInput.value = localStorage.getItem('gemini_api_key') || '';
@@ -422,6 +454,7 @@
 
     btnStart.addEventListener('click', startAgent);
     btnStop.addEventListener('click', stopAgent);
+    document.getElementById('btn-copy-steps').addEventListener('click', copySteps);
 
     async function startAgent() {
         const goal = goalInput.value.trim();
@@ -435,6 +468,9 @@
         }
 
         // Reset UI
+        stepsData = [];
+        sessionGoal = goal;
+        sessionFinalResult = '';
         stepLog.innerHTML = '';
         finalResultEl.className = 'final-result';
         finalResultEl.textContent = '';
@@ -497,6 +533,7 @@
     }
 
     function handleStep(msg) {
+        stepsData.push(msg);
         stepCounter.textContent = `Step ${msg.stepNumber}`;
 
         // Update current step card
@@ -532,6 +569,7 @@
 
         if (msg.isTerminal) {
             const status = msg.goalAchieved ? 'completed' : 'failed';
+            sessionFinalResult = msg.result;
             setStatus(status, msg.goalAchieved ? 'Completed' : 'Failed');
             showFinalResult(status, msg.result);
             cleanup();
@@ -562,9 +600,55 @@
 
     function handleDone(msg) {
         const statusKey = msg.status.toLowerCase();
+        if (msg.finalResult) sessionFinalResult = msg.finalResult;
         setStatus(statusKey, msg.status);
         if (msg.finalResult) showFinalResult(statusKey, msg.finalResult);
         cleanup();
+    }
+
+    async function copySteps() {
+        if (stepsData.length === 0) return;
+        const btn = document.getElementById('btn-copy-steps');
+
+        const output = {
+            goal: sessionGoal,
+            status: statusText.textContent,
+            ...(sessionFinalResult ? { finalResult: sessionFinalResult } : {}),
+            steps: stepsData.map(s => {
+                const step = {
+                    stepNumber: s.stepNumber,
+                    thought: s.thought,
+                    action: s.action,
+                    result: s.result,
+                };
+                if (s.isTerminal) step.isTerminal = true;
+                if (s.goalAchieved != null) step.goalAchieved = s.goalAchieved;
+                if (s.debugLog?.length) {
+                    step.debugLog = s.debugLog.map(d => {
+                        const entry = { label: d.label };
+                        if (d.text) entry.text = d.text;
+                        if (d.imageBase64) entry.image = '[image data omitted]';
+                        return entry;
+                    });
+                }
+                return step;
+            }),
+        };
+
+        const json = JSON.stringify(output, null, 2);
+        try {
+            await navigator.clipboard.writeText(json);
+        } catch {
+            const ta = document.createElement('textarea');
+            ta.value = json;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
     }
 
     function setStatus(key, label) {
