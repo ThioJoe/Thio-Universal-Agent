@@ -44,11 +44,12 @@ namespace Thio_Universal_Agent.OS_Windows
         private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
 
         // Dictionary to store virtual key codes
-        private static readonly Dictionary<string, (ushort vk, ushort scan)> modifierKeyCodes = new Dictionary<string, (ushort, ushort)>
+        private static readonly Dictionary<string, (ushort vk, ushort scan, bool extended)> modifierKeyCodes = new Dictionary<string, (ushort, ushort, bool)>
         {
-            {"LCTRL", (0x11, 29)},
-            {"LSHIFT", (0x10, 42)},
-            {"LALT", (0x12, 56)},
+            {"LCTRL",  (0x11, 29,   false)},
+            {"LSHIFT", (0x10, 42,   false)},
+            {"LALT",   (0x12, 56,   false)},
+            {"LWIN",   (0x5B, 0x5B, true)},
         };
 
         // Named key lookup: maps key names from the agent parser to VK codes and extended-key flag.
@@ -201,7 +202,7 @@ namespace Thio_Universal_Agent.OS_Windows
         #endregion
 
 
-        public async Task SendModKeyComboAsync(string key, bool? ctrl = null, bool? shift = null, bool? alt = null)
+        public async Task SendModKeyComboAsync(string key, bool? ctrl = null, bool? shift = null, bool? alt = null, bool? win = null)
         {
             ushort vk;
             ushort scan;
@@ -226,11 +227,14 @@ namespace Thio_Universal_Agent.OS_Windows
 
             ctrl ??= false;
             alt ??= false;
+            win ??= false;
 
             // Array to contain list of individual key up and down events in sequence
             List<INPUT> inputList = new();
 
             // Add modifier keys down
+            if (win == true)
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LWIN"].vk, scan: modifierKeyCodes["LWIN"].scan, isKeyUp: false, extended: modifierKeyCodes["LWIN"].extended));
             if (ctrl == true)
                 inputList.Add(CreateInput(vk: modifierKeyCodes["LCTRL"].vk, scan: modifierKeyCodes["LCTRL"].scan, isKeyUp: false, extended: false));
             if (shift == true)
@@ -243,12 +247,14 @@ namespace Thio_Universal_Agent.OS_Windows
             inputList.Add(CreateInput(vk: vk, scan: scan, isKeyUp: true, extended: extended));
 
             // Add modifier keys up
-            if (ctrl == true)
-                inputList.Add(CreateInput(vk: modifierKeyCodes["LCTRL"].vk, scan: modifierKeyCodes["LCTRL"].scan, isKeyUp: true, extended: false));
-            if (shift == true)
-                inputList.Add(CreateInput(vk: modifierKeyCodes["LSHIFT"].vk, scan: modifierKeyCodes["LSHIFT"].scan, isKeyUp: true, extended: false));
             if (alt == true)
                 inputList.Add(CreateInput(vk: modifierKeyCodes["LALT"].vk, scan: modifierKeyCodes["LALT"].scan, isKeyUp: true, extended: false));
+            if (shift == true)
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LSHIFT"].vk, scan: modifierKeyCodes["LSHIFT"].scan, isKeyUp: true, extended: false));
+            if (ctrl == true)
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LCTRL"].vk, scan: modifierKeyCodes["LCTRL"].scan, isKeyUp: true, extended: false));
+            if (win == true)
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LWIN"].vk, scan: modifierKeyCodes["LWIN"].scan, isKeyUp: true, extended: modifierKeyCodes["LWIN"].extended));
 
             INPUT[] inputs = inputList.ToArray();
             if (inputs.Length > 0)

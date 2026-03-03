@@ -135,8 +135,10 @@ public sealed class AgentLoop(
                     return;
                 }
 
-                // Settle delay — let the UI update before next screenshot
-                await Task.Delay(_settleDelayMs, ct).ConfigureAwait(false);
+                // Settle delay — let the UI update before next screenshot.
+                // Skip for Wait actions since the wait itself is already the settle time.
+                if (parsed.Action.Kind != AgentActionKind.Wait)
+                    await Task.Delay(_settleDelayMs, ct).ConfigureAwait(false);
 
                 // Observe: take a new screenshot
                 screenshot = screenProvider.CaptureScreen();
