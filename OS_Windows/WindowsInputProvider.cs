@@ -18,10 +18,32 @@ namespace Thio_Universal_Agent.OS_Windows
 
         [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         static extern short VkKeyScanEx(char ch, IntPtr dwhkl);
+
         [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         static extern short VkKeyScanW(char ch);
 
-        // Dictionary to store virtual key codes and scan codes. Will want to use wscan codes for SendInput
+        [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern bool SetCursorPos(int X, int Y);
+
+        [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern IntPtr WindowFromPoint(POINT point);
+
+        [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+
+        [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern IntPtr RealChildWindowFromPoint(IntPtr hwndParent, POINT ptParentClientCoords);
+
+        [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", SetLastError = true), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+
+        // Dictionary to store virtual key codes
         private static readonly Dictionary<string, (ushort vk, ushort scan)> modifierKeyCodes = new Dictionary<string, (ushort, ushort)>
         {
             {"LCTRL", (0x11, 29)},
@@ -38,9 +60,20 @@ namespace Thio_Universal_Agent.OS_Windows
         const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
         const uint KEYEVENTF_UNICODE = 0x0004;
 
+        // Mouse events
         public const int INPUT_MOUSE = 0;
         public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
         public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+        public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+        public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+        public const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+        public const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+        public const uint MOUSEEVENTF_WHEEL = 0x0800;
+        public const int WHEEL_DELTA = 120;
+
+        // WM_MOUSEWHEEL scroll message and SendMessageTimeout flags
+        const uint WM_MOUSEWHEEL = 0x020A;
+        const uint SMTO_NORMAL = 0x0000;
 
         [StructLayout(LayoutKind.Sequential)]
         struct INPUT
@@ -91,7 +124,14 @@ namespace Thio_Universal_Agent.OS_Windows
             public ushort wParamH;
         }
 
-        public enum MapVirtualKeyType : uint
+        [StructLayout(LayoutKind.Sequential)]
+        struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
+        public enum MapVirtualKeyType
         {
             MAPVK_VK_TO_VSC = 0,
             MAPVK_VSC_TO_VK = 1,
@@ -380,6 +420,180 @@ namespace Thio_Universal_Agent.OS_Windows
             }
         }
 
+        // Mouse Events
+        public async Task MoveMouse_MonitorCoords(int x, int y)
+        {
+            SetCursorPos(x, y);
+            await Task.CompletedTask;
+        }
+
+        public async Task LeftClick_MonitorCoords(int x, int y)
+        {
+            SetCursorPos(x, y);
+            SendMouseClick(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
+            await Task.CompletedTask;
+        }
+
+        public async Task RightClick_MonitorCoords(int x, int y)
+        {
+            SetCursorPos(x, y);
+            SendMouseClick(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP);
+            await Task.CompletedTask;
+        }
+
+        public async Task MiddleMouse_MonitorCoords(int x, int y)
+        {
+            SetCursorPos(x, y);
+            SendMouseClick(MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP);
+            await Task.CompletedTask;
+        }
+
+        private static void SendMouseClick(uint downFlag, uint upFlag)
+        {
+            INPUT[] inputs = new INPUT[2];
+
+            inputs[0].type = INPUT_MOUSE;
+            inputs[0].u.mi.dwFlags = downFlag;
+
+            inputs[1].type = INPUT_MOUSE;
+            inputs[1].u.mi.dwFlags = upFlag;
+
+            _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        public enum ScrollMode : int
+        {
+            WindowMessage = 1,
+            SendInput = 2
+        }
+
+        private enum ScrollDirection : int
+        {
+            Up = 1,
+            Down = 2
+        }
+
+        private void Scroll(ScrollDirection direction, ScrollMode? mode, int multiple)
+        {
+            ScrollMode scrollMode;
+            int scrollAmount = Math.Abs(multiple); // Ensure a sign hasn't been given to multiple already
+
+            // Set sign based on direction
+            if (direction == ScrollDirection.Down)
+                scrollAmount = -scrollAmount; // Negative for scrolling down
+
+            // Determine mode to use
+            if (mode != null)
+                scrollMode = (ScrollMode)mode;
+            else if (multiple == 1)
+                scrollMode = ScrollMode.SendInput; // For single notches, SendInput is more reliable across apps
+            else
+                scrollMode = ScrollMode.WindowMessage; // For multiple notches, WindowMessage can be more reliable
+
+            // Send the input
+            if (scrollMode == ScrollMode.SendInput)
+                ScrollMouse_WithSendInput_Async(WHEEL_DELTA * scrollAmount);
+            else
+                ScrollMouse_WithWM_Async(scrollAmount);
+        }
+
+        // ScrollUp - Two overloads
+        public async Task ScrollUp(int multiple = 1)
+        {
+            Scroll(ScrollDirection.Up, null, multiple);
+            await Task.CompletedTask;
+        }
+
+        public async Task ScrollUp(int multiple, ScrollMode forceScrollMode)
+        {
+            Scroll(ScrollDirection.Up, forceScrollMode, multiple);
+            await Task.CompletedTask;
+        }
+
+        // ScrollDown - Two overloads
+        public async Task ScrollDown(int multiple = 1)
+        {
+            Scroll(ScrollDirection.Down, null, multiple);
+            await Task.CompletedTask;
+        }
+
+        public async Task ScrollDown(int multiple, ScrollMode forceScrollMode)
+        {
+            Scroll(ScrollDirection.Down, forceScrollMode, multiple);
+            await Task.CompletedTask;
+        }
+
+        private void ScrollMouse_WithSendInput_Async(int scrollAmount)
+        {
+            INPUT[] inputs = new INPUT[1];
+
+            inputs[0].type = INPUT_MOUSE;
+            inputs[0].u.mi.dwFlags = MOUSEEVENTF_WHEEL;
+            // The cast to uint is required because mouseData is a uint, 
+            // and negative scroll amounts will properly underflow to the correct bitwise representation.
+            inputs[0].u.mi.mouseData = (uint)scrollAmount;
+
+            _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        /// <summary>
+        /// Sends a WM_MOUSEWHEEL message directly to the window or control under the cursor.
+        /// Positive multiplier scrolls up, negative scrolls down.
+        /// </summary>
+        /// <param name="multiplier">Scroll amount; positive = up, negative = down. 1.0 = one standard notch (120 delta).</param>
+        /// <param name="forceWindowHandle">When true, targets the top-level window instead of the child control.</param>
+        /// <param name="useSendMessage">When true, uses SendMessageTimeout (25 ms) instead of PostMessage.</param>
+        /// <param name="targetHandle">Explicit window/control handle to target. Auto-detected from cursor position if null.</param>
+        /// <param name="mousePosX">X screen coordinate embedded in the message. Auto-detected if null.</param>
+        /// <param name="mousePosY">Y screen coordinate embedded in the message. Auto-detected if null.</param>
+        private static void ScrollMouse_WithWM_Async(int multiplier, bool forceWindowHandle = false, bool useSendMessage = false,
+            IntPtr? targetHandle = null, int? mousePosX = null, int? mousePosY = null)
+        {
+            if (targetHandle == null || mousePosX == null || mousePosY == null)
+            {
+                GetCursorPos(out POINT cursorPos);
+                mousePosX ??= cursorPos.X;
+                mousePosY ??= cursorPos.Y;
+
+                if (targetHandle == null)
+                {
+                    IntPtr windowHandle = WindowFromPoint(new POINT { X = cursorPos.X, Y = cursorPos.Y });
+
+                    if (!forceWindowHandle)
+                    {
+                        // RealChildWindowFromPoint needs parent-relative client coordinates
+                        POINT clientPos = new POINT { X = cursorPos.X, Y = cursorPos.Y };
+                        ScreenToClient(windowHandle, ref clientPos);
+                        IntPtr controlHandle = RealChildWindowFromPoint(windowHandle, clientPos);
+                        targetHandle = controlHandle != IntPtr.Zero ? controlHandle : windowHandle;
+                    }
+                    else
+                    {
+                        targetHandle = windowHandle;
+                    }
+                }
+            }
+
+            // 120 is the standard delta for one scroll notch, regardless of the system scroll lines setting
+            int delta = (int)Math.Round(120.0 * multiplier);
+            IntPtr wParam = new IntPtr(delta << 16);                                              // delta in high word, key flags (0) in low word
+            IntPtr lParam = new IntPtr((mousePosY.Value << 16) | (mousePosX.Value & 0xFFFF));    // y in high word, x in low word
+
+            if (useSendMessage)
+            {
+                // PostMessage is generally safer; SendMessageTimeout used when the caller needs synchronous delivery.
+                // The short timeout means we won't block if the target window is unresponsive.
+                try
+                {
+                    SendMessageTimeout(targetHandle.Value, WM_MOUSEWHEEL, wParam, lParam, SMTO_NORMAL, 25, out _);
+                }
+                catch { } // We don't care if it doesn't work perfectly
+            }
+            else
+            {
+                PostMessage(targetHandle.Value, WM_MOUSEWHEEL, wParam, lParam);
+            }
+        }
 
 
     } // End of WindowsInputProvider class
