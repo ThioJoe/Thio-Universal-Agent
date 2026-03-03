@@ -26,6 +26,9 @@ namespace Thio_Universal_Agent.OS_Windows
         private static extern bool SetCursorPos(int X, int Y);
 
         [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern bool SetPhysicalCursorPos(int X, int Y);
+
+        [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         private static extern bool GetCursorPos(out POINT lpPoint);
 
         [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
@@ -42,6 +45,14 @@ namespace Thio_Universal_Agent.OS_Windows
 
         [DllImport("user32.dll", SetLastError = true), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+
+        [DllImport("user32.dll", SetLastError = true), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+
+        private static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
+
+        // Dictionary to store virtual key codes
+
 
         // Dictionary to store virtual key codes
         private static readonly Dictionary<string, (ushort vk, ushort scan, bool extended)> modifierKeyCodes = new Dictionary<string, (ushort, ushort, bool)>
@@ -493,34 +504,44 @@ namespace Thio_Universal_Agent.OS_Windows
         // Mouse Events
         public async Task MoveMouse_MonitorCoords(int x, int y)
         {
+            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SetCursorPos(x, y);
+            SetThreadDpiAwarenessContext(originalContext);
             await Task.CompletedTask;
         }
 
         public async Task LeftClick_MonitorCoords(int x, int y)
         {
+            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SetCursorPos(x, y);
+            SetThreadDpiAwarenessContext(originalContext);
             SendMouseClick(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
             await Task.CompletedTask;
         }
 
         public async Task DoubleClick_MonitorCoords(int x, int y)
         {
+            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SetCursorPos(x, y);
+            SetThreadDpiAwarenessContext(originalContext);
             SendMouseClick(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, count: 2);
             await Task.CompletedTask;
         }
 
         public async Task RightClick_MonitorCoords(int x, int y)
         {
+            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SetCursorPos(x, y);
+            SetThreadDpiAwarenessContext(originalContext);
             SendMouseClick(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP);
             await Task.CompletedTask;
         }
 
         public async Task MiddleMouse_MonitorCoords(int x, int y)
         {
+            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SetCursorPos(x, y);
+            SetThreadDpiAwarenessContext(originalContext);
             SendMouseClick(MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP);
             await Task.CompletedTask;
         }

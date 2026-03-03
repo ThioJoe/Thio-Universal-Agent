@@ -12,43 +12,75 @@ public class WindowsScreenProvider : IScreenProvider
 {
     public byte[] CaptureScreen()
     {
-        // GetDeviceCaps(DESKTOPHORZRES/DESKTOPVERTRES) returns physical pixel dimensions,
-        // bypassing Windows DPI scaling so a 4K monitor always yields 3840x2160.
-        IntPtr hdc = NativeMethods.GetDC(IntPtr.Zero);
+        // Temporarily set thread to be DPI aware to get physical pixels instead of scaled logical pixels
+        IntPtr previousDpiContext = NativeMethods.SetThreadDpiAwarenessContext((IntPtr)(-4));
+
         try
         {
-            int width = NativeMethods.GetDeviceCaps(hdc, NativeMethods.DESKTOPHORZRES);
-            int height = NativeMethods.GetDeviceCaps(hdc, NativeMethods.DESKTOPVERTRES);
+            // GetSystemMetrics(SM_*VIRTUALSCREEN) covers the bounding box of all monitors in
+            // logical pixels, which is the same coordinate space used by SetCursorPos/SendInput.
+            int x = NativeMethods.GetSystemMetrics(NativeMethods.SM_XVIRTUALSCREEN);
+            int y = NativeMethods.GetSystemMetrics(NativeMethods.SM_YVIRTUALSCREEN);
+            int width = NativeMethods.GetSystemMetrics(NativeMethods.SM_CXVIRTUALSCREEN);
+            int height = NativeMethods.GetSystemMetrics(NativeMethods.SM_CYVIRTUALSCREEN);
 
-            using Bitmap bmp = new Bitmap(width, height);
-            using Graphics g = Graphics.FromImage(bmp);
-            IntPtr destHdc = g.GetHdc();
+            IntPtr hdc = NativeMethods.GetDC(IntPtr.Zero);
             try
             {
-                NativeMethods.BitBlt(destHdc, 0, 0, width, height, hdc, 0, 0, NativeMethods.SRCCOPY);
+                using Bitmap bmp = new Bitmap(width, height);
+                using Graphics g = Graphics.FromImage(bmp);
+                IntPtr destHdc = g.GetHdc();
+                try
+                {
+                    // Source starts at (x, y) so that secondary monitors to the left/above are included.
+                    NativeMethods.BitBlt(destHdc, 0, 0, width, height, hdc, x, y, NativeMethods.SRCCOPY);
+                }
+                finally
+                {
+                    g.ReleaseHdc(destHdc);
+                }
+
+                using MemoryStream ms = new MemoryStream();
+                // Saving as JPEG for faster web transmission, though PNG could be used for lossless
+                bmp.Save(ms, ImageFormat.Jpeg);
+                return ms.ToArray();
             }
             finally
             {
-                g.ReleaseHdc(destHdc);
+                NativeMethods.ReleaseDC(IntPtr.Zero, hdc);
             }
-
-            using MemoryStream ms = new MemoryStream();
-            // Saving as JPEG for faster web transmission, though PNG could be used for lossless
-            bmp.Save(ms, ImageFormat.Jpeg);
-            return ms.ToArray();
         }
         finally
         {
-            NativeMethods.ReleaseDC(IntPtr.Zero, hdc);
+            NativeMethods.SetThreadDpiAwarenessContext(previousDpiContext);
+        }
+    }
+
+    public (int X, int Y) GetVirtualScreenOrigin()
+    {
+        IntPtr previousDpiContext = NativeMethods.SetThreadDpiAwarenessContext((IntPtr)(-4));
+        try
+        {
+            return (NativeMethods.GetSystemMetrics(NativeMethods.SM_XVIRTUALSCREEN),
+                    NativeMethods.GetSystemMetrics(NativeMethods.SM_YVIRTUALSCREEN));
+        }
+        finally
+        {
+            NativeMethods.SetThreadDpiAwarenessContext(previousDpiContext);
         }
     }
 }
 
 internal static class NativeMethods
 {
-    internal const int DESKTOPHORZRES = 118;
-    internal const int DESKTOPVERTRES = 117;
+    internal const int SM_XVIRTUALSCREEN  = 76;
+    internal const int SM_YVIRTUALSCREEN  = 77;
+    internal const int SM_CXVIRTUALSCREEN = 78;
+    internal const int SM_CYVIRTUALSCREEN = 79;
     internal const int SRCCOPY = 0x00CC0020;
+
+    [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
 
     [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern IntPtr GetDC(IntPtr hwnd);
@@ -56,8 +88,8 @@ internal static class NativeMethods
     [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
 
-    [DllImport("gdi32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
+    [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern int GetSystemMetrics(int nIndex);
 
     [DllImport("gdi32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]

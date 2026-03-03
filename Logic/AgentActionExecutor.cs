@@ -11,6 +11,7 @@ namespace Thio_Universal_Agent.Logic;
 /// </summary>
 public sealed class AgentActionExecutor(
     IInputProvider inputProvider,
+    IScreenProvider screenProvider,
     CoordinatePrompter coordinatePrompter,
     ILogger<AgentActionExecutor> logger)
 {
@@ -105,8 +106,12 @@ public sealed class AgentActionExecutor(
             .GetCoordinatesForItemAsync(screenshot, target, onCoordStep, cancellationToken)
             .ConfigureAwait(false);
 
-        int px = (int)Math.Round(x);
-        int py = (int)Math.Round(y);
+        // Shift image-pixel coordinates to absolute screen coordinates.
+        // On multi-monitor setups the virtual screen may start at a negative offset
+        // (e.g. a secondary monitor positioned to the left of the primary).
+        var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
+        int px = (int)Math.Round(x) + originX;
+        int py = (int)Math.Round(y) + originY;
 
         logger.LogInformation("{ActionKind} at ({X}, {Y}) for \"{Target}\".", action.Kind, px, py, target);
         debugLog?.Add(new AgentDebugEntry("Final Resolved Coordinates", Text: $"({px}, {py})"));
