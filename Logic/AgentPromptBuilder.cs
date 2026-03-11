@@ -36,6 +36,11 @@ public static class AgentPromptBuilder
             MOVE_MOUSE "description of where to move"
               Moves the mouse cursor to the described UI element without clicking.
 
+            CLICK_DRAG
+            From: "description of what to drag"
+            To: "description of where to drop"
+              Left-clicks and holds the element described in From, drags to the element described in To, then releases.
+
             TYPE_TEXT "text to type"
               Types the given text using the keyboard. A text field must already have focus from a prior click.
 

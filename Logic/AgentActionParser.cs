@@ -46,35 +46,34 @@ public static class AgentActionParser
         string thought = thoughtRaw.Length > 0 ? thoughtRaw : "(no reasoning provided)";
 
         // The action payload is everything after "ACTION:"
-        string actionLine = responseText[(actionIndex + ActionPrefix.Length)..].Trim();
+        string actionPayload = responseText[(actionIndex + ActionPrefix.Length)..].Trim();
 
-        // Strip anything after a newline — only the first line of the action matters
-        int newlineIdx = actionLine.IndexOfAny(['\r', '\n']);
-        if (newlineIdx >= 0)
-            actionLine = actionLine[..newlineIdx].Trim();
-
-        if (actionLine.Length == 0)
+        if (actionPayload.Length == 0)
         {
             error = "ACTION: line is present but empty.";
             return false;
         }
 
-        if (!TryParseActionLine(actionLine, out AgentAction? action, out error))
+        if (!TryParseActionLine(actionPayload, out AgentAction? action, out error))
             return false;
 
         result = new AgentParsedResponse(thought, action);
         return true;
     }
 
-    private static bool TryParseActionLine(string line, [NotNullWhen(true)] out AgentAction? action, [NotNullWhen(false)] out string? error)
+    private static bool TryParseActionLine(string payload, [NotNullWhen(true)] out AgentAction? action, [NotNullWhen(false)] out string? error)
     {
         action = null;
         error = null;
 
+        // Isolate the first line (tool name + optional single-line arguments)
+        int newlineIdx = payload.IndexOfAny(['\r', '\n']);
+        string firstLine = newlineIdx >= 0 ? payload[..newlineIdx].Trim() : payload;
+
         // First token is the tool name
-        int spaceIdx = line.IndexOf(' ');
-        string toolToken = spaceIdx >= 0 ? line[..spaceIdx] : line;
-        string args = spaceIdx >= 0 ? line[(spaceIdx + 1)..].Trim() : string.Empty;
+        int spaceIdx = firstLine.IndexOf(' ');
+        string toolToken = spaceIdx >= 0 ? firstLine[..spaceIdx] : firstLine;
+        string args = spaceIdx >= 0 ? firstLine[(spaceIdx + 1)..].Trim() : string.Empty;
 
         // Normalize: uppercase, underscores
         string normalized = toolToken.Trim().ToUpperInvariant().Replace("-", "_");
@@ -95,6 +94,11 @@ public static class AgentActionParser
 
             case "MOVE_MOUSE":
                 return TryParseTargetAction(AgentActionKind.MoveMouse, args, out action, out error);
+
+            case "CLICK_DRAG":
+                // Multi-line: pass everything after the tool token
+                string dragArgs = payload[toolToken.Length..].Trim();
+                return TryParseClickDragAction(dragArgs, out action, out error);
 
             case "TYPE_TEXT":
                 return TryParseTextAction(args, out action, out error);
@@ -121,7 +125,7 @@ public static class AgentActionParser
                 return true;
 
             default:
-                error = $"Unknown tool: '{toolToken}'. Expected one of: LEFT_CLICK, RIGHT_CLICK, DOUBLE_CLICK, MIDDLE_CLICK, MOVE_MOUSE, TYPE_TEXT, KEY_COMBO, SCROLL_UP, SCROLL_DOWN, WAIT, DONE, FAIL.";
+                error = $"Unknown tool: '{toolToken}'. Expected one of: LEFT_CLICK, RIGHT_CLICK, DOUBLE_CLICK, MIDDLE_CLICK, MOVE_MOUSE, CLICK_DRAG, TYPE_TEXT, KEY_COMBO, SCROLL_UP, SCROLL_DOWN, WAIT, DONE, FAIL.";
                 return false;
         }
     }
@@ -142,6 +146,38 @@ public static class AgentActionParser
 
         error = null;
         action = new AgentAction(kind, Target: target);
+        return true;
+    }
+
+    /// <summary>Parses CLICK_DRAG whose arguments are From: and To: lines with quoted target descriptions.</summary>
+    private static bool TryParseClickDragAction(
+        string args,
+        [NotNullWhen(true)] out AgentAction? action,
+        [NotNullWhen(false)] out string? error)
+    {
+        action = null;
+        const string usage = "CLICK_DRAG requires From and To targets (e.g. CLICK_DRAG\nFrom: \"the file icon\"\nTo: \"the trash folder\").";
+
+        string? source = null;
+        string? destination = null;
+
+        string[] lines = args.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (string line in lines)
+        {
+            if (line.StartsWith("From:", StringComparison.OrdinalIgnoreCase))
+                source = StripQuotes(line["From:".Length..].Trim());
+            else if (line.StartsWith("To:", StringComparison.OrdinalIgnoreCase))
+                destination = StripQuotes(line["To:".Length..].Trim());
+        }
+
+        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(destination))
+        {
+            error = usage;
+            return false;
+        }
+
+        error = null;
+        action = new AgentAction(AgentActionKind.ClickDrag, Target: source, DragTarget: destination);
         return true;
     }
 

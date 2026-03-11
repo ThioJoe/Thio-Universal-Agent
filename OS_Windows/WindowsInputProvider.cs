@@ -562,6 +562,41 @@ namespace Thio_Universal_Agent.OS_Windows
             _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
         }
 
+        private static void SendMouseEvent(uint flag)
+        {
+            INPUT[] inputs =
+            [
+                new INPUT
+                {
+                    type = INPUT_MOUSE,
+                    u = new InputUnion { mi = new MOUSEINPUT { dwFlags = flag } }
+                }
+            ];
+            _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        public async Task ClickDrag_MonitorCoords(int x_start, int y_start, int x_end, int y_end)
+        {
+            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
+            // Move to start and press left button down
+            SetCursorPos(x_start, y_start);
+            SendMouseEvent(MOUSEEVENTF_LEFTDOWN);
+
+            // Brief delay so the target application registers the drag initiation
+            await Task.Delay(50);
+
+            // Move to end and release left button
+            SetCursorPos(x_end, y_end);
+
+            // Brief delay so the cursor movement is recognized before the button release
+            await Task.Delay(50);
+
+            SendMouseEvent(MOUSEEVENTF_LEFTUP);
+
+            SetThreadDpiAwarenessContext(originalContext);
+        }
+
         public enum ScrollMode : int
         {
             WindowMessage = 1,

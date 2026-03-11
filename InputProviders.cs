@@ -25,6 +25,7 @@ namespace Thio_Universal_Agent
         Task RightClick_MonitorCoords(int x, int y);
         Task MiddleMouse_MonitorCoords(int x, int y);
         Task MoveMouse_MonitorCoords(int x, int y);
+        Task ClickDrag_MonitorCoords(int x_start, int y_start, int x_end, int y_end);
         Task ScrollUp(int multiple);
         Task ScrollDown(int multiple);
     }

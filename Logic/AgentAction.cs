@@ -18,6 +18,9 @@ public enum AgentActionKind
     /// <summary>Moves the mouse cursor to a UI element without clicking.</summary>
     MoveMouse,
 
+    /// <summary>Left click and hold, then moves the mouse to another location before releasing. </summary>
+    ClickDrag,
+
     /// <summary>Types a string of text via the keyboard.</summary>
     TypeText,
 
@@ -45,7 +48,8 @@ public enum AgentActionKind
 /// Only the fields relevant to <see cref="Kind"/> are populated.
 /// </summary>
 /// <param name="Kind">The tool being invoked.</param>
-/// <param name="Target">Natural-language description of the UI element to interact with (click/move actions).</param>
+/// <param name="Target">Natural-language description of the UI element to interact with (click/move/drag actions).</param>
+/// <param name="DragTarget">Natural-language description of the drag destination (for <see cref="AgentActionKind.ClickDrag"/>).</param>
 /// <param name="Text">The text payload (for <see cref="AgentActionKind.TypeText"/>).</param>
 /// <param name="Key">The primary key name (for <see cref="AgentActionKind.KeyCombo"/>).</param>
 /// <param name="Ctrl">Whether Ctrl is held (for <see cref="AgentActionKind.KeyCombo"/>).</param>
@@ -56,6 +60,7 @@ public enum AgentActionKind
 public sealed record AgentAction(
     AgentActionKind Kind,
     string? Target = null,
+    string? DragTarget = null,
     string? Text = null,
     string? Key = null,
     bool Ctrl = false,

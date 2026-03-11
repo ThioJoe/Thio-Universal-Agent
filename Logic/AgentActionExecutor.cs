@@ -39,6 +39,8 @@ public sealed class AgentActionExecutor(
                 AgentActionKind.LeftClick or AgentActionKind.RightClick or AgentActionKind.DoubleClick
                     or AgentActionKind.MiddleClick or AgentActionKind.MoveMouse
                     => await ExecuteClickAsync(action, currentScreenshot, cancellationToken, debugLog).ConfigureAwait(false),
+                AgentActionKind.ClickDrag
+                    => await ExecuteClickDragAsync(action, currentScreenshot, cancellationToken, debugLog).ConfigureAwait(false),
                 AgentActionKind.TypeText => await ExecuteTypeTextAsync(action, debugLog).ConfigureAwait(false),
                 AgentActionKind.KeyCombo => await ExecuteKeyComboAsync(action, debugLog).ConfigureAwait(false),
                 AgentActionKind.ScrollUp or AgentActionKind.ScrollDown
@@ -153,6 +155,87 @@ public sealed class AgentActionExecutor(
 
         string coordStr = $"({px.ToString(CultureInfo.InvariantCulture)}, {py.ToString(CultureInfo.InvariantCulture)})";
         return new ActionExecutionResult(true, $"{action.Kind} at {coordStr} targeting \"{target}\".", IsTerminal: false, GoalAchieved: false);
+    }
+
+    /// <summary>Resolves source and destination targets to coordinates, then performs a click-drag.</summary>
+    private async Task<ActionExecutionResult> ExecuteClickDragAsync(
+        AgentAction action, byte[] screenshot, CancellationToken cancellationToken, List<AgentDebugEntry>? debugLog)
+    {
+        string source = action.Target ?? throw new InvalidOperationException("ClickDrag requires a Target (source).");
+        string destination = action.DragTarget ?? throw new InvalidOperationException("ClickDrag requires a DragTarget (destination).");
+
+        // Resolve source coordinates
+        logger.LogInformation("Resolving drag source coordinates for: \"{Target}\"", source);
+        debugLog?.Add(new AgentDebugEntry("Drag Source Resolution", Text: $"Resolving source: \"{source}\""));
+
+        (int startPx, int startPy) = await ResolveTargetCoordinatesAsync(screenshot, source, cancellationToken, debugLog)
+            .ConfigureAwait(false);
+
+        logger.LogInformation("Drag source at ({X}, {Y}) for \"{Target}\".", startPx, startPy, source);
+        debugLog?.Add(new AgentDebugEntry("Drag Source Coordinates", Text: $"({startPx}, {startPy})"));
+
+        // Resolve destination coordinates
+        logger.LogInformation("Resolving drag destination coordinates for: \"{Target}\"", destination);
+        debugLog?.Add(new AgentDebugEntry("Drag Destination Resolution", Text: $"Resolving destination: \"{destination}\""));
+
+        (int endPx, int endPy) = await ResolveTargetCoordinatesAsync(screenshot, destination, cancellationToken, debugLog)
+            .ConfigureAwait(false);
+
+        logger.LogInformation("Drag destination at ({X}, {Y}) for \"{Target}\".", endPx, endPy, destination);
+        debugLog?.Add(new AgentDebugEntry("Drag Destination Coordinates", Text: $"({endPx}, {endPy})"));
+
+        // Perform the drag
+        string methodCalled = $"ClickDrag_MonitorCoords({startPx}, {startPy}, {endPx}, {endPy})";
+        debugLog?.Add(new AgentDebugEntry("OS Input Call", Text: methodCalled));
+
+        await inputProvider.ClickDrag_MonitorCoords(startPx, startPy, endPx, endPy).ConfigureAwait(false);
+
+        string fromStr = $"({startPx.ToString(CultureInfo.InvariantCulture)}, {startPy.ToString(CultureInfo.InvariantCulture)})";
+        string toStr = $"({endPx.ToString(CultureInfo.InvariantCulture)}, {endPy.ToString(CultureInfo.InvariantCulture)})";
+        return new ActionExecutionResult(true, $"ClickDrag from {fromStr} to {toStr} (\"{source}\" → \"{destination}\").", IsTerminal: false, GoalAchieved: false);
+    }
+
+    /// <summary>Resolves a target description to absolute screen coordinates using the coordinate prompter.</summary>
+    private async Task<(int px, int py)> ResolveTargetCoordinatesAsync(
+        byte[] screenshot, string target, CancellationToken cancellationToken, List<AgentDebugEntry>? debugLog)
+    {
+        Func<CoordinatePrompter.CoordinateStep, Task>? onCoordStep = null;
+        if (debugLog is not null)
+        {
+            onCoordStep = coordStep =>
+            {
+                debugLog.Add(new AgentDebugEntry(
+                    $"Coord Step {coordStep.StepNumber}: Grid Image",
+                    ImageBase64: Convert.ToBase64String(coordStep.GridImage)));
+
+                debugLog.Add(new AgentDebugEntry(
+                    $"Coord Step {coordStep.StepNumber}: AI Response",
+                    Text: coordStep.AiResponseText));
+
+                if (coordStep.ParsedX.HasValue && coordStep.ParsedY.HasValue)
+                {
+                    debugLog.Add(new AgentDebugEntry(
+                        $"Coord Step {coordStep.StepNumber}: Parsed Coordinates",
+                        Text: $"({coordStep.ParsedX:F1}, {coordStep.ParsedY:F1})"));
+                }
+
+                debugLog.Add(new AgentDebugEntry(
+                    $"Coord Step {coordStep.StepNumber}: Annotated Image",
+                    ImageBase64: Convert.ToBase64String(coordStep.AnnotatedImage)));
+
+                return Task.CompletedTask;
+            };
+        }
+
+        (double x, double y) = await coordinatePrompter
+            .GetCoordinatesForItemAsync(screenshot, target, onCoordStep, cancellationToken)
+            .ConfigureAwait(false);
+
+        var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
+        int px = (int)Math.Round(x) + originX;
+        int py = (int)Math.Round(y) + originY;
+
+        return (px, py);
     }
 
     private async Task<ActionExecutionResult> ExecuteTypeTextAsync(AgentAction action, List<AgentDebugEntry>? debugLog)
