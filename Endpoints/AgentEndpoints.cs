@@ -123,7 +123,7 @@ internal static class AgentEndpoints
                 // If the session already terminated before we subscribed
                 if (session.Status is not AgentSessionStatus.Running)
                 {
-                    await WriteTerminalEventAsync(httpContext.Response, session, ct).ConfigureAwait(false);
+                    await TryWriteTerminalEventAsync(httpContext.Response, session, ct).ConfigureAwait(false);
                     return;
                 }
 
@@ -131,7 +131,7 @@ internal static class AgentEndpoints
                 using CancellationTokenRegistration registration = ct.Register(() => tcs.TrySetResult());
                 await tcs.Task.ConfigureAwait(false);
 
-                await WriteTerminalEventAsync(httpContext.Response, session, ct).ConfigureAwait(false);
+                await TryWriteTerminalEventAsync(httpContext.Response, session, ct).ConfigureAwait(false);
             }
             finally
             {
@@ -180,6 +180,25 @@ internal static class AgentEndpoints
         string json = JsonSerializer.Serialize(payload, JsonOptions);
         await response.WriteAsync($"data: {json}\n\n", ct).ConfigureAwait(false);
         await response.Body.FlushAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Best-effort wrapper around <see cref="WriteTerminalEventAsync"/>.
+    /// If the client has already disconnected (token cancelled), the write is silently skipped.
+    /// </summary>
+    private static async Task TryWriteTerminalEventAsync(HttpResponse response, AgentSession session, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+            return;
+
+        try
+        {
+            await WriteTerminalEventAsync(response, session, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected between the check and the write — safe to ignore.
+        }
     }
 
     private static string FormatAction(AgentAction action) => action.Kind switch
