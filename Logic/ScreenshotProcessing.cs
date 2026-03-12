@@ -187,8 +187,8 @@ public sealed partial class CoordinatePrompter
         float? lineThickness = null)
     {
         Color color = gridColor ?? Color.FromRgba(236, 72, 153, 102); // ~40% opacity pink
-        int imageWidth = (int)source.Width;
-        int imageHeight = (int)source.Height;
+        int imageWidth = (int)view.Width;
+        int imageHeight = (int)view.Height;
         int maxLabelValue = Math.Max(cols, rows);
         int rulerOffset = ComputeRulerOffset(imageWidth, maxLabelValue);
         int labelBuffer = ComputeLabelBuffer(imageWidth, maxLabelValue);
@@ -263,29 +263,40 @@ public sealed partial class CoordinatePrompter
     /// <summary>
     /// Calculates a contextual zoom region around the given coordinate and returns
     /// the zoomed <see cref="ViewRegion"/> for the next iteration.
-    /// The zoom window extends ±1 grid cell on each axis from the coordinate.
+    /// The zoom window is forced to a square so that wide source images (e.g. dual
+    /// monitors) get a consistent buffer zone in both axes after the first zoom.
     /// </summary>
     private static ViewRegion CalculateZoomRegion(
         ViewRegion currentView,
         GridCoordinate coordinate,
+        double sourceWidth,
+        double sourceHeight,
         int cols = DefaultDivisions,
         int rows = DefaultDivisions)
     {
-        double spanX = 2.0;
-        double spanY = 2.0;
+        double cellPixelW = currentView.Width / cols;
+        double cellPixelH = currentView.Height / rows;
 
-        double xStart = coordinate.X - 1.0;
-        if (xStart < 0)
-            xStart = 0;
-        else if (xStart + spanX > cols)
-            xStart = cols - spanX;
+        // Center of the zoom in original image pixel coordinates
+        double centerX = currentView.X + coordinate.X * cellPixelW;
+        double centerY = currentView.Y + coordinate.Y * cellPixelH;
 
-        double yStart = coordinate.Y - 1.0;
-        if (yStart < 0)
-            yStart = 0;
-        else if (yStart + spanY > rows)
-            yStart = rows - spanY;
+        // Square side: ±1 cell buffer using the larger cell dimension,
+        // clamped so it never exceeds the source image in either axis.
+        double sideLength = Math.Min(
+            2.0 * Math.Max(cellPixelW, cellPixelH),
+            Math.Min(sourceWidth, sourceHeight));
 
-        return ZoomToRegion(currentView, xStart, yStart, spanX, spanY, cols, rows);
+        double halfSide = sideLength / 2.0;
+        double x = centerX - halfSide;
+        double y = centerY - halfSide;
+
+        // Shift to stay within source bounds
+        if (x < 0) x = 0;
+        if (y < 0) y = 0;
+        if (x + sideLength > sourceWidth)  x = sourceWidth - sideLength;
+        if (y + sideLength > sourceHeight) y = sourceHeight - sideLength;
+
+        return new ViewRegion(x, y, sideLength, sideLength);
     }
 }

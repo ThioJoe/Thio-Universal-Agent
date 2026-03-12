@@ -54,7 +54,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
             {
                 "COORDS" => COORDS,
                 "CANNOT_FIND" => CANNOT_FIND,
-                "UNSURE" => UNSURE,
+                //"UNSURE" => UNSURE,
                 _ => null
             };
         }
@@ -62,7 +62,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
         // Instances
         public static readonly CoordResponseCode COORDS = new(code: "COORDS", isStandalone: false);
         public static readonly CoordResponseCode CANNOT_FIND = new(code: "CANNOT_FIND", isStandalone: true);
-        public static readonly CoordResponseCode UNSURE = new(code: "UNSURE", isStandalone: true);
+        //public static readonly CoordResponseCode UNSURE = new(code: "UNSURE", isStandalone: true);
         //public static readonly CoordResponseCode UNKNOWN = new(code: "", isStandalone: true); // Default to COORDS if not sure
 
         // ---------- Public Methods ----------
@@ -176,8 +176,8 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
         {
             if (responseCode == CoordResponseCode.CANNOT_FIND)
                 throw new InvalidOperationException("The AI could not find the requested item. Please give an alternative description.");
-            else if (responseCode == CoordResponseCode.UNSURE)
-                throw new InvalidOperationException("The AI was unsure about the location of the item, possibly due to multiple similar items on screen. Please give a more specific description to help it differentiate.");
+            //else if (responseCode == CoordResponseCode.UNSURE)
+            //    throw new InvalidOperationException("The AI was unsure about the location of the item, possibly due to multiple similar items on screen. Please give a more specific description to help it differentiate.");
             else
                 throw new InvalidOperationException($"Received unexpected response code from AI: {responseCode}. Please try a different item description.");
         }
@@ -201,7 +201,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
         // Iteratively zoom in until each grid cell is within the confidence threshold
         for (int i = 0; i < MaxZoomIterations && ShouldContinueZooming(view, divisions, divisions); i++)
         {
-            view = CalculateZoomRegion(view, coordinate, divisions, divisions);
+            view = CalculateZoomRegion(view, coordinate, imageWidth, imageHeight, divisions, divisions);
             byte[] zoomedImage = CreateGridOverlayImage(source, view);
 
             // Send just the zoomed image; the AI continues from the same conversation
@@ -230,7 +230,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
             if (onStepCompleted is not null)
             {
                 byte[] annotated = parsed is not null
-                    ? CreateAnnotatedImage(zoomedImage, parsed, imageWidth, imageHeight, divisions, divisions)
+                    ? CreateAnnotatedImage(zoomedImage, parsed, (int)view.Width, (int)view.Height, divisions, divisions)
                     : zoomedImage;
                 await onStepCompleted(new CoordinateStep(
                     stepNumber, zoomedImage, response.Text, parsed?.X, parsed?.Y, annotated))
@@ -257,7 +257,8 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
              + $"\n    Example Response:  \"{CoordResponseCode.COORDS} 3.2, 7.5\""
              + $"\n\nALTERNATIVE RETURN CODES:"
              + $"\n\nIf you cannot locate the described item at all, respond only with: {CoordResponseCode.CANNOT_FIND}"
-             + $"\nIf the described item is ambiguous or there are multiple items of equal likelihood, respond only with: {CoordResponseCode.UNSURE}";
+             //+ $"\nIf multiple items match the description given, choose the most likely. If it is impossible to decide, respond only with: {CoordResponseCode.UNSURE}"
+             ;
     }
 
 
@@ -353,8 +354,8 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
         if (response.Contains(CoordResponseCode.CANNOT_FIND.Code, StringComparison.OrdinalIgnoreCase))
             return (coordinates: null, failReason: null, responseCode: CoordResponseCode.CANNOT_FIND);
 
-        if (response.Contains(CoordResponseCode.UNSURE.Code, StringComparison.OrdinalIgnoreCase))
-            return (coordinates: null, failReason: null, responseCode: CoordResponseCode.UNSURE);
+        //if (response.Contains(CoordResponseCode.UNSURE.Code, StringComparison.OrdinalIgnoreCase))
+        //    return (coordinates: null, failReason: null, responseCode: CoordResponseCode.UNSURE);
 
         // -----------------------------------------------------------
 
