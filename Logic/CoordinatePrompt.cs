@@ -25,7 +25,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
     private const int MaxZoomIterations = 10;
     private const double DefaultAIEstimatePrecision = 0.3; // Assume AI is accurate within ~0.3 of a grid cell
 
-    private int _divisions = DefaultDivisions;
+    private readonly int _divisions = DefaultDivisions;
 
     // Commands / codes that can be used by the AI finding the coordinates
     public sealed record CoordResponseCode
@@ -549,34 +549,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
             return true;
     }
 
-    /// <summary>
-    /// Calculates a contextual zoom region around the given coordinate and returns
-    /// the zoomed <see cref="ViewRegion"/> for the next iteration.
-    /// The zoom window extends ±1 grid cell on each axis from the coordinate.
-    /// </summary>
-    private static ViewRegion CalculateZoomRegion(
-        ViewRegion currentView,
-        GridCoordinate coordinate,
-        int cols = DefaultDivisions,
-        int rows = DefaultDivisions)
-    {
-        double spanX = 2.0;
-        double spanY = 2.0;
 
-        double xStart = coordinate.X - 1.0;
-        if (xStart < 0)
-            xStart = 0;
-        else if (xStart + spanX > cols)
-            xStart = cols - spanX;
-
-        double yStart = coordinate.Y - 1.0;
-        if (yStart < 0)
-            yStart = 0;
-        else if (yStart + spanY > rows)
-            yStart = rows - spanY;
-
-        return ZoomToRegion(currentView, xStart, yStart, spanX, spanY, cols, rows);
-    }
 
     /// <summary>
     /// Converts grid coordinates on the current (possibly zoomed) view back to
@@ -594,47 +567,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
         return (screenX, screenY);
     }
 
-    /// <summary>
-    /// Determines whether another zoom iteration is warranted based on the AI's 
-    /// estimated precision in pixels compared to a confidence threshold.
-    /// </summary>
-    private static bool ShouldContinueZooming(
-        ViewRegion currentView,
-        int cols = DefaultDivisions,
-        int rows = DefaultDivisions,
-        double confidencePixels = DefaultConfidencePixels,
-        double aiEstimatePrecision = DefaultAIEstimatePrecision)
-    {
-        double cellPixelW = currentView.Width / cols;
-        double cellPixelH = currentView.Height / rows;
 
-        // Calculate the actual pixel margin of error based on the AI's fractional accuracy
-        double errorMarginX = cellPixelW * aiEstimatePrecision;
-        double errorMarginY = cellPixelH * aiEstimatePrecision;
-
-        // Continue zooming only if the margin of error is still larger than our confidence threshold
-        return errorMarginX > confidencePixels || errorMarginY > confidencePixels;
-    }
-
-    /// <summary>Zooms the current view to a sub-region defined by grid-cell start and span.</summary>
-    private static ViewRegion ZoomToRegion(
-        ViewRegion currentView,
-        double startX,
-        double startY,
-        double spanX,
-        double spanY,
-        int cols,
-        int rows)
-    {
-        double cellPixelW = currentView.Width / cols;
-        double cellPixelH = currentView.Height / rows;
-
-        return new ViewRegion(
-            currentView.X + startX * cellPixelW,
-            currentView.Y + startY * cellPixelH,
-            spanX * cellPixelW,
-            spanY * cellPixelH);
-    }
 
 
     [GeneratedRegex(@"\b[A-Z_]{2,}\b")]
