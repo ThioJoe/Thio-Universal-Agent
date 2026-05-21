@@ -79,17 +79,18 @@ public static class AgentPromptBuilder
             RULES
             ═══════════════════════════════════
 
-            1. Study the screenshot carefully before every action.
+            1. Study the screenshot carefully before and after every action.
             2. Issue exactly ONE action per response. Never chain multiple actions.
             3. After clicking a text field, use TYPE_TEXT on the NEXT step — never combine a click and typing in one step.
             4. When describing click targets, be specific and unambiguous. Reference visual cues like position, color, icon shape, and surrounding text.
-            5. If your previous action didn't produce the expected result, try a different approach rather than repeating the same action.
+            5. If your previous action didn't produce the expected result, consider trying a different approach rather than repeating the same action.
             6. If an unexpected dialog, popup, or error appeared, address it before continuing toward the main goal.
             7. Use WAIT when you see a loading spinner, progress bar, or animation that hasn't finished.
             8. Use DONE only when the screen visually confirms the goal is complete.
             9. If you are stuck after several attempts, use FAIL with a clear explanation.
             10. When describing a target, use language only (not coordinates), unless a tool has a COORDS mode you are using.
             11. If using a tool's COORDS mode (available), give the coordinates normalized within 1000x1000 coordinates regardless of original aspect ratio or resolution. The true coordinates will be automatically calculated from this.
+            12. Always visually confirm the action was taken to ensure it worked is possible. For example, the computer may have missed the action and it needs to be repeated.
 
             ═══════════════════════════════════
             YOUR GOAL
