@@ -47,6 +47,20 @@
 
         #model-input { flex: 0 0 200px; }
 
+        #monitor-select {
+            flex: 0 0 190px;
+            padding: 10px 10px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 13px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        #monitor-select:focus { border-color: #4a9eff; }
+
         .controls input[type="text"] {
             flex: 1;
             padding: 10px 14px;
@@ -429,6 +443,7 @@
 <div class="controls">
     <input type="password" id="api-key-input" placeholder="Gemini API Key" style="flex:0 0 220px;" />
     <input type="text" id="model-input" placeholder="Model (e.g. gemini-2.0-flash)" spellcheck="false" />
+    <select id="monitor-select" title="Monitor to capture"></select>
     <input type="text" id="goal-input" placeholder="Enter a goal for the AI agent..." />
     <button id="btn-start">Start</button>
     <button id="btn-pause" disabled>Pause</button>
@@ -459,6 +474,7 @@
 <script>
     const apiKeyInput = document.getElementById('api-key-input');
     const modelInput = document.getElementById('model-input');
+    const monitorSelect = document.getElementById('monitor-select');
     const goalInput = document.getElementById('goal-input');
     const btnStart = document.getElementById('btn-start');
     const btnPause = document.getElementById('btn-pause');
@@ -495,9 +511,10 @@
     // Fetch server config and debug flag on load
     (async () => {
         try {
-            const [cfgRes, dbgRes] = await Promise.all([
+            const [cfgRes, dbgRes, monRes] = await Promise.all([
                 fetch('/api/config'),
                 fetch('/api/agent/debug-enabled'),
+                fetch('/api/agent/monitors'),
             ]);
 
             if (cfgRes.ok) {
@@ -512,6 +529,18 @@
                 debugEnabled = !!data.enabled;
                 if (debugEnabled) {
                     document.getElementById('status-text').textContent = 'Idle (Debug Mode)';
+                }
+            }
+
+            // Populate monitor selector
+            monitorSelect.innerHTML = '<option value="">All Monitors</option>';
+            if (monRes.ok) {
+                const monitors = await monRes.json();
+                for (const m of monitors) {
+                    const opt = document.createElement('option');
+                    opt.value = m.index;
+                    opt.textContent = `Monitor ${m.index}${m.isPrimary ? ' (Primary)' : ''} — ${m.width}×${m.height}`;
+                    monitorSelect.appendChild(opt);
                 }
             }
         } catch { /* non-critical */ }
@@ -561,12 +590,18 @@
         btnStop.disabled = false;
         goalInput.disabled = true;
         modelInput.disabled = true;
+        monitorSelect.disabled = true;
 
         try {
             const res = await fetch('/api/agent/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ goal, apiKey, model: modelInput.value.trim() || null }),
+                body: JSON.stringify({
+                    goal,
+                    apiKey,
+                    model: modelInput.value.trim() || null,
+                    monitorIndex: monitorSelect.value !== '' ? parseInt(monitorSelect.value, 10) : null,
+                }),
             });
 
             if (!res.ok) {
@@ -833,6 +868,7 @@
         btnStop.disabled = true;
         goalInput.disabled = false;
         modelInput.disabled = false;
+        monitorSelect.disabled = false;
     }
 
     function escapeHtml(str) {

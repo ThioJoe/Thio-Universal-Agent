@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Thio_Universal_Agent;
 using Thio_Universal_Agent.Logic;
 
 namespace Thio_Universal_Agent.Endpoints;
@@ -20,6 +21,10 @@ internal static class AgentEndpoints
         // Check if verbose debug output is enabled
         group.MapGet("/debug-enabled", () => Results.Ok(new { enabled = Globals.ENABLE_TESTING }));
 
+        // List connected monitors
+        group.MapGet("/monitors", (IScreenProvider screenProvider) =>
+            Results.Ok(screenProvider.GetMonitors()));
+
         // Start a new agent session
         group.MapPost("/start", (AgentStartRequest req, AgentSessionManager manager, IConfiguration configuration) =>
         {
@@ -34,6 +39,11 @@ internal static class AgentEndpoints
 
             if (!string.IsNullOrWhiteSpace(req.Model))
                 configuration["Gemini:Model"] = req.Model;
+
+            // Set or clear the monitor selection for this session
+            configuration["Agent:MonitorIndex"] = req.MonitorIndex.HasValue
+                ? req.MonitorIndex.Value.ToString()
+                : null;
 
             string sessionId = manager.StartSession(req.Goal);
             return Results.Ok(new { sessionId });
@@ -329,4 +339,4 @@ internal static class AgentEndpoints
     };
 }
 
-file record AgentStartRequest(string? Goal, string? ApiKey, string? Model);
+file record AgentStartRequest(string? Goal, string? ApiKey, string? Model, int? MonitorIndex);

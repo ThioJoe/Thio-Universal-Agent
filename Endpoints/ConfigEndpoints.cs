@@ -14,9 +14,10 @@ internal static class ConfigEndpoints
         {
             var response = new AppConfigResponse(
                 Agent: new AgentConfigDto(
-                    SettleDelayMs:  cfg.GetValue<int>("Agent:SettleDelayMs"),
-                    CoordinateMode: cfg["Agent:CoordinateMode"]
-                ),
+                        SettleDelayMs:  cfg.GetValue<int>("Agent:SettleDelayMs"),
+                        CoordinateMode: cfg["Agent:CoordinateMode"],
+                        MonitorIndex:   cfg.GetValue<int?>("Agent:MonitorIndex")
+                    ),
                 Gemini: new GeminiConfigDto(
                     Model:                    cfg["Gemini:Model"],
                     MediaResolution:          cfg["Gemini:MediaResolution"],
@@ -43,7 +44,8 @@ internal sealed record AppConfigResponse(
 
 internal sealed record AgentConfigDto(
     int     SettleDelayMs,
-    string? CoordinateMode
+    string? CoordinateMode,
+    int?    MonitorIndex
 );
 
 internal sealed record GeminiConfigDto(
