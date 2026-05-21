@@ -107,7 +107,7 @@ public sealed class AgentActionExecutor(
         }
 
         (double x, double y) = await coordinatePrompter
-            .GetCoordinatesForItemAsync(screenshot, target, onCoordStep, cancellationToken)
+            .GetCoordinatesForItemAsync(screenshot, target, onStepCompleted: onCoordStep, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         // Shift image-pixel coordinates to absolute screen coordinates.
@@ -230,7 +230,7 @@ public sealed class AgentActionExecutor(
         }
 
         (double x, double y) = await coordinatePrompter
-            .GetCoordinatesForItemAsync(screenshot, target, onCoordStep, cancellationToken)
+            .GetCoordinatesForItemAsync(screenshot, target, onStepCompleted: onCoordStep, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         var (originX, originY) = screenProvider.GetVirtualScreenOrigin();

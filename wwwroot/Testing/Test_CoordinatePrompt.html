@@ -53,6 +53,19 @@
 
         #config-bar input:focus { outline: none; border-color: #4a9eff; }
 
+        #config-bar select {
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 5px 10px;
+            font-size: 13px;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        #config-bar select:focus { outline: none; border-color: #4a9eff; }
+
         #apiKeyInput { width: 300px; }
         #modelInput  { width: 180px; }
 
@@ -330,6 +343,12 @@
         <input type="password" id="apiKeyInput" placeholder="Leave blank to use server config" autocomplete="off" spellcheck="false" />
         <label for="modelInput">Model</label>
         <input type="text" id="modelInput" value="gemini-2.0-flash" spellcheck="false" />
+        <label for="coordinateModeSelect">Coord Mode</label>
+        <select id="coordinateModeSelect">
+            <option value="DirectAutoNormalize">DirectAutoNormalize (default)</option>
+            <option value="Direct">Direct</option>
+            <option value="Zoom">Zoom</option>
+        </select>
         <span class="config-hint">Key is stored in localStorage and sent per-request — never persisted server-side.</span>
     </div>
 
@@ -390,15 +409,18 @@
         const lightboxImg      = document.getElementById('lightbox-img');
         const apiKeyInput      = document.getElementById('apiKeyInput');
         const modelInput       = document.getElementById('modelInput');
+        const coordinateModeSelect = document.getElementById('coordinateModeSelect');
 
         let screenshotBase64 = null;
 
         // Restore config from localStorage so it survives page refreshes (shared with Chat test page).
         apiKeyInput.value = localStorage.getItem('test_apiKey') || '';
         modelInput.value  = localStorage.getItem('test_model')  || 'gemini-2.0-flash';
+        coordinateModeSelect.value = localStorage.getItem('test_coordinateMode') || 'DirectAutoNormalize';
 
         apiKeyInput.addEventListener('change', () => localStorage.setItem('test_apiKey', apiKeyInput.value));
         modelInput.addEventListener('change',  () => localStorage.setItem('test_model',  modelInput.value));
+        coordinateModeSelect.addEventListener('change', () => localStorage.setItem('test_coordinateMode', coordinateModeSelect.value));
 
         // ---- Screenshot handling ----
 
@@ -542,7 +564,8 @@
                         screenshotBase64,
                         itemToIdentify: itemInput.value.trim(),
                         apiKey: apiKeyInput.value.trim() || null,
-                        model:  modelInput.value.trim()  || null
+                        model:  modelInput.value.trim()  || null,
+                        mode:   coordinateModeSelect.value || null
                     })
                 });
 

@@ -241,12 +241,16 @@ internal static class TestEndpoints
                 }
 
                 byte[] screenshotBytes = Convert.FromBase64String(req.ScreenshotBase64);
+                CoordinateMode? coordinateMode = Enum.TryParse<CoordinateMode>(req.Mode, ignoreCase: true, out var parsedMode)
+                    ? parsedMode
+                    : null;
                 var steps = new List<object>();
 
                 var (x, y) = await prompter.GetCoordinatesForItemAsync(
                     screenshotBytes,
                     req.ItemToIdentify,
-                    step =>
+                    mode: coordinateMode,
+                    onStepCompleted: step =>
                     {
                         steps.Add(new
                         {
@@ -259,7 +263,7 @@ internal static class TestEndpoints
                         });
                         return Task.CompletedTask;
                     },
-                    ct);
+                    cancellationToken: ct);
 
                 return Results.Ok(new { Steps = steps, FinalScreenX = x, FinalScreenY = y });
             }
@@ -281,4 +285,4 @@ internal static class TestEndpoints
 
 // Scoped to this file — it's a transport detail for the test endpoint, not a domain type.
 file record TestChatRequest(string? Prompt, string? ApiKey, string? Model, string? ImageBase64, string? ImageMimeType, string? ConversationId);
-file record TestCoordinatePromptRequest(string? ScreenshotBase64, string? ItemToIdentify, string? ApiKey, string? Model);
+file record TestCoordinatePromptRequest(string? ScreenshotBase64, string? ItemToIdentify, string? ApiKey, string? Model, string? Mode);
