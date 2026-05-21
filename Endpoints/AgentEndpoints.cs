@@ -51,6 +51,7 @@ internal static class AgentEndpoints
             return Results.Ok(new
             {
                 status = session.Status.ToString(),
+                isPaused = session.IsPaused,
                 stepCount = session.Steps.Count,
                 latestThought = latest?.Thought,
                 latestAction = latest is not null ? FormatAction(latest.Action) : null,
@@ -143,9 +144,22 @@ internal static class AgentEndpoints
                 }
             }
 
+            async Task OnPauseChanged(AgentPauseChange change)
+            {
+                try
+                {
+                    await WritePauseEventAsync(httpContext.Response, change, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    tcs.TrySetResult();
+                }
+            }
+
             session.OnSubStepUpdate += OnSubStepUpdate;
             session.OnStepStarting += OnStepStarting;
             session.OnStepCompleted += OnStep;
+            session.OnPauseChanged += OnPauseChanged;
 
             try
             {
@@ -155,6 +169,10 @@ internal static class AgentEndpoints
                     await TryWriteTerminalEventAsync(httpContext.Response, session, ct).ConfigureAwait(false);
                     return;
                 }
+
+                // Catch up: if the session was already paused when the client connected, send the event now
+                if (session.IsPaused)
+                    await WritePauseEventAsync(httpContext.Response, AgentPauseChange.Paused, ct).ConfigureAwait(false);
 
                 // Wait until a terminal step arrives, the session ends for any reason, or the client disconnects
                 using CancellationTokenRegistration registration = ct.Register(() => tcs.TrySetResult());
@@ -168,6 +186,7 @@ internal static class AgentEndpoints
                 session.OnSubStepUpdate -= OnSubStepUpdate;
                 session.OnStepStarting -= OnStepStarting;
                 session.OnStepCompleted -= OnStep;
+                session.OnPauseChanged -= OnPauseChanged;
             }
         });
 
@@ -175,6 +194,20 @@ internal static class AgentEndpoints
         group.MapPost("/{sessionId}/stop", (string sessionId, AgentSessionManager manager) =>
         {
             bool found = manager.StopSession(sessionId);
+            return found ? Results.NoContent() : Results.NotFound(new { error = "Session not found." });
+        });
+
+        // Pause a running session after its current step finishes
+        group.MapPost("/{sessionId}/pause", (string sessionId, AgentSessionManager manager) =>
+        {
+            bool found = manager.PauseSession(sessionId);
+            return found ? Results.NoContent() : Results.NotFound(new { error = "Session not found." });
+        });
+
+        // Resume a paused session
+        group.MapPost("/{sessionId}/resume", (string sessionId, AgentSessionManager manager) =>
+        {
+            bool found = manager.ResumeSession(sessionId);
             return found ? Results.NoContent() : Results.NotFound(new { error = "Session not found." });
         });
     }
@@ -224,6 +257,18 @@ internal static class AgentEndpoints
             step.Result.GoalAchieved,
             step.Timestamp,
             debugLog = step.DebugLog?.Select(e => new { e.Label, e.Text, e.ImageBase64 }),
+        };
+
+        string json = JsonSerializer.Serialize(payload, JsonOptions);
+        await response.WriteAsync($"data: {json}\n\n", ct).ConfigureAwait(false);
+        await response.Body.FlushAsync(ct).ConfigureAwait(false);
+    }
+
+    private static async Task WritePauseEventAsync(HttpResponse response, AgentPauseChange change, CancellationToken ct)
+    {
+        var payload = new
+        {
+            type = change == AgentPauseChange.Paused ? "paused" : "resumed",
         };
 
         string json = JsonSerializer.Serialize(payload, JsonOptions);

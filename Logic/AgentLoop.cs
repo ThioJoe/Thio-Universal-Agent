@@ -151,6 +151,10 @@ public sealed class AgentLoop(
                 if (parsed.Action.Kind != AgentActionKind.Wait)
                     await Task.Delay(_settleDelayMs, ct).ConfigureAwait(false);
 
+                // Honour a user-requested pause before doing any more work.
+                // The AI response in `response` is preserved across the pause so nothing is discarded.
+                await session.WaitIfPausedAsync(ct).ConfigureAwait(false);
+
                 // Observe: take a new screenshot
                 screenshot = screenProvider.CaptureScreen();
 

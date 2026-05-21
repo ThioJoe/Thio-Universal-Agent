@@ -63,4 +63,26 @@ public sealed class AgentSessionManager(
         session.Cts.Cancel();
         return true;
     }
+
+    /// <summary>Pauses a running session after its current step finishes. Returns false if not found.</summary>
+    public bool PauseSession(string sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out AgentSession? session))
+            return false;
+
+        logger.LogInformation("Pausing agent session {SessionId}.", sessionId);
+        session.Pause();
+        return true;
+    }
+
+    /// <summary>Resumes a paused session. Returns false if not found.</summary>
+    public bool ResumeSession(string sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out AgentSession? session))
+            return false;
+
+        logger.LogInformation("Resuming agent session {SessionId}.", sessionId);
+        session.Resume();
+        return true;
+    }
 }

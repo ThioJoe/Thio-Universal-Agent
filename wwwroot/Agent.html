@@ -98,6 +98,26 @@
             cursor: default;
         }
 
+        #btn-pause {
+            background: #7a6010;
+            color: #fff;
+        }
+
+        #btn-pause:hover { background: #9a7a18; }
+
+        #btn-pause:disabled {
+            background: #2e2410;
+            color: #555;
+            cursor: default;
+        }
+
+        /* When showing "Resume" state */
+        #btn-pause.resuming {
+            background: #1a5a8a;
+        }
+
+        #btn-pause.resuming:hover { background: #1e72ae; }
+
         /* ---- Status Bar ---- */
         .status-bar {
             padding: 10px 32px;
@@ -119,6 +139,7 @@
 
         .status-dot.idle { background: #555; }
         .status-dot.running { background: #4a9eff; animation: pulse 1.2s infinite; }
+        .status-dot.paused { background: #ccaa22; }
         .status-dot.completed { background: #33aa66; }
         .status-dot.failed { background: #cc4444; }
         .status-dot.cancelled { background: #aa8833; }
@@ -410,6 +431,7 @@
     <input type="text" id="model-input" placeholder="Model (e.g. gemini-2.0-flash)" spellcheck="false" />
     <input type="text" id="goal-input" placeholder="Enter a goal for the AI agent..." />
     <button id="btn-start">Start</button>
+    <button id="btn-pause" disabled>Pause</button>
     <button id="btn-stop" disabled>Stop</button>
 </div>
 
@@ -439,6 +461,7 @@
     const modelInput = document.getElementById('model-input');
     const goalInput = document.getElementById('goal-input');
     const btnStart = document.getElementById('btn-start');
+    const btnPause = document.getElementById('btn-pause');
     const btnStop = document.getElementById('btn-stop');
     const statusDot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
@@ -456,6 +479,7 @@
     let stepsData = [];
     let sessionGoal = '';
     let sessionFinalResult = '';
+    let isPaused = false;
 
     // Restore API key from localStorage
     apiKeyInput.value = localStorage.getItem('gemini_api_key') || '';
@@ -498,6 +522,7 @@
     });
 
     btnStart.addEventListener('click', startAgent);
+    btnPause.addEventListener('click', togglePause);
     btnStop.addEventListener('click', stopAgent);
     document.getElementById('btn-copy-steps').addEventListener('click', copySteps);
 
@@ -516,6 +541,7 @@
         stepsData = [];
         sessionGoal = goal;
         sessionFinalResult = '';
+        isPaused = false;
         stepLog.innerHTML = '';
         finalResultEl.className = 'final-result';
         finalResultEl.textContent = '';
@@ -529,6 +555,9 @@
         setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
 
         btnStart.disabled = true;
+        btnPause.disabled = false;
+        btnPause.textContent = 'Pause';
+        btnPause.classList.remove('resuming');
         btnStop.disabled = false;
         goalInput.disabled = true;
         modelInput.disabled = true;
@@ -557,6 +586,8 @@
                 if (msg.type === 'stepStarting') handleStepStarting(msg);
                 else if (msg.type === 'subStep') handleSubStep(msg);
                 else if (msg.type === 'step') handleStep(msg);
+                else if (msg.type === 'paused') handlePaused();
+                else if (msg.type === 'resumed') handleResumed();
                 else if (msg.type === 'done') handleDone(msg);
             };
             eventSource.onerror = () => {
@@ -579,6 +610,34 @@
         try {
             await fetch(`/api/agent/${sessionId}/stop`, { method: 'POST' });
         } catch { /* best effort */ }
+    }
+
+    async function togglePause() {
+        if (!sessionId) return;
+        btnPause.disabled = true;
+        try {
+            if (isPaused) {
+                await fetch(`/api/agent/${sessionId}/resume`, { method: 'POST' });
+            } else {
+                await fetch(`/api/agent/${sessionId}/pause`, { method: 'POST' });
+            }
+        } catch { /* best effort */ } finally {
+            btnPause.disabled = false;
+        }
+    }
+
+    function handlePaused() {
+        isPaused = true;
+        btnPause.textContent = 'Resume';
+        btnPause.classList.add('resuming');
+        setStatus('paused', debugEnabled ? 'Paused (Debug Mode)' : 'Paused');
+    }
+
+    function handleResumed() {
+        isPaused = false;
+        btnPause.textContent = 'Pause';
+        btnPause.classList.remove('resuming');
+        setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
     }
 
     function handleStepStarting(msg) {
@@ -768,6 +827,9 @@
 
     function resetControls() {
         btnStart.disabled = false;
+        btnPause.disabled = true;
+        btnPause.textContent = 'Pause';
+        btnPause.classList.remove('resuming');
         btnStop.disabled = true;
         goalInput.disabled = false;
         modelInput.disabled = false;

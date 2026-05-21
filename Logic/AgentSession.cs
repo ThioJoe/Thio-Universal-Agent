@@ -19,6 +19,9 @@ public enum AgentSessionStatus
     Error,
 }
 
+/// <summary>Direction of a pause-state change emitted via <see cref="AgentSession.OnPauseChanged"/>.</summary>
+public enum AgentPauseChange { Paused, Resumed }
+
 /// <summary>
 /// Holds all mutable state for a single agent execution session.
 /// Created by <see cref="AgentSessionManager"/> and driven by <see cref="AgentLoop"/>.
@@ -45,6 +48,63 @@ public sealed class AgentSession
 
     /// <summary>Cancellation source that the user or timeout logic can trigger.</summary>
     public CancellationTokenSource Cts { get; } = new();
+
+    // ── Pause / Resume ─────────────────────────────────────────────────────────
+
+    private readonly object _pauseLock = new();
+    private TaskCompletionSource? _pauseTcs;
+
+    /// <summary>True while the agent loop is suspended at an inter-step pause point.</summary>
+    public bool IsPaused { get; private set; }
+
+    /// <summary>
+    /// Event raised (on the calling thread) whenever the pause state changes.
+    /// Handlers receive the new pause state.
+    /// </summary>
+    public event Func<AgentPauseChange, Task>? OnPauseChanged;
+
+    /// <summary>Suspends the agent loop after its current step finishes.</summary>
+    public void Pause()
+    {
+        lock (_pauseLock)
+        {
+            if (IsPaused || Status != AgentSessionStatus.Running) return;
+            IsPaused = true;
+            _pauseTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+        _ = OnPauseChanged?.Invoke(AgentPauseChange.Paused);
+    }
+
+    /// <summary>Resumes a paused agent loop.</summary>
+    public void Resume()
+    {
+        TaskCompletionSource? tcs;
+        lock (_pauseLock)
+        {
+            if (!IsPaused) return;
+            IsPaused = false;
+            tcs = _pauseTcs;
+            _pauseTcs = null;
+        }
+        tcs?.TrySetResult();
+        _ = OnPauseChanged?.Invoke(AgentPauseChange.Resumed);
+    }
+
+    /// <summary>
+    /// Called by <see cref="AgentLoop"/> at safe inter-step boundaries.
+    /// Blocks asynchronously while the session is paused; returns immediately otherwise.
+    /// Throws <see cref="OperationCanceledException"/> if the session is cancelled while waiting.
+    /// </summary>
+    internal async Task WaitIfPausedAsync(CancellationToken ct)
+    {
+        Task? pauseTask;
+        lock (_pauseLock)
+        {
+            pauseTask = _pauseTcs?.Task;
+        }
+        if (pauseTask is not null)
+            await pauseTask.WaitAsync(ct).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Event raised right after the AI's response is parsed but before the action is executed.
