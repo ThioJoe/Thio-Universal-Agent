@@ -371,6 +371,70 @@
 
         .debug-toggle summary:hover { color: #d8b4fe; }
 
+        /* ---- Prompt Banner ---- */
+        .prompt-banner {
+            padding: 0 32px;
+            background: #161616;
+            border-bottom: 1px solid #1e1e1e;
+        }
+
+        .prompt-banner details {
+            padding: 6px 0;
+        }
+
+        .prompt-banner summary {
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #555;
+            user-select: none;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .prompt-banner summary::-webkit-details-marker { display: none; }
+
+        .prompt-banner summary::before {
+            content: '▶';
+            font-size: 8px;
+            transition: transform 0.15s;
+            color: #444;
+        }
+
+        .prompt-banner details[open] summary::before {
+            transform: rotate(90deg);
+        }
+
+        .prompt-banner summary .prompt-preview {
+            color: #888;
+            font-weight: 400;
+            text-transform: none;
+            letter-spacing: 0;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 700px;
+        }
+
+        .prompt-banner .prompt-full {
+            margin-top: 8px;
+            padding: 10px 14px;
+            background: #111;
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #ddd;
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin-bottom: 6px;
+        }
+
         .debug-entries {
             margin-top: 8px;
             display: flex;
@@ -456,6 +520,13 @@
     <span id="step-counter"></span>
 </div>
 
+<div class="prompt-banner" id="prompt-banner" style="display:none;">
+    <details id="prompt-details">
+        <summary>Goal&nbsp;<span class="prompt-preview" id="prompt-preview"></span></summary>
+        <div class="prompt-full" id="prompt-full"></div>
+    </details>
+</div>
+
 <main>
     <div class="final-result" id="final-result"></div>
 
@@ -488,6 +559,9 @@
     const currentResult = document.getElementById('current-result');
     const liveSubsteps = document.getElementById('live-substeps');
     const stepLog = document.getElementById('step-log');
+    const promptBanner = document.getElementById('prompt-banner');
+    const promptPreview = document.getElementById('prompt-preview');
+    const promptFull = document.getElementById('prompt-full');
 
     let sessionId = null;
     let eventSource = null;
@@ -572,6 +646,10 @@
         sessionFinalResult = '';
         isPaused = false;
         stepLog.innerHTML = '';
+        promptPreview.textContent = goal.length > 80 ? goal.slice(0, 80) + '…' : goal;
+        promptFull.textContent = goal;
+        promptBanner.style.display = '';
+        document.getElementById('prompt-details').removeAttribute('open');
         finalResultEl.className = 'final-result';
         finalResultEl.textContent = '';
         finalResultEl.style.display = 'none';
