@@ -46,6 +46,17 @@ public enum AgentActionKind
     Fail,
 }
 
+/// <summary>Modifier keys held during a <see cref="AgentActionKind.KeyCombo"/> action.</summary>
+[Flags]
+public enum ModifierKeys
+{
+    None  = 0,
+    Ctrl  = 1 << 0,
+    Shift = 1 << 1,
+    Alt   = 1 << 2,
+    Win   = 1 << 3,
+}
+
 public enum AgentActionAltMode
 {
     None,
@@ -88,9 +99,7 @@ public enum AgentActionAltMode
 /// <param name="DragTarget">Natural-language description of the drag destination (for <see cref="AgentActionKind.ClickDrag"/>) or X,Y pair if using exact coordinates. <see cref="AgentActionKind.ClickDragCoords"/>.</param>
 /// <param name="Text">The text payload (for <see cref="AgentActionKind.TypeText"/>).</param>
 /// <param name="Key">The primary key name (for <see cref="AgentActionKind.KeyCombo"/>).</param>
-/// <param name="Ctrl">Whether Ctrl is held (for <see cref="AgentActionKind.KeyCombo"/>).</param>
-/// <param name="Shift">Whether Shift is held (for <see cref="AgentActionKind.KeyCombo"/>).</param>
-/// <param name="Alt">Whether Alt is held (for <see cref="AgentActionKind.KeyCombo"/>).</param>
+/// <param name="Modifiers">Modifier keys held (for <see cref="AgentActionKind.KeyCombo"/>).</param>
 /// <param name="Amount">Notch count for scroll or seconds for wait.</param>
 /// <param name="Reason">Explanation when the agent declares <see cref="AgentActionKind.Fail"/>.</param>
 public sealed record AgentAction(
@@ -100,9 +109,7 @@ public sealed record AgentAction(
     string? Text = null,
     string? Key = null,
     AgentActionAltMode AltMode = AgentActionAltMode.None,
-    bool Ctrl = false,
-    bool Shift = false,
-    bool Alt = false,
+    ModifierKeys Modifiers = ModifierKeys.None,
     int Amount = 1,
     string? Reason = null
     );

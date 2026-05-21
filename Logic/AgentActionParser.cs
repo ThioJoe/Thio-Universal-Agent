@@ -342,7 +342,7 @@ public static class AgentActionParser
             return false;
         }
 
-        bool ctrl = false, shift = false, alt = false;
+        bool ctrl = false, shift = false, alt = false, win = false;
         string? primaryKey = null;
 
         string[] parts = expr.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -359,6 +359,9 @@ public static class AgentActionParser
                 case "alt":
                     alt = true;
                     break;
+                case "win" or "windows" or "super":
+                    win = true;
+                    break;
                 default:
                     // Last non-modifier token is the primary key
                     primaryKey = part;
@@ -372,8 +375,14 @@ public static class AgentActionParser
             return false;
         }
 
+        ModifierKeys modifiers = ModifierKeys.None;
+        if (ctrl)  modifiers |= ModifierKeys.Ctrl;
+        if (shift) modifiers |= ModifierKeys.Shift;
+        if (alt)   modifiers |= ModifierKeys.Alt;
+        if (win)   modifiers |= ModifierKeys.Win;
+
         error = null;
-        action = new AgentAction(AgentActionKind.KeyCombo, Key: primaryKey, Ctrl: ctrl, Shift: shift, Alt: alt);
+        action = new AgentAction(AgentActionKind.KeyCombo, Key: primaryKey, Modifiers: modifiers);
         return true;
     }
 

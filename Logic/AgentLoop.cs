@@ -338,7 +338,7 @@ public sealed class AgentLoop(
         AgentActionKind.LeftClick or AgentActionKind.RightClick or AgentActionKind.DoubleClick
             or AgentActionKind.MiddleClick or AgentActionKind.MoveMouse => $"\"{action.Target}\"",
         AgentActionKind.TypeText => $"\"{action.Text}\"",
-        AgentActionKind.KeyCombo => $"{(action.Ctrl ? "Ctrl+" : "")}{(action.Shift ? "Shift+" : "")}{(action.Alt ? "Alt+" : "")}{action.Key}",
+        AgentActionKind.KeyCombo => $"{(action.Modifiers.HasFlag(ModifierKeys.Ctrl) ? "Ctrl+" : "")}{(action.Modifiers.HasFlag(ModifierKeys.Shift) ? "Shift+" : "")}{(action.Modifiers.HasFlag(ModifierKeys.Alt) ? "Alt+" : "")}{(action.Modifiers.HasFlag(ModifierKeys.Win) ? "Win+" : "")}{action.Key}",
         AgentActionKind.ScrollUp or AgentActionKind.ScrollDown => action.Amount.ToString(),
         AgentActionKind.Wait => $"{action.Amount}s",
         AgentActionKind.Fail => action.Reason ?? "",

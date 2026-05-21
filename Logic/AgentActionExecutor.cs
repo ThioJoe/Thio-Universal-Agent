@@ -381,14 +381,18 @@ public sealed class AgentActionExecutor(
     private async Task<ActionExecutionResult> ExecuteKeyComboAsync(AgentAction action, List<AgentDebugEntry>? debugLog, Func<AgentDebugEntry, Task>? onProgress = null)
     {
         string key = action.Key ?? throw new InvalidOperationException("KeyCombo requires Key.");
+        bool ctrl  = action.Modifiers.HasFlag(ModifierKeys.Ctrl);
+        bool shift = action.Modifiers.HasFlag(ModifierKeys.Shift);
+        bool alt   = action.Modifiers.HasFlag(ModifierKeys.Alt);
+        bool win   = action.Modifiers.HasFlag(ModifierKeys.Win);
 
-        logger.LogInformation("Key combo: {Key} (ctrl={Ctrl}, shift={Shift}, alt={Alt}).", key, action.Ctrl, action.Shift, action.Alt);
+        logger.LogInformation("Key combo: {Key} (ctrl={Ctrl}, shift={Shift}, alt={Alt}, win={Win}).", key, ctrl, shift, alt, win);
         await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call",
-            Text: $"SendModKeyComboAsync(\"{key}\", ctrl={action.Ctrl}, shift={action.Shift}, alt={action.Alt})")).ConfigureAwait(false);
+            Text: $"SendModKeyComboAsync(\"{key}\", ctrl={ctrl}, shift={shift}, alt={alt}, win={win})")).ConfigureAwait(false);
 
-        await inputProvider.SendModKeyComboAsync(key, action.Ctrl ? true : null, action.Shift ? true : null, action.Alt ? true : null).ConfigureAwait(false);
+        await inputProvider.SendModKeyComboAsync(key, ctrl ? true : null, shift ? true : null, alt ? true : null, win ? true : null).ConfigureAwait(false);
 
-        string combo = FormatKeyCombo(key, action.Ctrl, action.Shift, action.Alt);
+        string combo = FormatKeyCombo(key, ctrl, shift, alt, win);
         return new ActionExecutionResult(true, $"Pressed {combo}.", IsTerminal: false, GoalAchieved: false);
     }
 
@@ -426,12 +430,13 @@ public sealed class AgentActionExecutor(
             await onProgress(entry).ConfigureAwait(false);
     }
 
-    private static string FormatKeyCombo(string key, bool ctrl, bool shift, bool alt)
+    private static string FormatKeyCombo(string key, bool ctrl, bool shift, bool alt, bool win)
     {
-        var parts = new List<string>(4);
+        var parts = new List<string>(5);
         if (ctrl) parts.Add("Ctrl");
         if (shift) parts.Add("Shift");
         if (alt) parts.Add("Alt");
+        if (win) parts.Add("Win");
         parts.Add(key.ToUpperInvariant());
         return string.Join('+', parts);
     }
