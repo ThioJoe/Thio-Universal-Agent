@@ -85,6 +85,40 @@ public sealed partial class CoordinatePrompter
     }
 
 
+    /// <summary>
+    /// Returns a copy of <paramref name="imageBytes"/> with a crosshair marker drawn directly at
+    /// the given absolute pixel position. Used for Direct / DirectAutoNormalize modes where there
+    /// is no grid overlay and the coordinate is already an un-normalised pixel location.
+    /// </summary>
+    private static byte[] CreateAnnotatedImageDirect(byte[] imageBytes, double pixelX, double pixelY)
+    {
+        using IImage image = LoadImage(imageBytes);
+        int w = (int)image.Width;
+        int h = (int)image.Height;
+
+        using var context = new SkiaBitmapExportContext(w, h, 1.0f);
+        ICanvas canvas = context.Canvas;
+
+        canvas.DrawImage(image, 0, 0, w, h);
+
+        float cx = (float)pixelX;
+        float cy = (float)pixelY;
+        float radius = Math.Max(10f, w / 150f);
+        float crossLen = radius * 2.5f;
+
+        canvas.StrokeColor = Colors.Red;
+        canvas.StrokeSize = Math.Max(3f, w / 500f);
+        canvas.Antialias = true;
+        canvas.DrawCircle(cx, cy, radius);
+        canvas.DrawLine(cx - crossLen, cy, cx + crossLen, cy);
+        canvas.DrawLine(cx, cy - crossLen, cx, cy + crossLen);
+
+        using var ms = new MemoryStream();
+        context.WriteToStream(ms);
+        return ms.ToArray();
+    }
+
+
     /// <summary>Returns a copy of the grid image with a crosshair marker drawn at the parsed coordinate.</summary>
     private static byte[] CreateAnnotatedImage(
         byte[] gridImageBytes,

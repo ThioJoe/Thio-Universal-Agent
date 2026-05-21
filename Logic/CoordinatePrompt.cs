@@ -394,15 +394,18 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
             throw new InvalidOperationException($"AI failed to provide valid coordinates in Direct mode. Parsing failure: {failReason?.Details}." +
                 $"\nAI response was: '{response.Text}'");
 
-        if (onStepCompleted is not null)
-            await onStepCompleted(new CoordinateStep(1, screenshotBytes, response.Text, coordinate.X, coordinate.Y, screenshotBytes))
-                .ConfigureAwait(false);
-
-        // Now un-normalize if necessary
+        // Un-normalize before annotating so the crosshair is drawn at the true pixel location.
         if (useNormalization)
         {
             (double TrueXCoord, double TrueYCoord) = UnNormalizeCoordinates(coordinate, normalizedWidth.Value, normalizedHeight.Value, originalWidth, originalHeight);
             coordinate = new GridCoordinate(TrueXCoord, TrueYCoord);
+        }
+
+        if (onStepCompleted is not null)
+        {
+            byte[] annotated = CreateAnnotatedImageDirect(screenshotBytes, coordinate.X, coordinate.Y);
+            await onStepCompleted(new CoordinateStep(1, screenshotBytes, response.Text, coordinate.X, coordinate.Y, annotated))
+                .ConfigureAwait(false);
         }
 
         return (coordinate.X, coordinate.Y);

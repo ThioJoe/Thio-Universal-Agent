@@ -222,6 +222,7 @@ internal static class TestEndpoints
                 CoordinatePrompter prompter;
                 if (!string.IsNullOrWhiteSpace(req.ApiKey))
                 {
+                    // TODO: Change the way default model is handled here instead of hard coding
                     var model = string.IsNullOrWhiteSpace(req.Model) ? config["Gemini:Model"] ?? "gemini-2.0-flash" : req.Model;
                     var overrideConfig = new ConfigurationBuilder()
                         .AddInMemoryCollection(new Dictionary<string, string?>
