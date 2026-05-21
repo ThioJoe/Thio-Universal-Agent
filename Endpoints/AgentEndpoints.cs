@@ -32,6 +32,9 @@ internal static class AgentEndpoints
             // Store the key so the next GeminiProvider instance picks it up
             configuration["Gemini:ApiKey"] = req.ApiKey;
 
+            if (!string.IsNullOrWhiteSpace(req.Model))
+                configuration["Gemini:Model"] = req.Model;
+
             string sessionId = manager.StartSession(req.Goal);
             return Results.Ok(new { sessionId });
         });
@@ -280,4 +283,4 @@ internal static class AgentEndpoints
     };
 }
 
-file record AgentStartRequest(string? Goal, string? ApiKey);
+file record AgentStartRequest(string? Goal, string? ApiKey, string? Model);

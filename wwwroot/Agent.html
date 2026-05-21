@@ -45,6 +45,8 @@
             border-bottom: 1px solid #1e1e1e;
         }
 
+        #model-input { flex: 0 0 200px; }
+
         .controls input[type="text"] {
             flex: 1;
             padding: 10px 14px;
@@ -405,6 +407,7 @@
 
 <div class="controls">
     <input type="password" id="api-key-input" placeholder="Gemini API Key" style="flex:0 0 220px;" />
+    <input type="text" id="model-input" placeholder="Model (e.g. gemini-2.0-flash)" spellcheck="false" />
     <input type="text" id="goal-input" placeholder="Enter a goal for the AI agent..." />
     <button id="btn-start">Start</button>
     <button id="btn-stop" disabled>Stop</button>
@@ -433,6 +436,7 @@
 
 <script>
     const apiKeyInput = document.getElementById('api-key-input');
+    const modelInput = document.getElementById('model-input');
     const goalInput = document.getElementById('goal-input');
     const btnStart = document.getElementById('btn-start');
     const btnStop = document.getElementById('btn-stop');
@@ -459,12 +463,28 @@
         localStorage.setItem('gemini_api_key', apiKeyInput.value);
     });
 
-    // Check debug flag on load
+    // Persist model overrides; the default value is populated from the server config below
+    modelInput.addEventListener('change', () => {
+        localStorage.setItem('agent_model', modelInput.value);
+    });
+
+    // Fetch server config and debug flag on load
     (async () => {
         try {
-            const res = await fetch('/api/agent/debug-enabled');
-            if (res.ok) {
-                const data = await res.json();
+            const [cfgRes, dbgRes] = await Promise.all([
+                fetch('/api/config'),
+                fetch('/api/agent/debug-enabled'),
+            ]);
+
+            if (cfgRes.ok) {
+                const cfg = await cfgRes.json();
+                // Use the localStorage override if the user previously changed it,
+                // otherwise fall back to whatever the server config says.
+                modelInput.value = localStorage.getItem('agent_model') || cfg.gemini?.model || '';
+            }
+
+            if (dbgRes.ok) {
+                const data = await dbgRes.json();
                 debugEnabled = !!data.enabled;
                 if (debugEnabled) {
                     document.getElementById('status-text').textContent = 'Idle (Debug Mode)';
@@ -511,12 +531,13 @@
         btnStart.disabled = true;
         btnStop.disabled = false;
         goalInput.disabled = true;
+        modelInput.disabled = true;
 
         try {
             const res = await fetch('/api/agent/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ goal, apiKey }),
+                body: JSON.stringify({ goal, apiKey, model: modelInput.value.trim() || null }),
             });
 
             if (!res.ok) {
@@ -748,6 +769,7 @@
         btnStart.disabled = false;
         btnStop.disabled = true;
         goalInput.disabled = false;
+        modelInput.disabled = false;
     }
 
     function escapeHtml(str) {

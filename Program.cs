@@ -40,5 +40,6 @@ app.UseStaticFiles();
 
 app.MapTestEndpoints();
 app.MapAgentEndpoints();
+app.MapConfigEndpoints();
 
 app.Run();
