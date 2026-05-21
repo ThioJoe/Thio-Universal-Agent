@@ -138,7 +138,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
         double? ParsedY,
         byte[] AnnotatedImage);
 
-    public async Task<(double X, double Y)> GetCoordinatesZoomAsync(
+    public async Task<(double X, double Y, double? NormX, double? NormY)> GetCoordinatesZoomAsync(
         byte[] screenshotBytes,
         string itemToIdentify,
         Func<CoordinateStep, Task>? onStepCompleted = null,
@@ -269,7 +269,8 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
                 coordinate = parsed;
         }
 
-        return CalculateScreenCoordinates(view, coordinate, divisions, divisions);
+        var (screenX, screenY) = CalculateScreenCoordinates(view, coordinate, divisions, divisions);
+        return (screenX, screenY, null, null);
     }
 
     /// <summary>
@@ -282,7 +283,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
     /// <see cref="CoordinateMode.DirectAutoNormalize"/> sends the raw screenshot in a single prompt with normalized coordinates (default).
     /// Pass <c>null</c> (the default) to use the configured value.
     /// </param>
-    public async Task<(double X, double Y)> GetCoordinatesForItemAsync(
+    public async Task<(double X, double Y, double? NormX, double? NormY)> GetCoordinatesForItemAsync(
         byte[] screenshotBytes,
         string itemToIdentify,
         CoordinateMode? mode = null,
@@ -340,7 +341,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
     /// Sends the raw screenshot to the AI in a single request and returns the absolute
     /// pixel coordinates reported by the model, with no grid overlay or zoom.
     /// </summary>
-    private async Task<(double X, double Y)> GetCoordinatesDirectAsync(
+    private async Task<(double X, double Y, double? NormX, double? NormY)> GetCoordinatesDirectAsync(
         byte[] screenshotBytes,
         string itemToIdentify,
         Func<CoordinateStep, Task>? onStepCompleted,
@@ -395,8 +396,12 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
                 $"\nAI response was: '{response.Text}'");
 
         // Un-normalize before annotating so the crosshair is drawn at the true pixel location.
+        double? normX = null;
+        double? normY = null;
         if (useNormalization)
         {
+            normX = coordinate.X;
+            normY = coordinate.Y;
             (double TrueXCoord, double TrueYCoord) = UnNormalizeCoordinates(coordinate, normalizedWidth.Value, normalizedHeight.Value, originalWidth, originalHeight);
             coordinate = new GridCoordinate(TrueXCoord, TrueYCoord);
         }
@@ -408,7 +413,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
                 .ConfigureAwait(false);
         }
 
-        return (coordinate.X, coordinate.Y);
+        return (coordinate.X, coordinate.Y, normX, normY);
     }
 
     /// <summary>Builds the prompt text for Direct mode (single-shot absolute pixel coordinates).</summary>

@@ -56,9 +56,27 @@ public enum AgentActionAltMode
     ExactCoords, 
 
     /// <summary>
-    /// Instead of providing coordinates, us the cursor's current position without moving it
+    /// Instead of providing coordinates, use the cursor's current position without moving it.
     /// </summary>
-    CurrentCursorPosition
+    CurrentCursorPosition,
+
+    /// <summary>
+    /// For <see cref="AgentActionKind.ClickDragCoords"/>: use the cursor's current position as the
+    /// drag start point; the end point comes from the parsed coordinates.
+    /// </summary>
+    CurrentCursorPositionStart,
+
+    /// <summary>
+    /// For <see cref="AgentActionKind.ClickDragCoords"/>: use the cursor's current position as the
+    /// drag end point; the start point comes from the parsed coordinates.
+    /// </summary>
+    CurrentCursorPositionEnd,
+
+    /// <summary>
+    /// For <see cref="AgentActionKind.ClickDragCoords"/>: use the cursor's current position for
+    /// both the drag start and end points (no parsed coordinates needed).
+    /// </summary>
+    CurrentCursorPositionBoth,
 }
 
 /// <summary>

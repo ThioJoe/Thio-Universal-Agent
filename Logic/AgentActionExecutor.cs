@@ -166,7 +166,7 @@ public sealed class AgentActionExecutor(
                 };
             }
 
-            (double x, double y) = await coordinatePrompter
+            (double x, double y, double? normX, double? normY) = await coordinatePrompter
                 .GetCoordinatesForItemAsync(screenshot, target, onStepCompleted: onCoordStep, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
@@ -215,8 +215,11 @@ public sealed class AgentActionExecutor(
 
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: methodCalled)).ConfigureAwait(false);
 
-            string coordStr = $"({px.ToString(CultureInfo.InvariantCulture)}, {py.ToString(CultureInfo.InvariantCulture)})";
-            return new ActionExecutionResult(true, $"{action.Kind} at {coordStr} targeting \"{target}\".", IsTerminal: false, GoalAchieved: false);
+            string trueCoordStr = $"({px.ToString(CultureInfo.InvariantCulture)}, {py.ToString(CultureInfo.InvariantCulture)})";
+            string normSuffix = normX.HasValue && normY.HasValue
+                ? $" (1000x1000 Normalized @ X={normX:F0}, Y={normY:F0})"
+                : string.Empty;
+            return new ActionExecutionResult(true, $"{action.Kind} at {trueCoordStr}{normSuffix} targeting \"{target}\".", IsTerminal: false, GoalAchieved: false);
         }
     }
 
@@ -238,14 +241,41 @@ public sealed class AgentActionExecutor(
 
         int startPx, startPy, endPx, endPy;
 
-        if (action.AltMode == AgentActionAltMode.ExactCoords)
+        if (action.AltMode == AgentActionAltMode.ExactCoords
+            || action.AltMode == AgentActionAltMode.CurrentCursorPositionStart
+            || action.AltMode == AgentActionAltMode.CurrentCursorPositionEnd
+            || action.AltMode == AgentActionAltMode.CurrentCursorPositionBoth)
         {
+            // Resolve start point
+            if (action.AltMode == AgentActionAltMode.CurrentCursorPositionStart
+                || action.AltMode == AgentActionAltMode.CurrentCursorPositionBoth)
+            {
+                var (cx, cy) = inputProvider.GetCursorPosition();
+                startPx = cx;
+                startPy = cy;
+                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag Start (Current Cursor)", Text: $"({startPx}, {startPy})")).ConfigureAwait(false);
+            }
+            else
+            {
+                (startPx, startPy) = ParseAndNormalizeCoords(source);
+            }
+
+            // Resolve end point
+            if (action.AltMode == AgentActionAltMode.CurrentCursorPositionEnd
+                || action.AltMode == AgentActionAltMode.CurrentCursorPositionBoth)
+            {
+                var (cx, cy) = inputProvider.GetCursorPosition();
+                endPx = cx;
+                endPy = cy;
+                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag End (Current Cursor)", Text: $"({endPx}, {endPy})")).ConfigureAwait(false);
+            }
+            else
+            {
+                (endPx, endPy) = ParseAndNormalizeCoords(destination);
+            }
+
             // When ExactCoords is enabled, the Target and DragTarget fields contain literal "X,Y" coordinate pairs rather than natural language descriptions.
             // This allows the AI to bypass the CoordinatePrompter when it needs to perform precise adjustments based on pixel values from the screenshot.
-            (startPx, startPy) = ParseAndNormalizeCoords(source);
-            (endPx, endPy) = ParseAndNormalizeCoords(destination);
-
-            // Should already be in the right format by this point anyway
             (int px, int py) ParseAndNormalizeCoords(string coordStr)
             {
                 string[] parts = coordStr.Split(',');
@@ -261,7 +291,7 @@ public sealed class AgentActionExecutor(
                     (double TrueXCoords, double TrueYCoords) = CoordinatePrompter.UnNormalizeCoordinates(px, py, 1000, 1000, imgWidth, imgHeight);
                     return ((int)TrueXCoords, (int)TrueYCoords);
                 }
-                
+
             } // ---- End local function -----
         }
         else
@@ -325,7 +355,7 @@ public sealed class AgentActionExecutor(
             };
         }
 
-        (double x, double y) = await coordinatePrompter
+        (double x, double y, _, _) = await coordinatePrompter
             .GetCoordinatesForItemAsync(screenshot, target, onStepCompleted: onCoordStep, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 

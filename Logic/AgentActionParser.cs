@@ -140,23 +140,23 @@ public static class AgentActionParser
         string target = StripQuotes(args);
         if (target.Length == 0)
         {
-            error = $"{kind} requires a target description (e.g. {kind.ToString().ToUpperInvariant()} \"the OK button\") or NOW keyword for current cursor location.";
-            return false;
-        }
+            error = $"{kind} requires a target description (e.g. {kind.ToString().ToUpperInvariant()} \"the OK button\") or CURRENT keyword for current cursor location.";
+                return false;
+            }
 
-        AgentActionAltMode altMode = AgentActionAltMode.None;
-        // Check if it has the NOW keyword
-        if (target.Equals("NOW", StringComparison.OrdinalIgnoreCase))
-        {
-            altMode = AgentActionAltMode.CurrentCursorPosition;
-            target = "[Current Cursor Position]"; // Clear the target since we're using the NOW keyword
-        }
-        // Check if it starts with NOW but has other things, if so it's an error
-        else if (target.StartsWith("NOW", StringComparison.OrdinalIgnoreCase))
-        {
-            error = $"{kind} cannot have additional text after the NOW keyword.";
-            return false;
-        }
+            AgentActionAltMode altMode = AgentActionAltMode.None;
+            // Check if it has the CURRENT keyword
+            if (target.Equals("CURRENT", StringComparison.OrdinalIgnoreCase))
+            {
+                altMode = AgentActionAltMode.CurrentCursorPosition;
+                target = "[Current Cursor Position]"; // Clear the target since we're using the CURRENT keyword
+            }
+            // Check if it starts with CURRENT but has other things, if so it's an error
+            else if (target.StartsWith("CURRENT", StringComparison.OrdinalIgnoreCase))
+            {
+                error = $"{kind} cannot have additional text after the CURRENT keyword.";
+                return false;
+            }
 
         error = null;
         action = new AgentAction(kind, Target: target, AltMode: altMode);
@@ -184,44 +184,104 @@ public static class AgentActionParser
             // Split on spaces first
             string[] parts = args["COORDS ".Length..].Split(' ', splitOpts);
 
-            // If there's 2 parts, we can assume each part is a pair.
-            // If there's 4, we can assume the model added a space after each comma.
-            if (parts.Length == 2 || parts.Length == 4)
+            // Each coordinate pair is either an "X,Y" token or the keyword CURRENT.
+            // Supported part counts:
+            //   2 — "X1,Y1 X2,Y2"  or  "CURRENT X2,Y2"  or  "X1,Y1 CURRENT"  or  "CURRENT CURRENT"
+            //   4 — model added a space after comma: "X1, Y1 X2, Y2"
+            //        (CURRENT produces only 1 token so length-4 only applies when both pairs are numeric)
+
+            bool pair1IsCurrent = parts.Length >= 1 && parts[0].Equals("CURRENT", StringComparison.OrdinalIgnoreCase);
+            bool pair2IsCurrent = false;
+            string? pair1Str = null;   // "X1,Y1" — null when CURRENT
+            string? pair2Str = null;   // "X2,Y2" — null when CURRENT
+
+            if (parts.Length == 2)
             {
-                string[] pair1 = parts[0].Split(',', splitOpts);
-                string[] pair2;
-
-                if (parts.Length == 2)
-                    pair2 = parts[1].Split(',', splitOpts);
-                else
-                    pair2 = parts[2].Split(',', splitOpts);
-
-                if (pair1.Length == 2 && pair2.Length == 2
-                    && int.TryParse(pair1[0], out int x1) 
-                    && int.TryParse(pair1[1], out int y1)
-                    && int.TryParse(pair2[0], out int x2) 
-                    && int.TryParse(pair2[1], out int y2)
-                    )
+                pair1IsCurrent = parts[0].Equals("CURRENT", StringComparison.OrdinalIgnoreCase);
+                pair2IsCurrent = parts[1].Equals("CURRENT", StringComparison.OrdinalIgnoreCase);
+                if (!pair1IsCurrent) pair1Str = parts[0];
+                if (!pair2IsCurrent) pair2Str = parts[1];
+            }
+            else if (parts.Length == 4)
+            {
+                // Model wrote "X1, Y1 X2, Y2" — rejoin comma-separated halves
+                pair1Str = $"{parts[0]}{parts[1]}";
+                pair2Str = $"{parts[2]}{parts[3]}";
+            }
+            else if (parts.Length == 3)
+            {
+                // One side is CURRENT, the other used "X, Y" (space after comma)
+                if (parts[0].Equals("CURRENT", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Now we have the formatted coordinates
-                    source = $"{x1},{y1}";
-                    destination = $"{x2},{y2}";
-
-                    error = null;
-                    action = new AgentAction(AgentActionKind.ClickDragCoords, Target: source, DragTarget: destination, AltMode: AgentActionAltMode.ExactCoords);
-                    return true;
+                    pair1IsCurrent = true;
+                    pair2Str = $"{parts[1]}{parts[2]}";
                 }
                 else
                 {
-                    error = $"Invalid COORDS format. Expected 'CLICK_DRAG COORDS X1,Y1 X2,Y2' (e.g. CLICK_DRAG COORDS 100,200 300,400).";
-                    return false;
+                    pair1Str = $"{parts[0]}{parts[1]}";
+                    pair2IsCurrent = true;
                 }
             }
             else
             {
-                error = $"Invalid COORDS format. Expected 'CLICK_DRAG COORDS X1,Y1 X2,Y2' (e.g. CLICK_DRAG COORDS 100,200 300,400).";
+                error = $"Invalid COORDS format. Expected 'CLICK_DRAG COORDS X1,Y1 X2,Y2' with optional CURRENT for either pair (e.g. CLICK_DRAG COORDS CURRENT 300,400).";
                 return false;
             }
+
+            // Parse whichever pairs are not CURRENT
+            int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+            if (!pair1IsCurrent)
+            {
+                string[] p1 = pair1Str!.Split(',', splitOpts);
+                if (p1.Length != 2 || !int.TryParse(p1[0], out x1) || !int.TryParse(p1[1], out y1))
+                {
+                    error = $"Invalid COORDS format for start pair '{pair1Str}'. Expected 'CLICK_DRAG COORDS X1,Y1 X2,Y2'.";
+                    return false;
+                }
+            }
+            if (!pair2IsCurrent)
+            {
+                string[] p2 = pair2Str!.Split(',', splitOpts);
+                if (p2.Length != 2 || !int.TryParse(p2[0], out x2) || !int.TryParse(p2[1], out y2))
+                {
+                    error = $"Invalid COORDS format for end pair '{pair2Str}'. Expected 'CLICK_DRAG COORDS X1,Y1 X2,Y2'.";
+                    return false;
+                }
+            }
+
+            // Determine AltMode and build the action
+            AgentActionAltMode dragAltMode;
+            string sourceTarget;
+            string destTarget;
+
+            if (pair1IsCurrent && pair2IsCurrent)
+            {
+                dragAltMode = AgentActionAltMode.CurrentCursorPositionBoth;
+                sourceTarget = "[Current Cursor Position]";
+                destTarget   = "[Current Cursor Position]";
+            }
+            else if (pair1IsCurrent)
+            {
+                dragAltMode  = AgentActionAltMode.CurrentCursorPositionStart;
+                sourceTarget = "[Current Cursor Position]";
+                destTarget   = $"{x2},{y2}";
+            }
+            else if (pair2IsCurrent)
+            {
+                dragAltMode  = AgentActionAltMode.CurrentCursorPositionEnd;
+                sourceTarget = $"{x1},{y1}";
+                destTarget   = "[Current Cursor Position]";
+            }
+            else
+            {
+                dragAltMode  = AgentActionAltMode.ExactCoords;
+                sourceTarget = $"{x1},{y1}";
+                destTarget   = $"{x2},{y2}";
+            }
+
+            error = null;
+            action = new AgentAction(AgentActionKind.ClickDragCoords, Target: sourceTarget, DragTarget: destTarget, AltMode: dragAltMode);
+            return true;
         }
         else
         {

@@ -247,7 +247,7 @@ internal static class TestEndpoints
                     : null;
                 var steps = new List<object>();
 
-                var (x, y) = await prompter.GetCoordinatesForItemAsync(
+                var (x, y, normX, normY) = await prompter.GetCoordinatesForItemAsync(
                     screenshotBytes,
                     req.ItemToIdentify,
                     mode: coordinateMode,
@@ -266,7 +266,7 @@ internal static class TestEndpoints
                     },
                     cancellationToken: ct);
 
-                return Results.Ok(new { Steps = steps, FinalScreenX = x, FinalScreenY = y });
+                return Results.Ok(new { Steps = steps, FinalScreenX = x, FinalScreenY = y, FinalNormX = normX, FinalNormY = normY });
             }
             catch (Exception ex)
             {

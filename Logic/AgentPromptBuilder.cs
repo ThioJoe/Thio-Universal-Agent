@@ -21,14 +21,14 @@ public static class AgentPromptBuilder
             AVAILABLE TOOLS
             ═══════════════════════════════════
 
-            LEFT_CLICK <NOW or description>
-            RIGHT_CLICK <NOW or description>
-            DOUBLE_CLICK <NOW or description>
-            MIDDLE_CLICK <NOW or description>
+            LEFT_CLICK <CURRENT or description>
+            RIGHT_CLICK <CURRENT or description>
+            DOUBLE_CLICK <CURRENT or description>
+            MIDDLE_CLICK <CURRENT or description>
               Clicks using the mouse button type specified.
-              NOW clicks at the current cursor location without moving the mouse.
-              Otherwise, it will locate the described UI element on screen and left-clicks it.
-              Example: LEFT_CLICK NOW
+              CURRENT clicks at the current cursor location without moving the mouse.
+              Otherwise, it will locate the described UI element on screen and clicks it.
+              Example: LEFT_CLICK CURRENT
               Example: RIGHT_CLICK "start menu button"
 
             MOVE_MOUSE "description of where to move"
@@ -41,6 +41,7 @@ public static class AgentPromptBuilder
 
             CLICK_DRAG COORDS X1,Y1 X2,Y2
                 Left-clicks and holds at the coordinates X1,Y1, drags to X2,Y2, then releases. Use when dragging between two exact points rather than described UI elements.
+                Either coordinate pair can be replaced with CURRENT to use the cursor's present position (e.g. CLICK_DRAG COORDS CURRENT 300,400 or CLICK_DRAG COORDS 100,200 CURRENT).
 
             TYPE_TEXT "text to type"
               Types the given text using the keyboard. A text field must already have focus from a prior click.
@@ -88,7 +89,7 @@ public static class AgentPromptBuilder
             8. Use DONE only when the screen visually confirms the goal is complete.
             9. If you are stuck after several attempts, use FAIL with a clear explanation.
             10. When describing a target, use language only (not coordinates), unless a tool has a COORDS mode you are using.
-            11. If using a tool's COORDS mode (available), give the coordinates normalized within 1000x1000 coordinates regardless of original aspect ratio or resolution.
+            11. If using a tool's COORDS mode (available), give the coordinates normalized within 1000x1000 coordinates regardless of original aspect ratio or resolution. The true coordinates will be automatically calculated from this.
 
             ═══════════════════════════════════
             YOUR GOAL
