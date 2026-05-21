@@ -156,29 +156,81 @@ public static class AgentActionParser
         [NotNullWhen(false)] out string? error)
     {
         action = null;
-        const string usage = "CLICK_DRAG requires From and To targets (e.g. CLICK_DRAG\nFrom: \"the file icon\"\nTo: \"the trash folder\").";
+        const string usage = "CLICK_DRAG requires From and To targets (e.g. CLICK_DRAG\nFrom: \"the file icon\"\nTo: \"the trash folder\")"
+            + ", or the keyword COORDS followed by X1,Y1 X2,Y2 (e.g. CLICK_DRAG COORDS 100,200 300,400).";
 
         string? source = null;
         string? destination = null;
 
-        string[] lines = args.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (string line in lines)
-        {
-            if (line.StartsWith("From:", StringComparison.OrdinalIgnoreCase))
-                source = StripQuotes(line["From:".Length..].Trim());
-            else if (line.StartsWith("To:", StringComparison.OrdinalIgnoreCase))
-                destination = StripQuotes(line["To:".Length..].Trim());
-        }
+        StringSplitOptions splitOpts = StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries;
 
-        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(destination))
+        // First check if it's a COORDS string
+        if (args.StartsWith("COORDS ", StringComparison.OrdinalIgnoreCase))
         {
-            error = usage;
-            return false;
-        }
+            // Split on spaces first
+            string[] parts = args["COORDS ".Length..].Split(' ', splitOpts);
 
-        error = null;
-        action = new AgentAction(AgentActionKind.ClickDrag, Target: source, DragTarget: destination);
-        return true;
+            // If there's 2 parts, we can assume each part is a pair.
+            // If there's 4, we can assume the model added a space after each comma.
+            if (parts.Length == 2 || parts.Length == 4)
+            {
+                string[] pair1 = parts[0].Split(',', splitOpts);
+                string[] pair2;
+
+                if (parts.Length == 2)
+                    pair2 = parts[1].Split(',', splitOpts);
+                else
+                    pair2 = parts[2].Split(',', splitOpts);
+
+                if (pair1.Length == 2 && pair2.Length == 2
+                    && int.TryParse(pair1[0], out int x1) 
+                    && int.TryParse(pair1[1], out int y1)
+                    && int.TryParse(pair2[0], out int x2) 
+                    && int.TryParse(pair2[1], out int y2)
+                    )
+                {
+                    // Now we have the formatted coordinates
+                    source = $"{x1},{y1}";
+                    destination = $"{x2},{y2}";
+
+                    error = null;
+                    action = new AgentAction(AgentActionKind.ClickDragCoords, Target: source, DragTarget: destination, ExactCoords: true);
+                    return true;
+                }
+                else
+                {
+                    error = $"Invalid COORDS format. Expected 'CLICK_DRAG COORDS X1,Y1 X2,Y2' (e.g. CLICK_DRAG COORDS 100,200 300,400).";
+                    return false;
+                }
+            }
+            else
+            {
+                error = $"Invalid COORDS format. Expected 'CLICK_DRAG COORDS X1,Y1 X2,Y2' (e.g. CLICK_DRAG COORDS 100,200 300,400).";
+                return false;
+            }
+        }
+        else
+        {
+
+            string[] lines = args.Split(['\r', '\n'], splitOpts);
+            foreach (string line in lines)
+            {
+                if (line.StartsWith("From:", StringComparison.OrdinalIgnoreCase))
+                    source = StripQuotes(line["From:".Length..].Trim());
+                else if (line.StartsWith("To:", StringComparison.OrdinalIgnoreCase))
+                    destination = StripQuotes(line["To:".Length..].Trim());
+            }
+
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(destination))
+            {
+                error = usage;
+                return false;
+            }
+
+            error = null;
+            action = new AgentAction(AgentActionKind.ClickDrag, Target: source, DragTarget: destination, ExactCoords: false);
+            return true;
+        }
     }
 
     /// <summary>Parses TYPE_TEXT whose argument is the quoted text to type.</summary>

@@ -272,6 +272,7 @@ internal static class AgentEndpoints
         AgentActionKind.MiddleClick => $"MIDDLE_CLICK \"{action.Target}\"",
         AgentActionKind.MoveMouse => $"MOVE_MOUSE \"{action.Target}\"",
         AgentActionKind.ClickDrag => $"CLICK_DRAG\nFrom: \"{action.Target}\"\nTo: \"{action.DragTarget}\"",
+        AgentActionKind.ClickDragCoords => $"CLICK_DRAG_COORDS\nFrom: {action.Target}\nTo: {action.DragTarget}",
         AgentActionKind.TypeText => $"TYPE_TEXT \"{action.Text}\"",
         AgentActionKind.KeyCombo => $"KEY_COMBO {(action.Ctrl ? "ctrl+" : "")}{(action.Shift ? "shift+" : "")}{(action.Alt ? "alt+" : "")}{action.Key}",
         AgentActionKind.ScrollUp => $"SCROLL_UP {action.Amount}",

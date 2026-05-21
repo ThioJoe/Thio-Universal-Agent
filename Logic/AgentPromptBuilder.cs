@@ -41,6 +41,9 @@ public static class AgentPromptBuilder
             To: "description of where to drop"
               Left-clicks and holds the element described in From, drags to the element described in To, then releases.
 
+            CLICK_DRAG COORDS X1,Y1 X2,Y2
+                Left-clicks and holds at the coordinates X1,Y1, drags to X2,Y2, then releases. Use when dragging between two exact points rather than described UI elements.
+
             TYPE_TEXT "text to type"
               Types the given text using the keyboard. A text field must already have focus from a prior click.
 
@@ -86,6 +89,8 @@ public static class AgentPromptBuilder
             7. Use WAIT when you see a loading spinner, progress bar, or animation that hasn't finished.
             8. Use DONE only when the screen visually confirms the goal is complete.
             9. If you are stuck after several attempts, use FAIL with a clear explanation.
+            10. When describing a target, use language only (not coordinates), unless a tool has a COORDS mode you are using.
+            11. If using a tool's COORDS mode (available), give the coordinates normalized within 1000x1000 coordinates regardless of original aspect ratio or resolution.
 
             ═══════════════════════════════════
             YOUR GOAL

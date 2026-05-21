@@ -1,5 +1,6 @@
-using System.Globalization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.Graphics;
+using System.Globalization;
 
 namespace Thio_Universal_Agent.Logic;
 
@@ -39,10 +40,9 @@ public sealed class AgentActionExecutor(
         {
             ActionExecutionResult result = action.Kind switch
             {
-                AgentActionKind.LeftClick or AgentActionKind.RightClick or AgentActionKind.DoubleClick
-                    or AgentActionKind.MiddleClick or AgentActionKind.MoveMouse
+                AgentActionKind.LeftClick or AgentActionKind.RightClick or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick or AgentActionKind.MoveMouse
                     => await ExecuteClickAsync(action, currentScreenshot, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
-                AgentActionKind.ClickDrag
+                AgentActionKind.ClickDrag or AgentActionKind.ClickDragCoords
                     => await ExecuteClickDragAsync(action, currentScreenshot, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
                 AgentActionKind.TypeText => await ExecuteTypeTextAsync(action, debugLog, onProgress).ConfigureAwait(false),
                 AgentActionKind.KeyCombo => await ExecuteKeyComboAsync(action, debugLog, onProgress).ConfigureAwait(false),
@@ -161,8 +161,12 @@ public sealed class AgentActionExecutor(
 
     /// <summary>Resolves source and destination targets to coordinates, then performs a click-drag.</summary>
     private async Task<ActionExecutionResult> ExecuteClickDragAsync(
-        AgentAction action, byte[] screenshot, CancellationToken cancellationToken,
-        List<AgentDebugEntry>? debugLog, Func<AgentDebugEntry, Task>? onProgress = null)
+        AgentAction action, 
+        byte[] screenshot, 
+        CancellationToken cancellationToken,
+        List<AgentDebugEntry>? debugLog,
+        Func<AgentDebugEntry, Task>? onProgress = null
+        )
     {
         string source = action.Target ?? throw new InvalidOperationException("ClickDrag requires a Target (source).");
         string destination = action.DragTarget ?? throw new InvalidOperationException("ClickDrag requires a DragTarget (destination).");
@@ -171,18 +175,49 @@ public sealed class AgentActionExecutor(
         logger.LogInformation("Resolving drag source coordinates for: \"{Target}\"", source);
         await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag Source Resolution", Text: $"Resolving source: \"{source}\"")).ConfigureAwait(false);
 
-        (int startPx, int startPy) = await ResolveTargetCoordinatesAsync(screenshot, source, cancellationToken, debugLog, onProgress)
-            .ConfigureAwait(false);
+        int startPx, startPy, endPx, endPy;
 
-        logger.LogInformation("Drag source at ({X}, {Y}) for \"{Target}\".", startPx, startPy, source);
-        await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag Source Coordinates", Text: $"({startPx}, {startPy})")).ConfigureAwait(false);
+        if (action.ExactCoords == true)
+        {
+            // When ExactCoords is true, the Target and DragTarget fields contain literal "X,Y" coordinate pairs rather than natural language descriptions.
+            // This allows the AI to bypass the CoordinatePrompter when it needs to perform precise adjustments based on pixel values from the screenshot.
+            (startPx, startPy) = ParseAndNormalizeCoords(source);
+            (endPx, endPy) = ParseAndNormalizeCoords(destination);
 
-        // Resolve destination coordinates
-        logger.LogInformation("Resolving drag destination coordinates for: \"{Target}\"", destination);
-        await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag Destination Resolution", Text: $"Resolving destination: \"{destination}\"")).ConfigureAwait(false);
+            // Should already be in the right format by this point anyway
+            (int px, int py) ParseAndNormalizeCoords(string coordStr)
+            {
+                string[] parts = coordStr.Split(',');
+                if (parts.Length != 2
+                    || !int.TryParse(parts[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int px)
+                    || !int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int py))
+                {
+                    throw new FormatException($"Invalid coordinate format: \"{coordStr}\". Expected format: \"X,Y\" with integer values.");
+                }
+                else
+                {
+                    (int imgWidth, int imgHeight) = CoordinatePrompter.GetImageResolution(screenshot);
+                    (double TrueXCoords, double TrueYCoords) = CoordinatePrompter.UnNormalizeCoordinates(px, py, 1000, 1000, imgWidth, imgHeight);
+                    return ((int)TrueXCoords, (int)TrueYCoords);
+                }
+                
+            } // ---- End local function -----
+        }
+        else
+        {
+            (startPx, startPy) = await ResolveTargetCoordinatesAsync(screenshot, source, cancellationToken, debugLog, onProgress)
+                .ConfigureAwait(false);
 
-        (int endPx, int endPy) = await ResolveTargetCoordinatesAsync(screenshot, destination, cancellationToken, debugLog, onProgress)
-            .ConfigureAwait(false);
+            logger.LogInformation("Drag source at ({X}, {Y}) for \"{Target}\".", startPx, startPy, source);
+            await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag Source Coordinates", Text: $"({startPx}, {startPy})")).ConfigureAwait(false);
+
+            // Resolve destination coordinates
+            logger.LogInformation("Resolving drag destination coordinates for: \"{Target}\"", destination);
+            await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag Destination Resolution", Text: $"Resolving destination: \"{destination}\"")).ConfigureAwait(false);
+
+            (endPx, endPy) = await ResolveTargetCoordinatesAsync(screenshot, destination, cancellationToken, debugLog, onProgress)
+                .ConfigureAwait(false);
+        }
 
         logger.LogInformation("Drag destination at ({X}, {Y}) for \"{Target}\".", endPx, endPy, destination);
         await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag Destination Coordinates", Text: $"({endPx}, {endPy})")).ConfigureAwait(false);

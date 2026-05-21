@@ -725,16 +725,18 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
     /// <summary>
     /// Converts normalized grid coordinates to their original given a resolution
     /// </summary>
-    private static (double TrueXCoords, double TrueYCoords) UnNormalizeCoordinates(
-        GridCoordinate coordinate,
-        int normalizedWidth,
-        int normalizedHeight,
-        int originalWidth,
-        int originalHeight
-        )
+    private static (double TrueXCoords, double TrueYCoords) UnNormalizeCoordinates(GridCoordinate coordinate, int normalizedWidth, int normalizedHeight, int originalWidth,int originalHeight)
     {
-        double TrueXCoord = (coordinate.X / normalizedWidth) * originalWidth;
-        double TrueYCoord = (coordinate.Y / normalizedHeight) * originalHeight;
+        // Round to nearest whole first
+        int xRound = (int)Math.Round(coordinate.X);
+        int yRound = (int)Math.Round(coordinate.Y);
+        return UnNormalizeCoordinates(xRound, yRound, normalizedWidth, normalizedHeight, originalWidth, originalHeight);
+    }
+
+    public static (double TrueXCoords, double TrueYCoords) UnNormalizeCoordinates(int x, int y, int normalizedWidth, int normalizedHeight, int originalWidth, int originalHeight)
+    {
+        double TrueXCoord = (x / normalizedWidth) * originalWidth;
+        double TrueYCoord = (y / normalizedHeight) * originalHeight;
 
         // Round to nearest whole number
         TrueXCoord = Math.Round(TrueXCoord);

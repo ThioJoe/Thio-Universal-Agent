@@ -7,6 +7,21 @@ namespace Thio_Universal_Agent.Logic;
 
 public sealed partial class CoordinatePrompter
 {
+    public static (int width, int height) GetImageResolution(byte[] screenshotBytes)
+    {
+        ArgumentNullException.ThrowIfNull(screenshotBytes);
+
+        using IImage source = LoadImage(screenshotBytes);
+        return ((int)source.Width, (int)source.Height);
+    }
+
+    public static (int width, int height) GetImageResolution(IImage image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        return ((int)image.Width, (int)image.Height);
+    }
+
     /// <summary>Creates a <see cref="ViewRegion"/> covering the full source image.</summary>
     private static ViewRegion CreateFullView(IImage source)
     {
