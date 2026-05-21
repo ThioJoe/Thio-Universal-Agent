@@ -42,15 +42,28 @@ public sealed class AgentActionExecutor(
             {
                 AgentActionKind.LeftClick or AgentActionKind.RightClick or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick or AgentActionKind.MoveMouse
                     => await ExecuteClickAsync(action, currentScreenshot, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
+
                 AgentActionKind.ClickDrag or AgentActionKind.ClickDragCoords
                     => await ExecuteClickDragAsync(action, currentScreenshot, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
-                AgentActionKind.TypeText => await ExecuteTypeTextAsync(action, debugLog, onProgress).ConfigureAwait(false),
-                AgentActionKind.KeyCombo => await ExecuteKeyComboAsync(action, debugLog, onProgress).ConfigureAwait(false),
+
+                AgentActionKind.TypeText 
+                    => await ExecuteTypeTextAsync(action, debugLog, onProgress).ConfigureAwait(false),
+
+                AgentActionKind.KeyCombo 
+                    => await ExecuteKeyComboAsync(action, debugLog, onProgress).ConfigureAwait(false),
+
                 AgentActionKind.ScrollUp or AgentActionKind.ScrollDown
                     => await ExecuteScrollAsync(action, debugLog, onProgress).ConfigureAwait(false),
-                AgentActionKind.Wait => await ExecuteWaitAsync(action, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
-                AgentActionKind.Done => new ActionExecutionResult(true, "Agent declared goal achieved.", IsTerminal: true, GoalAchieved: true),
-                AgentActionKind.Fail => new ActionExecutionResult(true, $"Agent declared failure: {action.Reason}", IsTerminal: true, GoalAchieved: false),
+
+                AgentActionKind.Wait 
+                    => await ExecuteWaitAsync(action, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
+
+                AgentActionKind.Done 
+                    => new ActionExecutionResult(true, "Agent declared goal achieved.", IsTerminal: true, GoalAchieved: true),
+
+                AgentActionKind.Fail 
+                    => new ActionExecutionResult(true, $"Agent declared failure: {action.Reason}", IsTerminal: true, GoalAchieved: false),
+
                 _ => new ActionExecutionResult(false, $"Unknown action kind: {action.Kind}", IsTerminal: false, GoalAchieved: false),
             };
 
@@ -71,92 +84,140 @@ public sealed class AgentActionExecutor(
 
     /// <summary>Resolves the target to coordinates, then dispatches to the correct click/move method.</summary>
     private async Task<ActionExecutionResult> ExecuteClickAsync(
-        AgentAction action, byte[] screenshot, CancellationToken cancellationToken,
-        List<AgentDebugEntry>? debugLog, Func<AgentDebugEntry, Task>? onProgress = null)
+        AgentAction action, 
+        byte[] screenshot, 
+        CancellationToken cancellationToken,
+        List<AgentDebugEntry>? debugLog, 
+        Func<AgentDebugEntry, Task>? onProgress = null
+        )
     {
         string target = action.Target ?? throw new InvalidOperationException($"{action.Kind} requires a Target.");
 
-        logger.LogInformation("Resolving coordinates for: \"{Target}\"", target);
-        await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Coordinate Resolution", Text: $"Resolving target: \"{target}\"")).ConfigureAwait(false);
-
-        // When testing, capture every intermediate CoordinatePrompter step
-        Func<CoordinatePrompter.CoordinateStep, Task>? onCoordStep = null;
-        if (debugLog is not null || onProgress is not null)
+        // If the alt mode is CurrentCursorPosition, skip coordinate resolution and click in place.
+        if (action.AltMode == AgentActionAltMode.CurrentCursorPosition)
         {
-            onCoordStep = async coordStep =>
+            var (curX, curY) = inputProvider.GetCursorPosition();
+            logger.LogInformation("{ActionKind} at current cursor position ({X}, {Y}).", action.Kind, curX, curY);
+            await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Current Cursor Position", Text: $"({curX}, {curY})")).ConfigureAwait(false);
+
+            string cursorMethodCalled;
+            switch (action.Kind)
             {
-                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry(
-                    $"Coord Step {coordStep.StepNumber}: Grid Image",
-                    ImageBase64: Convert.ToBase64String(coordStep.GridImage))).ConfigureAwait(false);
+                case AgentActionKind.LeftClick:
+                    await inputProvider.LeftClick_MonitorCoords(curX, curY).ConfigureAwait(false);
+                    cursorMethodCalled = $"LeftClick_MonitorCoords({curX}, {curY})";
+                    break;
 
-                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry(
-                    $"Coord Step {coordStep.StepNumber}: AI Response",
-                    Text: coordStep.AiResponseText)).ConfigureAwait(false);
+                case AgentActionKind.RightClick:
+                    await inputProvider.RightClick_MonitorCoords(curX, curY).ConfigureAwait(false);
+                    cursorMethodCalled = $"RightClick_MonitorCoords({curX}, {curY})";
+                    break;
 
-                if (coordStep.ParsedX.HasValue && coordStep.ParsedY.HasValue)
+                case AgentActionKind.DoubleClick:
+                    await inputProvider.DoubleClick_MonitorCoords(curX, curY).ConfigureAwait(false);
+                    cursorMethodCalled = $"DoubleClick_MonitorCoords({curX}, {curY})";
+                    break;
+
+                case AgentActionKind.MiddleClick:
+                    await inputProvider.MiddleMouse_MonitorCoords(curX, curY).ConfigureAwait(false);
+                    cursorMethodCalled = $"MiddleMouse_MonitorCoords({curX}, {curY})";
+                    break;
+
+                default:
+                    cursorMethodCalled = "N/A";
+                    break;
+            }
+
+            await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: cursorMethodCalled)).ConfigureAwait(false);
+
+            string cursorCoordStr = $"({curX.ToString(CultureInfo.InvariantCulture)}, {curY.ToString(CultureInfo.InvariantCulture)})";
+            return new ActionExecutionResult(true, $"{action.Kind} at current cursor position {cursorCoordStr}.", IsTerminal: false, GoalAchieved: false);
+        }
+        // If we need to resolve the coordinates from natural language description
+        else
+        {
+            logger.LogInformation("Resolving coordinates for: \"{Target}\"", target);
+            await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Coordinate Resolution", Text: $"Resolving target: \"{target}\"")).ConfigureAwait(false);
+
+            // When testing, capture every intermediate CoordinatePrompter step
+            Func<CoordinatePrompter.CoordinateStep, Task>? onCoordStep = null;
+            if (debugLog is not null || onProgress is not null)
+            {
+                onCoordStep = async coordStep =>
                 {
                     await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry(
-                        $"Coord Step {coordStep.StepNumber}: Parsed Coordinates",
-                        Text: $"({coordStep.ParsedX:F1}, {coordStep.ParsedY:F1})")).ConfigureAwait(false);
-                }
+                        $"Coord Step {coordStep.StepNumber}: Grid Image",
+                        ImageBase64: Convert.ToBase64String(coordStep.GridImage))).ConfigureAwait(false);
 
-                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry(
-                    $"Coord Step {coordStep.StepNumber}: Annotated Image",
-                    ImageBase64: Convert.ToBase64String(coordStep.AnnotatedImage))).ConfigureAwait(false);
-            };
+                    await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry(
+                        $"Coord Step {coordStep.StepNumber}: AI Response",
+                        Text: coordStep.AiResponseText)).ConfigureAwait(false);
+
+                    if (coordStep.ParsedX.HasValue && coordStep.ParsedY.HasValue)
+                    {
+                        await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry(
+                            $"Coord Step {coordStep.StepNumber}: Parsed Coordinates",
+                            Text: $"({coordStep.ParsedX:F1}, {coordStep.ParsedY:F1})")).ConfigureAwait(false);
+                    }
+
+                    await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry(
+                        $"Coord Step {coordStep.StepNumber}: Annotated Image",
+                        ImageBase64: Convert.ToBase64String(coordStep.AnnotatedImage))).ConfigureAwait(false);
+                };
+            }
+
+            (double x, double y) = await coordinatePrompter
+                .GetCoordinatesForItemAsync(screenshot, target, onStepCompleted: onCoordStep, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            // Shift image-pixel coordinates to absolute screen coordinates.
+            // On multi-monitor setups the virtual screen may start at a negative offset
+            // (e.g. a secondary monitor positioned to the left of the primary).
+            var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
+            int px = (int)Math.Round(x) + originX;
+            int py = (int)Math.Round(y) + originY;
+
+            logger.LogInformation("{ActionKind} at ({X}, {Y}) for \"{Target}\".", action.Kind, px, py, target);
+            await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Final Resolved Coordinates", Text: $"({px}, {py})")).ConfigureAwait(false);
+
+            string methodCalled;
+            switch (action.Kind)
+            {
+                case AgentActionKind.LeftClick:
+                    await inputProvider.LeftClick_MonitorCoords(px, py).ConfigureAwait(false);
+                    methodCalled = $"LeftClick_MonitorCoords({px}, {py})";
+                    break;
+
+                case AgentActionKind.RightClick:
+                    await inputProvider.RightClick_MonitorCoords(px, py).ConfigureAwait(false);
+                    methodCalled = $"RightClick_MonitorCoords({px}, {py})";
+                    break;
+
+                case AgentActionKind.DoubleClick:
+                    await inputProvider.DoubleClick_MonitorCoords(px, py).ConfigureAwait(false);
+                    methodCalled = $"DoubleClick_MonitorCoords({px}, {py})";
+                    break;
+
+                case AgentActionKind.MiddleClick:
+                    await inputProvider.MiddleMouse_MonitorCoords(px, py).ConfigureAwait(false);
+                    methodCalled = $"MiddleMouse_MonitorCoords({px}, {py})";
+                    break;
+
+                case AgentActionKind.MoveMouse:
+                    await inputProvider.MoveMouse_MonitorCoords(px, py).ConfigureAwait(false);
+                    methodCalled = $"MoveMouse_MonitorCoords({px}, {py})";
+                    break;
+
+                default:
+                    methodCalled = "N/A";
+                    break;
+            }
+
+            await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: methodCalled)).ConfigureAwait(false);
+
+            string coordStr = $"({px.ToString(CultureInfo.InvariantCulture)}, {py.ToString(CultureInfo.InvariantCulture)})";
+            return new ActionExecutionResult(true, $"{action.Kind} at {coordStr} targeting \"{target}\".", IsTerminal: false, GoalAchieved: false);
         }
-
-        (double x, double y) = await coordinatePrompter
-            .GetCoordinatesForItemAsync(screenshot, target, onStepCompleted: onCoordStep, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        // Shift image-pixel coordinates to absolute screen coordinates.
-        // On multi-monitor setups the virtual screen may start at a negative offset
-        // (e.g. a secondary monitor positioned to the left of the primary).
-        var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
-        int px = (int)Math.Round(x) + originX;
-        int py = (int)Math.Round(y) + originY;
-
-        logger.LogInformation("{ActionKind} at ({X}, {Y}) for \"{Target}\".", action.Kind, px, py, target);
-        await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Final Resolved Coordinates", Text: $"({px}, {py})")).ConfigureAwait(false);
-
-        string methodCalled;
-        switch (action.Kind)
-        {
-            case AgentActionKind.LeftClick:
-                await inputProvider.LeftClick_MonitorCoords(px, py).ConfigureAwait(false);
-                methodCalled = $"LeftClick_MonitorCoords({px}, {py})";
-                break;
-
-            case AgentActionKind.RightClick:
-                await inputProvider.RightClick_MonitorCoords(px, py).ConfigureAwait(false);
-                methodCalled = $"RightClick_MonitorCoords({px}, {py})";
-                break;
-
-            case AgentActionKind.DoubleClick:
-                await inputProvider.DoubleClick_MonitorCoords(px, py).ConfigureAwait(false);
-                methodCalled = $"DoubleClick_MonitorCoords({px}, {py})";
-                break;
-
-            case AgentActionKind.MiddleClick:
-                await inputProvider.MiddleMouse_MonitorCoords(px, py).ConfigureAwait(false);
-                methodCalled = $"MiddleMouse_MonitorCoords({px}, {py})";
-                break;
-
-            case AgentActionKind.MoveMouse:
-                await inputProvider.MoveMouse_MonitorCoords(px, py).ConfigureAwait(false);
-                methodCalled = $"MoveMouse_MonitorCoords({px}, {py})";
-                break;
-
-            default:
-                methodCalled = "N/A";
-                break;
-        }
-
-        await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: methodCalled)).ConfigureAwait(false);
-
-        string coordStr = $"({px.ToString(CultureInfo.InvariantCulture)}, {py.ToString(CultureInfo.InvariantCulture)})";
-        return new ActionExecutionResult(true, $"{action.Kind} at {coordStr} targeting \"{target}\".", IsTerminal: false, GoalAchieved: false);
     }
 
     /// <summary>Resolves source and destination targets to coordinates, then performs a click-drag.</summary>
@@ -177,9 +238,9 @@ public sealed class AgentActionExecutor(
 
         int startPx, startPy, endPx, endPy;
 
-        if (action.ExactCoords == true)
+        if (action.AltMode == AgentActionAltMode.ExactCoords)
         {
-            // When ExactCoords is true, the Target and DragTarget fields contain literal "X,Y" coordinate pairs rather than natural language descriptions.
+            // When ExactCoords is enabled, the Target and DragTarget fields contain literal "X,Y" coordinate pairs rather than natural language descriptions.
             // This allows the AI to bypass the CoordinatePrompter when it needs to perform precise adjustments based on pixel values from the screenshot.
             (startPx, startPy) = ParseAndNormalizeCoords(source);
             (endPx, endPy) = ParseAndNormalizeCoords(destination);

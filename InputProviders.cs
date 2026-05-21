@@ -28,6 +28,11 @@ namespace Thio_Universal_Agent
         Task ClickDrag_MonitorCoords(int x_start, int y_start, int x_end, int y_end);
         Task ScrollUp(int multiple);
         Task ScrollDown(int multiple);
+
+        /// <summary>
+        /// Returns the current cursor position in absolute screen coordinates.
+        /// </summary>
+        (int X, int Y) GetCursorPosition() => (0, 0);
     }
 
 

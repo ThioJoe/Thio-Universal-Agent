@@ -660,7 +660,8 @@
             img.addEventListener('click', () => img.classList.toggle('expanded'));
         });
 
-        stepLog.prepend(entry);
+        stepLog.appendChild(entry);
+        stepLog.scrollTop = stepLog.scrollHeight;
 
         if (msg.isTerminal) {
             const status = msg.goalAchieved ? 'completed' : 'failed';

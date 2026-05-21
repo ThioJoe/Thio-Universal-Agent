@@ -21,17 +21,15 @@ public static class AgentPromptBuilder
             AVAILABLE TOOLS
             ═══════════════════════════════════
 
-            LEFT_CLICK "description of what to click"
-              Locates the described UI element on screen and left-clicks it.
-
-            RIGHT_CLICK "description of what to click"
-              Locates the described UI element on screen and right-clicks it.
-
-            DOUBLE_CLICK "description of what to double-click"
-              Locates the described UI element on screen and double-clicks it.
-
-            MIDDLE_CLICK "description of what to click"
-              Locates the described UI element on screen and middle-clicks it.
+            LEFT_CLICK <NOW or description>
+            RIGHT_CLICK <NOW or description>
+            DOUBLE_CLICK <NOW or description>
+            MIDDLE_CLICK <NOW or description>
+              Clicks using the mouse button type specified.
+              NOW clicks at the current cursor location without moving the mouse.
+              Otherwise, it will locate the described UI element on screen and left-clicks it.
+              Example: LEFT_CLICK NOW
+              Example: RIGHT_CLICK "start menu button"
 
             MOVE_MOUSE "description of where to move"
               Moves the mouse cursor to the described UI element without clicking.

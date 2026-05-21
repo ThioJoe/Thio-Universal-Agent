@@ -735,8 +735,8 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, IConfigur
 
     public static (double TrueXCoords, double TrueYCoords) UnNormalizeCoordinates(int x, int y, int normalizedWidth, int normalizedHeight, int originalWidth, int originalHeight)
     {
-        double TrueXCoord = (x / normalizedWidth) * originalWidth;
-        double TrueYCoord = (y / normalizedHeight) * originalHeight;
+        double TrueXCoord = ((double)x / normalizedWidth) * originalWidth;
+        double TrueYCoord = ((double)y / normalizedHeight) * originalHeight;
 
         // Round to nearest whole number
         TrueXCoord = Math.Round(TrueXCoord);

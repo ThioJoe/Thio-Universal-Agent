@@ -46,6 +46,21 @@ public enum AgentActionKind
     Fail,
 }
 
+public enum AgentActionAltMode
+{
+    None,
+
+    /// <summary>
+    /// For ClickDrag, becomes ClickDragCoords to provide exact coordiantes. <see cref="AgentActionKind.ClickDragCoords"/>
+    /// </summary>
+    ExactCoords, 
+
+    /// <summary>
+    /// Instead of providing coordinates, us the cursor's current position without moving it
+    /// </summary>
+    CurrentCursorPosition
+}
+
 /// <summary>
 /// A single parsed action from the AI's response.
 /// Only the fields relevant to <see cref="Kind"/> are populated.
@@ -55,7 +70,6 @@ public enum AgentActionKind
 /// <param name="DragTarget">Natural-language description of the drag destination (for <see cref="AgentActionKind.ClickDrag"/>) or X,Y pair if using exact coordinates. <see cref="AgentActionKind.ClickDragCoords"/>.</param>
 /// <param name="Text">The text payload (for <see cref="AgentActionKind.TypeText"/>).</param>
 /// <param name="Key">The primary key name (for <see cref="AgentActionKind.KeyCombo"/>).</param>
-/// <param name="ExactCoords">Whether the Target and DragTarget fields contain exact coordinates rather than natural-language descriptions.</param>
 /// <param name="Ctrl">Whether Ctrl is held (for <see cref="AgentActionKind.KeyCombo"/>).</param>
 /// <param name="Shift">Whether Shift is held (for <see cref="AgentActionKind.KeyCombo"/>).</param>
 /// <param name="Alt">Whether Alt is held (for <see cref="AgentActionKind.KeyCombo"/>).</param>
@@ -67,7 +81,7 @@ public sealed record AgentAction(
     string? DragTarget = null,
     string? Text = null,
     string? Key = null,
-    bool ExactCoords = false,
+    AgentActionAltMode AltMode = AgentActionAltMode.None,
     bool Ctrl = false,
     bool Shift = false,
     bool Alt = false,

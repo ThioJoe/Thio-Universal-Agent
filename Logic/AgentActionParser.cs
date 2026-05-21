@@ -140,12 +140,26 @@ public static class AgentActionParser
         string target = StripQuotes(args);
         if (target.Length == 0)
         {
-            error = $"{kind} requires a target description (e.g. {kind.ToString().ToUpperInvariant()} \"the OK button\").";
+            error = $"{kind} requires a target description (e.g. {kind.ToString().ToUpperInvariant()} \"the OK button\") or NOW keyword for current cursor location.";
+            return false;
+        }
+
+        AgentActionAltMode altMode = AgentActionAltMode.None;
+        // Check if it has the NOW keyword
+        if (target.Equals("NOW", StringComparison.OrdinalIgnoreCase))
+        {
+            altMode = AgentActionAltMode.CurrentCursorPosition;
+            target = "[Current Cursor Position]"; // Clear the target since we're using the NOW keyword
+        }
+        // Check if it starts with NOW but has other things, if so it's an error
+        else if (target.StartsWith("NOW", StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"{kind} cannot have additional text after the NOW keyword.";
             return false;
         }
 
         error = null;
-        action = new AgentAction(kind, Target: target);
+        action = new AgentAction(kind, Target: target, AltMode: altMode);
         return true;
     }
 
@@ -194,7 +208,7 @@ public static class AgentActionParser
                     destination = $"{x2},{y2}";
 
                     error = null;
-                    action = new AgentAction(AgentActionKind.ClickDragCoords, Target: source, DragTarget: destination, ExactCoords: true);
+                    action = new AgentAction(AgentActionKind.ClickDragCoords, Target: source, DragTarget: destination, AltMode: AgentActionAltMode.ExactCoords);
                     return true;
                 }
                 else
@@ -228,7 +242,7 @@ public static class AgentActionParser
             }
 
             error = null;
-            action = new AgentAction(AgentActionKind.ClickDrag, Target: source, DragTarget: destination, ExactCoords: false);
+            action = new AgentAction(AgentActionKind.ClickDrag, Target: source, DragTarget: destination, AltMode: AgentActionAltMode.None);
             return true;
         }
     }

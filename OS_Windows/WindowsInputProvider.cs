@@ -659,6 +659,12 @@ namespace Thio_Universal_Agent.OS_Windows
             await Task.CompletedTask;
         }
 
+        public (int X, int Y) GetCursorPosition()
+        {
+            GetCursorPos(out POINT pt);
+            return (pt.X, pt.Y);
+        }
+
         private void ScrollMouse_WithSendInput_Async(int scrollAmount)
         {
             INPUT[] inputs = new INPUT[1];
