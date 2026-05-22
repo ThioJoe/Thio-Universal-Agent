@@ -762,12 +762,9 @@
         const goal = goalInput.value.trim();
         if (!goal) return;
 
-        const apiKey = apiKeyInput.value.trim();
-        if (!apiKey) {
-            showFinalResult('error', 'Please enter your Gemini API key.');
-            apiKeyInput.focus();
-            return;
-        }
+        const cfg = getStoredConfig();
+        const apiKey = cfg?.gemini?.apiKey || null;
+        const model  = cfg?.gemini?.model  || null;
 
         // Reset UI
         stepsData = [];
@@ -803,7 +800,6 @@
         btnPause.classList.remove('resuming');
         btnStop.disabled = false;
         goalInput.disabled = true;
-        modelInput.disabled = true;
         monitorSelect.disabled = true;
 
         try {
@@ -813,7 +809,7 @@
                 body: JSON.stringify({
                     goal,
                     apiKey,
-                    model: modelInput.value.trim() || null,
+                    model,
                     monitorIndex: monitorSelect.value !== '' ? parseInt(monitorSelect.value, 10) : null,
                 }),
             });
