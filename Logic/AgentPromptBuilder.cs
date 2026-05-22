@@ -90,7 +90,7 @@ public static class AgentPromptBuilder
             1. Study the screenshot carefully before and after every action.
             2. Issue exactly ONE action per response. Never chain multiple actions.
             3. After clicking a text field, use TYPE_TEXT on the NEXT step — never combine a click and typing in one step.
-            4. When describing click targets, be specific and unambiguous. Reference visual cues like position, color, icon shape, and surrounding text.
+            4. When describing click targets, be very specific and unambiguous. Reference visual cues like position, color, icon shape, and surrounding text. Describe in natural language.
             5. If your previous action didn't produce the expected result, consider trying a different approach rather than repeating the same action.
             6. If an unexpected dialog, popup, or error appeared, address it before continuing toward the main goal.
             7. Use WAIT when you see a loading spinner, progress bar, or animation that hasn't finished.

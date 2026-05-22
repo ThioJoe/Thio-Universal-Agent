@@ -711,7 +711,9 @@ namespace Thio_Universal_Agent.OS_Windows
 
         public (int X, int Y) GetCursorPosition()
         {
+            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             GetCursorPos(out POINT pt);
+            SetThreadDpiAwarenessContext(originalContext);
             return (pt.X, pt.Y);
         }
 

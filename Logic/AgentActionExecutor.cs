@@ -294,7 +294,9 @@ public sealed class AgentActionExecutor(
                 {
                     (int imgWidth, int imgHeight) = CoordinatePrompter.GetImageResolution(screenshot);
                     (double TrueXCoords, double TrueYCoords) = CoordinatePrompter.UnNormalizeCoordinates(px, py, 1000, 1000, imgWidth, imgHeight);
-                    return ((int)TrueXCoords, (int)TrueYCoords);
+
+                    var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
+                    return ((int)TrueXCoords + originX, (int)TrueYCoords + originY);
                 }
 
             } // ---- End local function -----
