@@ -330,7 +330,7 @@ public sealed class AgentLoop(
             .ContinueConversationAsync(oldConversation, summarizePrompt, ct)
             .ConfigureAwait(false);
 
-        string summary = summaryResponse.Success
+        string summary = (summaryResponse.Success && !string.IsNullOrWhiteSpace(summaryResponse.Text))
             ? summaryResponse.Text
             : "Previous progress summary unavailable.";
 
