@@ -33,37 +33,6 @@
         header a { font-size: 13px; color: #4a9eff; text-decoration: none; }
         header a:hover { text-decoration: underline; }
 
-        /* ---- Config bar ---- */
-        #config-bar {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            padding: 8px 20px;
-            background-color: #161616;
-            border-bottom: 1px solid #2a2a2a;
-            flex-shrink: 0;
-            flex-wrap: wrap;
-        }
-
-        #config-bar label { font-size: 12px; color: #888; white-space: nowrap; }
-
-        #config-bar input {
-            background-color: #2d2d2d;
-            color: #e0e0e0;
-            border: 1px solid #404040;
-            border-radius: 4px;
-            padding: 5px 10px;
-            font-size: 13px;
-            font-family: inherit;
-        }
-
-        #config-bar input:focus { outline: none; border-color: #4a9eff; }
-
-        #apiKeyInput { width: 300px; }
-        #modelInput  { width: 180px; }
-
-        .config-hint { font-size: 11px; color: #555; }
-
         /* ---- Messages area ---- */
         #messages {
             flex: 1;
@@ -265,16 +234,10 @@
 
     <header>
         <h1>🧪 Chat Test</h1>
-        <a href="/">← Viewport</a>
+        <a href="/">← Home</a>
+        <span id="model-badge" style="font-size:11px;color:#4a6a8a;font-family:'Cascadia Code','Consolas',monospace;margin-left:8px;"></span>
+        <a href="/Config.html" style="margin-left:auto;font-size:12px;color:#888;text-decoration:none;border:1px solid #333;border-radius:4px;padding:4px 10px;" title="Open Configuration">⚙ Config</a>
     </header>
-
-    <div id="config-bar">
-        <label for="apiKeyInput">API Key</label>
-        <input type="password" id="apiKeyInput" placeholder="Leave blank to use server config" autocomplete="off" spellcheck="false" />
-        <label for="modelInput">Model</label>
-        <input type="text" id="modelInput" value="gemini-2.0-flash" spellcheck="false" />
-        <span class="config-hint">Key is stored in localStorage and sent per-request — never persisted server-side.</span>
-    </div>
 
     <div id="messages"></div>
 
@@ -293,26 +256,40 @@
     </div>
 
     <script>
+        // @ts-nocheck
         const messagesEl    = document.getElementById('messages');
         const promptInput   = document.getElementById('promptInput');
         const sendBtn       = document.getElementById('sendBtn');
         const clearBtn      = document.getElementById('clearBtn');
-        const apiKeyInput   = document.getElementById('apiKeyInput');
-        const modelInput    = document.getElementById('modelInput');
         const fileInput     = document.getElementById('fileInput');
         const attachBtn     = document.getElementById('attachBtn');
         const imgPreviewRow = document.getElementById('img-preview-row');
         const imgThumbnail  = document.getElementById('img-thumbnail');
         const removeImgBtn  = document.getElementById('removeImgBtn');
 
+        const CONFIG_KEY = 'tua_config_v1';
+        function getStoredConfig() {
+            try { return JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}'); } catch { return {}; }
+        }
+
+        // Show current model in header badge
+        (async () => {
+            try {
+                const cfg = getStoredConfig();
+                const storedModel = cfg?.gemini?.model;
+                if (storedModel) {
+                    document.getElementById('model-badge').textContent = storedModel;
+                } else {
+                    const r = await fetch('/api/config');
+                    if (r.ok) {
+                        const d = await r.json();
+                        if (d.gemini?.model) document.getElementById('model-badge').textContent = d.gemini.model;
+                    }
+                }
+            } catch {}
+        })();
+
         let currentConversationId = null;
-
-        // Restore config from localStorage so it survives page refreshes.
-        apiKeyInput.value = localStorage.getItem('test_apiKey') || '';
-        modelInput.value  = localStorage.getItem('test_model')  || 'gemini-2.0-flash';
-
-        apiKeyInput.addEventListener('change', () => localStorage.setItem('test_apiKey', apiKeyInput.value));
-        modelInput.addEventListener('change',  () => localStorage.setItem('test_model',  modelInput.value));
 
         appendSystem('Session started. Ctrl+Enter to send.');
 
@@ -426,14 +403,16 @@
             appendBubble('user', prompt, imageSnapshot?.dataUrl ?? null);
             const thinkingRow = appendThinking();
 
+            const cfg = getStoredConfig();
+
             try {
                 const response = await fetch('/api/test/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         prompt,
-                        apiKey:         apiKeyInput.value.trim() || null,
-                        model:          modelInput.value.trim()  || null,
+                        apiKey:         cfg?.gemini?.apiKey || null,
+                        model:          cfg?.gemini?.model  || null,
                         imageBase64:    imageSnapshot?.base64    ?? null,
                         imageMimeType:  imageSnapshot?.mimeType  ?? null,
                         conversationId: currentConversationId

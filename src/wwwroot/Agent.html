@@ -45,8 +45,6 @@
             border-bottom: 1px solid #1e1e1e;
         }
 
-        #model-input { flex: 0 0 200px; }
-
         #monitor-select {
             flex: 0 0 190px;
             padding: 10px 10px;
@@ -556,16 +554,19 @@
 <header>
     <a href="/">&larr; Home</a>
     <h1>Agent Control</h1>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:14px;">
+        <span id="model-badge" style="font-size:11px;color:#4a6a8a;font-family:'Cascadia Code','Consolas',monospace;"></span>
+        <a href="/Config.html" style="font-size:12px;color:#888;text-decoration:none;border:1px solid #333;border-radius:4px;padding:4px 10px;" title="Open Configuration">⚙ Config</a>
+    </div>
 </header>
 
 <div class="controls">
-    <input type="password" id="api-key-input" placeholder="Gemini API Key" style="flex:0 0 220px;" />
-    <input type="text" id="model-input" placeholder="Model (e.g. gemini-2.0-flash)" spellcheck="false" />
     <select id="monitor-select" title="Monitor to capture"></select>
     <input type="text" id="goal-input" placeholder="Enter a goal for the AI agent..." />
     <button id="btn-start">Start</button>
     <button id="btn-pause" disabled>Pause</button>
     <button id="btn-stop" disabled>Stop</button>
+    <button id="btn-new-session" style="background:#2a2a2a;color:#888;border:1px solid #444;border-radius:6px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;margin-left:auto;" title="Stop current session and clear output">New Session</button>
 </div>
 
 <div class="status-bar">
@@ -598,13 +599,13 @@
 </main>
 
 <script>
-    const apiKeyInput = document.getElementById('api-key-input');
-    const modelInput = document.getElementById('model-input');
+    // @ts-nocheck
     const monitorSelect = document.getElementById('monitor-select');
     const goalInput = document.getElementById('goal-input');
     const btnStart = document.getElementById('btn-start');
     const btnPause = document.getElementById('btn-pause');
     const btnStop = document.getElementById('btn-stop');
+    const btnNewSession = document.getElementById('btn-new-session');
     const statusDot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
     const stepCounter = document.getElementById('step-counter');
@@ -620,6 +621,14 @@
     const promptPreview = document.getElementById('prompt-preview');
     const promptFull = document.getElementById('prompt-full');
     const elapsedTimer = document.getElementById('elapsed-timer');
+    const modelBadge = document.getElementById('model-badge');
+
+    const SESSION_STORE_KEY = 'tua_session_id';
+    const CONFIG_STORE_KEY  = 'tua_config_v1';
+
+    function getStoredConfig() {
+        try { return JSON.parse(localStorage.getItem(CONFIG_STORE_KEY) || '{}'); } catch { return {}; }
+    }
 
     let sessionId = null;
     let eventSource = null;
@@ -631,18 +640,7 @@
     let sessionStartTime = null;
     let elapsedIntervalId = null;
 
-    // Restore API key from localStorage
-    apiKeyInput.value = localStorage.getItem('gemini_api_key') || '';
-    apiKeyInput.addEventListener('input', () => {
-        localStorage.setItem('gemini_api_key', apiKeyInput.value);
-    });
-
-    // Persist model overrides; the default value is populated from the server config below
-    modelInput.addEventListener('change', () => {
-        localStorage.setItem('agent_model', modelInput.value);
-    });
-
-    // Fetch server config and debug flag on load
+    // ── Boot: fetch server config + try to resume a stored session ──────────
     (async () => {
         try {
             const [cfgRes, dbgRes, monRes] = await Promise.all([
@@ -653,31 +651,102 @@
 
             if (cfgRes.ok) {
                 const cfg = await cfgRes.json();
-                // Use the localStorage override if the user previously changed it,
-                // otherwise fall back to whatever the server config says.
-                modelInput.value = localStorage.getItem('agent_model') || cfg.gemini?.model || '';
+                const storedModel = getStoredConfig()?.gemini?.model;
+                const model = storedModel || cfg.gemini?.model || '';
+                if (model) modelBadge.textContent = model;
             }
 
             if (dbgRes.ok) {
                 const data = await dbgRes.json();
                 debugEnabled = !!data.enabled;
-                if (debugEnabled) {
-                    document.getElementById('status-text').textContent = 'Idle (Debug Mode)';
-                }
+                if (debugEnabled) statusText.textContent = 'Idle (Debug Mode)';
             }
 
-            // Populate monitor selector
             monitorSelect.innerHTML = '<option value="">All Monitors</option>';
             if (monRes.ok) {
                 const monitors = await monRes.json();
                 for (const m of monitors) {
                     const opt = document.createElement('option');
                     opt.value = m.index;
-                    opt.textContent = `Monitor ${m.index}${m.isPrimary ? ' (Primary)' : ''} — ${m.width}×${m.height}`;
+                    opt.textContent = `Monitor ${m.index}${m.isPrimary ? ' (Primary)' : ''} — ${m.width}\u00d7${m.height}`;
                     monitorSelect.appendChild(opt);
                 }
             }
         } catch { /* non-critical */ }
+
+        // ── Session recovery ────────────────────────────────────────────────
+        const storedSid = localStorage.getItem(SESSION_STORE_KEY);
+        if (storedSid) {
+            try {
+                const statusRes = await fetch(`/api/agent/${storedSid}/status`);
+                if (!statusRes.ok) throw new Error('not found');
+                const status = await statusRes.json();
+
+                sessionId   = storedSid;
+                sessionGoal = status.goal || '';
+
+                goalInput.value = sessionGoal;
+                promptPreview.textContent = sessionGoal.length > 80 ? sessionGoal.slice(0, 80) + '\u2026' : sessionGoal;
+                promptFull.textContent = sessionGoal;
+                promptBanner.style.display = '';
+
+                const isActive = status.status === 'Running';
+                const isPausedStatus = status.isPaused;
+
+                // Replay completed steps from the server
+                const stepsRes = await fetch(`/api/agent/${storedSid}/steps`);
+                if (stepsRes.ok) {
+                    const rawSteps = await stepsRes.json();
+                    // Build minimal step objects matching the SSE shape so we can reuse handleStep
+                    for (const s of rawSteps) {
+                        const synthetic = {
+                            stepNumber: s.stepNumber,
+                            thought: s.thought,
+                            action: s.action,
+                            result: s.result,
+                            durationMs: s.durationMs,
+                            isTerminal: false,
+                        };
+                        replayStep(synthetic);
+                    }
+                }
+
+                stepCounter.textContent = status.stepCount ? `Step ${status.stepCount}` : '';
+
+                if (isActive) {
+                    sessionStartTime = status.startedAt ? new Date(status.startedAt).getTime() : Date.now();
+                    clearInterval(elapsedIntervalId);
+                    elapsedIntervalId = setInterval(() => {
+                        elapsedTimer.textContent = formatElapsed(Date.now() - sessionStartTime);
+                    }, 500);
+
+                    setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
+                    btnStart.disabled  = true;
+                    btnPause.disabled  = false;
+                    btnStop.disabled   = false;
+                    goalInput.disabled = true;
+                    monitorSelect.disabled = true;
+
+                    if (isPausedStatus) {
+                        isPaused = true;
+                        btnPause.textContent = 'Resume';
+                        btnPause.classList.add('resuming');
+                        setStatus('paused', 'Paused');
+                    }
+
+                    connectSSE(storedSid);
+                } else {
+                    const sk = status.status.toLowerCase();
+                    if (status.totalDurationMs) elapsedTimer.textContent = formatElapsed(status.totalDurationMs);
+                    setStatus(sk, status.status);
+                    if (status.finalResult) showFinalResult(sk, status.finalResult);
+                    resetControls();
+                }
+            } catch {
+                // Session expired (server restarted or id stale) — silently clear
+                localStorage.removeItem(SESSION_STORE_KEY);
+            }
+        }
     })();
 
     goalInput.addEventListener('keydown', (e) => {
@@ -953,6 +1022,7 @@
         setStatus(statusKey, msg.status);
         if (msg.finalResult) showFinalResult(statusKey, msg.finalResult);
         stopElapsedTimer(msg.totalDurationMs);
+        localStorage.removeItem(SESSION_STORE_KEY);
         cleanup();
     }
 
@@ -1057,7 +1127,6 @@
         btnPause.classList.remove('resuming');
         btnStop.disabled = true;
         goalInput.disabled = false;
-        modelInput.disabled = false;
         monitorSelect.disabled = false;
     }
 

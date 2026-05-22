@@ -77,8 +77,8 @@ public class GeminiConfig : IAiProviderConfig
     [ConfigField("Thinking Budget", Description = "Extended-thinking token budget (Gemini 2.x flash models only)")]
     public int? ThinkingBudget { get; set; }
 
-    [ConfigField("Thinking Level", Description = "Pre-set thinking intensity: minimal / low / medium / high (Gemini 3.x models)")]
-    public string? ThinkingLevel { get; set; }
+    [ConfigField("Thinking Level", Description = "Pre-set thinking intensity (Gemini 3.x models)")]
+    public GeminiThinkingLevel? ThinkingLevel { get; set; }
 
     // ── Constructors ──────────────────────────────────────────────────────────
 
@@ -100,7 +100,8 @@ public class GeminiConfig : IAiProviderConfig
         if (int.TryParse(section["MaxOutputTokens"], out var mOut))           MaxOutputTokens = mOut;
         if (int.TryParse(section["CoordinateMaxOutputTokens"], out var cOut)) CoordinateMaxOutputTokens = cOut;
         if (int.TryParse(section["ThinkingBudget"], out var tb))              ThinkingBudget = tb;
-        ThinkingLevel = section["ThinkingLevel"];
+        if (Enum.TryParse<GeminiThinkingLevel>(section["ThinkingLevel"], ignoreCase: true, out var tl))
+            ThinkingLevel = tl;
     }
 }
 

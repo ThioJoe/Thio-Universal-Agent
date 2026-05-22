@@ -65,9 +65,7 @@ public sealed class GeminiProvider(HttpClient httpClient, AppConfig appConfig, I
 
         if (gemini.Model.Contains("gemini-3", StringComparison.OrdinalIgnoreCase))
         {
-            string? thinkingLevel = gemini.ThinkingLevel?.ToLower();
-            // Validate against GeminiThinkingLevel enum values
-            if (!string.IsNullOrWhiteSpace(thinkingLevel) && Enum.TryParse<GeminiThinkingLevel>(thinkingLevel, true, out var level))
+            if (gemini.ThinkingLevel is { } level)
                 thinkingConfig = new GeminiThinkingConfig(null, level.ToString());
         }
         else

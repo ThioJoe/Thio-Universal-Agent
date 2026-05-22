@@ -31,11 +31,12 @@ internal static class AgentEndpoints
             if (string.IsNullOrWhiteSpace(req.Goal))
                 return Results.BadRequest(new { error = "Goal is required." });
 
-            if (string.IsNullOrWhiteSpace(req.ApiKey))
-                return Results.BadRequest(new { error = "API key is required." });
+            // Use the per-request key if provided; otherwise fall back to whatever is already in AppConfig.
+            var resolvedKey = string.IsNullOrWhiteSpace(req.ApiKey) ? appConfig.Gemini.ApiKey : req.ApiKey;
+            if (string.IsNullOrWhiteSpace(resolvedKey))
+                return Results.BadRequest(new { error = "No API key found. Set one in Configuration or enter it here." });
 
-            // Store the key so the next GeminiProvider instance picks it up
-            appConfig.Gemini.ApiKey = req.ApiKey;
+            appConfig.Gemini.ApiKey = resolvedKey;
 
             if (!string.IsNullOrWhiteSpace(req.Model))
                 appConfig.Gemini.Model = req.Model;
@@ -58,6 +59,7 @@ internal static class AgentEndpoints
 
             return Results.Ok(new
             {
+                goal = session.Goal,
                 status = session.Status.ToString(),
                 isPaused = session.IsPaused,
                 stepCount = session.Steps.Count,

@@ -38,7 +38,7 @@ internal static class ConfigEndpoints
                     TopK:                     appConfig.Gemini.TopK,
                     CoordinateMaxOutputTokens: appConfig.Gemini.CoordinateMaxOutputTokens,
                     ThinkingBudget:           appConfig.Gemini.ThinkingBudget,
-                    ThinkingLevel:            appConfig.Gemini.ThinkingLevel
+                    ThinkingLevel:            appConfig.Gemini.ThinkingLevel?.ToString()
                 )
             );
 

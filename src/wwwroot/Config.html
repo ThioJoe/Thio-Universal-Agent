@@ -402,7 +402,7 @@
                         : 'text';
             if (field.type === 'float') { input.step = 'any'; input.min = '0'; }
             if (field.type === 'int')   { input.step = '1';   input.min = '0'; }
-            input.placeholder = field.nullable ? '(inherit server default)' : '';
+            input.placeholder = field.nullable ? 'server default' : '';
         }
 
         input.dataset.section = sectionKey;
@@ -597,6 +597,9 @@
             input.checked = !!value;
         } else if (input.tagName === 'SELECT') {
             input.value = value ?? '';
+        } else if (type === 'password') {
+            input.value = '';
+            input.placeholder = value ? '(set — enter to change)' : '(not set)';
         } else {
             input.value = (value !== null && value !== undefined) ? String(value) : '';
         }
