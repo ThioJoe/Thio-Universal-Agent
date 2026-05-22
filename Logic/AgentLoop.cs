@@ -27,6 +27,9 @@ public sealed class AgentLoop(
     private readonly int _settleDelayMs =
         int.TryParse(configuration["Agent:SettleDelayMs"], out var d) && d > 0 ? d : DefaultSettleDelayMs;
 
+    private readonly bool _enableContextReset =
+        !bool.TryParse(configuration["Agent:EnableContextReset"], out var r) || r;
+
     /// <summary>
     /// Runs the agent loop to completion for the given session.
     /// This method is intended to be called on a background task.
@@ -164,7 +167,7 @@ public sealed class AgentLoop(
                 screenshot = screenProvider.CaptureScreen();
 
                 // Episodic context reset to prevent payload bloat
-                if (step % ContextResetInterval == 0)
+                if (_enableContextReset && step % ContextResetInterval == 0)
                 {
                     conversation = await ResetContextAsync(conversation, session.Goal, screenshot, ct, carryOverDebug).ConfigureAwait(false);
                 }
