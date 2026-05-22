@@ -1,4 +1,5 @@
 // Program.cs
+using Microsoft.Extensions.FileProviders;
 using Thio_Universal_Agent;
 using Thio_Universal_Agent.AI_API;
 using Thio_Universal_Agent.AI_API.Gemini;
@@ -38,8 +39,9 @@ var app = builder.Build();
 
 AgentPromptBuilder.SystemProvider = app.Services.GetService<ISystemProvider>();
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
+var embeddedProvider = new EmbeddedFileProvider(typeof(Program).Assembly, "Thio_Universal_Agent.wwwroot");
+app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = embeddedProvider });
+app.UseStaticFiles(new StaticFileOptions { FileProvider = embeddedProvider });
 
 app.Lifetime.ApplicationStarted.Register(() =>
 {

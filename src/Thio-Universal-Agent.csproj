@@ -7,10 +7,17 @@
     <RootNamespace>Thio_Universal_Agent</RootNamespace>
   </PropertyGroup>
 
+  <!-- Embed all wwwroot files into the assembly so the app works as a true single file -->
+  <ItemGroup>
+    <EmbeddedResource Include="wwwroot\**\*" />
+    <Content Remove="wwwroot\**\*" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Graphics" Version="10.0.41" />
     <PackageReference Include="Microsoft.Maui.Graphics.Skia" Version="10.0.41" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.0" />
   </ItemGroup>
 
 </Project>
