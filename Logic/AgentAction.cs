@@ -131,12 +131,14 @@ public sealed record AgentDebugEntry(string Label, string? Text = null, string? 
 /// <param name="IsTerminal">True for <see cref="AgentActionKind.Done"/> and <see cref="AgentActionKind.Fail"/>.</param>
 /// <param name="GoalAchieved">True only when the agent declares <see cref="AgentActionKind.Done"/>.</param>
 /// <param name="DebugEntries">Detailed debug entries from execution (only when testing is enabled).</param>
+/// <param name="CoordResolutionMs">Milliseconds spent on AI coordinate resolution, if applicable.</param>
 public sealed record ActionExecutionResult(
     bool Success,
     string Summary,
     bool IsTerminal,
     bool GoalAchieved,
-    IReadOnlyList<AgentDebugEntry>? DebugEntries = null);
+    IReadOnlyList<AgentDebugEntry>? DebugEntries = null,
+    long? CoordResolutionMs = null);
 
 /// <summary>
 /// Lightweight preview emitted right after the AI's response is parsed but before execution begins.
@@ -156,6 +158,21 @@ public sealed record AgentStepPreview(int StepNumber, string Thought, AgentActio
 /// <param name="Entry">The debug entry being emitted.</param>
 public sealed record AgentSubStep(int StepNumber, AgentDebugEntry Entry);
 
+/// <summary>
+/// Wall-clock timing breakdown for the distinct phases of a single agent step.
+/// </summary>
+/// <param name="AiResponseMs">Time for the AI call that produced the response consumed by this step
+/// (the initial call for step 1, or the feedback call from the previous step).</param>
+/// <param name="ParseMs">Time to parse (and optionally retry) the AI response.</param>
+/// <param name="ExecutionMs">Time to fully execute the action, including any coordinate resolution.</param>
+/// <param name="CoordResolutionMs">Time spent inside the AI coordinate-resolution sub-call;
+/// <see langword="null"/> for actions that do not require coordinate resolution.</param>
+public sealed record StepTimings(
+    long AiResponseMs,
+    long ParseMs,
+    long ExecutionMs,
+    long? CoordResolutionMs);
+
 /// <summary>A single completed step in the agent's execution history.</summary>
 /// <param name="StepNumber">1-based index of this step.</param>
 /// <param name="Thought">The AI's reasoning for this step.</param>
@@ -164,6 +181,7 @@ public sealed record AgentSubStep(int StepNumber, AgentDebugEntry Entry);
 /// <param name="Timestamp">When this step completed.</param>
 /// <param name="DurationMs">Wall-clock milliseconds from parse-start to execution-end for this step.</param>
 /// <param name="DebugLog">Verbose debug entries for this step (only when testing is enabled).</param>
+/// <param name="Timings">Per-phase timing breakdown for this step.</param>
 public sealed record AgentStep(
     int StepNumber,
     string Thought,
@@ -171,4 +189,5 @@ public sealed record AgentStep(
     ActionExecutionResult Result,
     DateTimeOffset Timestamp,
     long DurationMs,
-    IReadOnlyList<AgentDebugEntry>? DebugLog = null);
+    IReadOnlyList<AgentDebugEntry>? DebugLog = null,
+    StepTimings? Timings = null);

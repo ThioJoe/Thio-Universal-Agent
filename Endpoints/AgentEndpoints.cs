@@ -272,6 +272,13 @@ internal static class AgentEndpoints
             step.Result.GoalAchieved,
             step.Timestamp,
             step.DurationMs,
+            timings = step.Timings is null ? null : new
+            {
+                aiResponseMs      = step.Timings.AiResponseMs,
+                parseMs           = step.Timings.ParseMs,
+                executionMs       = step.Timings.ExecutionMs,
+                coordResolutionMs = step.Timings.CoordResolutionMs,
+            },
             debugLog = step.DebugLog?.Select(e => new { e.Label, e.Text, e.ImageBase64 }),
         };
 

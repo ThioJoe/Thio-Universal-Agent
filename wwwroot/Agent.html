@@ -522,6 +522,26 @@
             font-family: 'Cascadia Code', 'Consolas', monospace;
         }
 
+        .step-timings {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 6px;
+        }
+
+        .timing-pill {
+            font-size: 10px;
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+            padding: 1px 7px;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+
+        .timing-ai    { background: #0d2035; color: #4a9eff; border: 1px solid #1a3a5c; }
+        .timing-parse { background: #1a1a0a; color: #a0a030; border: 1px solid #3a3a10; }
+        .timing-exec  { background: #0d200d; color: #4a9a4a; border: 1px solid #1a4a1a; }
+        .timing-coord { background: #200d20; color: #b060c0; border: 1px solid #4a1a4a; }
+
         #elapsed-timer {
             margin-left: auto;
             font-family: 'Cascadia Code', 'Consolas', monospace;
@@ -868,6 +888,18 @@
             <div class="step-result">${escapeHtml(msg.result)}</div>
         `;
 
+        if (msg.timings) {
+            const t = msg.timings;
+            let timingsHtml = '<div class="step-timings">';
+            timingsHtml += `<span class="timing-pill timing-ai" title="Time for AI to respond">AI&nbsp;${formatDuration(t.aiResponseMs)}</span>`;
+            timingsHtml += `<span class="timing-pill timing-parse" title="Time to parse AI response">Parse&nbsp;${formatDuration(t.parseMs)}</span>`;
+            timingsHtml += `<span class="timing-pill timing-exec" title="Time to execute action">Exec&nbsp;${formatDuration(t.executionMs)}</span>`;
+            if (t.coordResolutionMs != null)
+                timingsHtml += `<span class="timing-pill timing-coord" title="Coord resolution (subset of Exec)">Coord&nbsp;${formatDuration(t.coordResolutionMs)}</span>`;
+            timingsHtml += '</div>';
+            html += timingsHtml;
+        }
+
         // Debug panel
         if (debugEnabled && msg.debugLog && msg.debugLog.length > 0) {
             html += renderDebugLog(msg.debugLog);
@@ -940,6 +972,7 @@
                     result: s.result,
                     durationMs: s.durationMs,
                 };
+                if (s.timings) step.timings = s.timings;
                 if (s.isTerminal) step.isTerminal = true;
                 if (s.goalAchieved != null) step.goalAchieved = s.goalAchieved;
                 if (s.debugLog?.length) {

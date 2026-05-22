@@ -48,8 +48,10 @@ public sealed class AgentLoop(
 
             logger.LogInformation("Agent session {SessionId} started. Goal: \"{Goal}\".", session.SessionId, session.Goal);
 
+            var initialAiSw = Stopwatch.StartNew();
             AiResponse response = await aiProvider.ContinueConversationAsync(
                 conversation, systemPrompt, screenshot, ScreenMimeType, ct).ConfigureAwait(false);
+            initialAiSw.Stop();
 
             if (!response.Success)
             {
@@ -65,6 +67,9 @@ public sealed class AgentLoop(
 
             // Debug entries from context resets carry forward to the next step
             List<AgentDebugEntry>? carryOverDebug = Globals.ENABLE_TESTING ? [] : null;
+
+            // Carry-forward: time spent on the AI call whose response is consumed by the next step
+            long lastAiResponseMs = initialAiSw.ElapsedMilliseconds;
 
             for (int step = 1; step <= MaxSteps; step++)
             {
@@ -90,8 +95,10 @@ public sealed class AgentLoop(
 
                 // Parse the AI's response (with retries on malformed output)
                 var stepStopwatch = Stopwatch.StartNew();
+                var parseSw = Stopwatch.StartNew();
                 AgentParsedResponse? parsed = await TryParseWithRetriesAsync(
                     conversation, response.Text, ct, debugLog).ConfigureAwait(false);
+                parseSw.Stop();
 
                 if (parsed is null)
                 {
@@ -130,18 +137,27 @@ public sealed class AgentLoop(
                     : null;
 
                 // Execute the action (executor adds its own debug entries)
+                var executeSw = Stopwatch.StartNew();
                 ActionExecutionResult result = await ExecuteWithTargetRecoveryAsync(
                     parsed.Action, screenshot, conversation, ct, debugLog, executorProgress).ConfigureAwait(false);
+                executeSw.Stop();
 
                 if (debugging)
                     debugLog!.Add(new AgentDebugEntry("Execution Result", Text: $"Success={result.Success} | {result.Summary}"));
 
                 stepStopwatch.Stop();
 
+                var timings = new StepTimings(
+                    AiResponseMs:      lastAiResponseMs,
+                    ParseMs:           parseSw.ElapsedMilliseconds,
+                    ExecutionMs:       executeSw.ElapsedMilliseconds,
+                    CoordResolutionMs: result.CoordResolutionMs);
+
                 // Record the step
                 var agentStep = new AgentStep(step, parsed.Thought, parsed.Action, result, DateTimeOffset.UtcNow,
                     stepStopwatch.ElapsedMilliseconds,
-                    debugLog is { Count: > 0 } ? debugLog : null);
+                    debugLog is { Count: > 0 } ? debugLog : null,
+                    timings);
                 session.Steps.Add(agentStep);
                 await session.RaiseStepCompletedAsync(agentStep).ConfigureAwait(false);
 
@@ -175,8 +191,10 @@ public sealed class AgentLoop(
                 // Feed the result + new screenshot back to the AI
                 string feedback = AgentPromptBuilder.BuildFeedbackPrompt(result);
 
+                var aiFeedbackSw = Stopwatch.StartNew();
                 response = await aiProvider.ContinueConversationAsync(
                     conversation, feedback, screenshot, ScreenMimeType, ct).ConfigureAwait(false);
+                aiFeedbackSw.Stop();
 
                 if (!response.Success)
                 {
@@ -185,6 +203,8 @@ public sealed class AgentLoop(
                     logger.LogError("AI call failed at step {Step} for session {SessionId}: {Error}", step, session.SessionId, response.ErrorMessage);
                     return;
                 }
+
+                lastAiResponseMs = aiFeedbackSw.ElapsedMilliseconds;
 
                 // Track for next step's debug output
                 if (debugging)
