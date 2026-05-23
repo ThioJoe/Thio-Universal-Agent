@@ -22,24 +22,26 @@ internal static class ConfigEndpoints
         app.MapGet("/api/config", (AppConfig appConfig) =>
         {
             var response = new AppConfigResponse(
+                General: new GeneralConfigDto(
+                        SettleDelayMs:      appConfig.General.SettleDelayMs,
+                        QueueSettleDelayMs: appConfig.General.QueueSettleDelayMs,
+                        EnableContextReset: appConfig.General.EnableContextReset,
+                        StripHistoryImages: appConfig.General.StripHistoryImages,
+                        EnableDebugMode:    appConfig.General.EnableDebugMode
+                    ),
                 Agent: new AgentConfigDto(
-                        SettleDelayMs:       appConfig.Agent.SettleDelayMs,
-                        QueueSettleDelayMs:  appConfig.Agent.QueueSettleDelayMs,
-                        CoordinateMode:      appConfig.Agent.CoordinateMode.ToString(),
-                        MonitorIndex:        appConfig.Agent.MonitorIndex,
-                        EnableContextReset:  appConfig.Agent.EnableContextReset,
-                        StripHistoryImages:  appConfig.Agent.StripHistoryImages,
-                        EnableDebugMode:     appConfig.Agent.EnableDebugMode
+                        CoordinateMode: appConfig.Agent.CoordinateMode.ToString(),
+                        MonitorIndex:   appConfig.Agent.MonitorIndex
                     ),
                 Gemini: new GeminiConfigDto(
-                    Model:                    appConfig.Gemini.Model,
-                    MediaResolution:          appConfig.Gemini.MediaResolution.ToString(),
-                    Temperature:              (double?)appConfig.Gemini.Temperature,
-                    TopP:                     (double?)appConfig.Gemini.TopP,
-                    TopK:                     appConfig.Gemini.TopK,
+                    Model:                     appConfig.Gemini.Model,
+                    MediaResolution:           appConfig.Gemini.MediaResolution.ToString(),
+                    Temperature:               (double?)appConfig.Gemini.Temperature,
+                    TopP:                      (double?)appConfig.Gemini.TopP,
+                    TopK:                      appConfig.Gemini.TopK,
                     CoordinateMaxOutputTokens: appConfig.Gemini.CoordinateMaxOutputTokens,
-                    ThinkingBudget:           appConfig.Gemini.ThinkingBudget,
-                    ThinkingLevel:            appConfig.Gemini.ThinkingLevel?.ToString()
+                    ThinkingBudget:            appConfig.Gemini.ThinkingBudget,
+                    ThinkingLevel:             appConfig.Gemini.ThinkingLevel?.ToString()
                 )
             );
 
@@ -53,8 +55,9 @@ internal static class ConfigEndpoints
             // Add a line here for each new provider — everything else is auto-reflected
             var sections = new object[]
             {
-                BuildSection("gemini", "Gemini", appConfig.Gemini, isProvider: true),
-                BuildSection("agent",  "Agent",  appConfig.Agent,  isProvider: false),
+                BuildSection("general", "General", appConfig.General, isProvider: false),
+                BuildSection("gemini",  "Gemini",  appConfig.Gemini,  isProvider: true),
+                BuildSection("agent",   "Agent",   appConfig.Agent,   isProvider: false),
             };
             return Results.Ok(new { sections });
         });
@@ -63,8 +66,9 @@ internal static class ConfigEndpoints
 
         app.MapPost("/api/config", (JsonElement body, AppConfig appConfig) =>
         {
-            if (body.TryGetProperty("gemini", out var geminiEl)) ApplyUpdates(appConfig.Gemini, geminiEl);
-            if (body.TryGetProperty("agent", out var agentEl)) ApplyUpdates(appConfig.Agent, agentEl);
+            if (body.TryGetProperty("general", out var generalEl)) { ApplyUpdates(appConfig.General, generalEl); Globals.ENABLE_TESTING = appConfig.General.EnableDebugMode; }
+            if (body.TryGetProperty("gemini",  out var geminiEl))  ApplyUpdates(appConfig.Gemini, geminiEl);
+            if (body.TryGetProperty("agent",   out var agentEl))   ApplyUpdates(appConfig.Agent, agentEl);
             return Results.Ok();
         });
     }
@@ -164,18 +168,22 @@ internal static class ConfigEndpoints
 // ── DTOs (existing flat GET) ──────────────────────────────────────────────────
 
 internal sealed record AppConfigResponse(
+    GeneralConfigDto General,
     AgentConfigDto Agent,
     GeminiConfigDto Gemini
 );
 
-internal sealed record AgentConfigDto(
+internal sealed record GeneralConfigDto(
     int SettleDelayMs,
     int QueueSettleDelayMs,
-    string? CoordinateMode,
-    int? MonitorIndex,
     bool EnableContextReset,
     bool StripHistoryImages,
     bool EnableDebugMode
+);
+
+internal sealed record AgentConfigDto(
+    string? CoordinateMode,
+    int? MonitorIndex
 );
 
 internal sealed record GeminiConfigDto(

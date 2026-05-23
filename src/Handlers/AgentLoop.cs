@@ -22,10 +22,10 @@ public sealed partial class AgentLoop(
     private const int ContextResetInterval = 8;
     private const string ScreenMimeType = "image/jpeg";
 
-    private readonly int _settleDelayMs = appConfig.Agent.SettleDelayMs;
-    private readonly int _queueSettleDelayMs = appConfig.Agent.QueueSettleDelayMs;
+    private readonly int _settleDelayMs = appConfig.General.SettleDelayMs;
+    private readonly int _queueSettleDelayMs = appConfig.General.QueueSettleDelayMs;
 
-    private readonly bool _enableContextReset = appConfig.Agent.EnableContextReset;
+    private readonly bool _enableContextReset = appConfig.General.EnableContextReset;
 
     /// <summary>
     /// Runs the agent loop to completion for the given session.

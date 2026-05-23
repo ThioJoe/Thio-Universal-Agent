@@ -22,23 +22,16 @@ public sealed class ConfigFieldAttribute(string label) : Attribute
     public bool IsPassword { get; init; }
 }
 
-// ── Agent ─────────────────────────────────────────────────────────────────────
+// ── General ───────────────────────────────────────────────────────────────────
 
-/// <summary>Configuration for the agent loop and session behaviour.</summary>
-public class AgentConfig
+/// <summary>Application-level settings that apply globally, regardless of AI provider.</summary>
+public class GeneralConfig
 {
     [ConfigField("Settle Delay (ms)", Description = "Milliseconds to wait after each action before taking the next screenshot")]
     public int SettleDelayMs { get; set; } = 1000;
 
     [ConfigField("Queue Settle Delay (ms)", Description = "Milliseconds to wait between individual actions inside a QUEUE: batch")]
     public int QueueSettleDelayMs { get; set; } = 50;
-
-    [ConfigField("Coordinate Mode", Description = "Algorithm used to locate UI elements on screen")]
-    public CoordinateMode CoordinateMode { get; set; } = CoordinateMode.DirectAutoNormalize;
-
-    /// <summary>Zero-based monitor index, or <c>null</c> for all-monitors mode. May be updated at runtime per session.</summary>
-    [ConfigField("Monitor Index", Description = "Zero-based index of the monitor to capture; leave empty for all monitors")]
-    public int? MonitorIndex { get; set; }
 
     [ConfigField("Enable Context Reset", Description = "Periodically trim conversation history to keep token usage in check")]
     public bool EnableContextReset { get; set; } = true;
@@ -51,11 +44,11 @@ public class AgentConfig
 
     // ── Constructors ──────────────────────────────────────────────────────────
 
-    /// <summary>Creates an <see cref="AgentConfig"/> with all default values.</summary>
-    public AgentConfig() { }
+    /// <summary>Creates a <see cref="GeneralConfig"/> with all default values.</summary>
+    public GeneralConfig() { }
 
-    /// <summary>Creates an <see cref="AgentConfig"/> loaded from an <c>Agent</c> configuration section.</summary>
-    public AgentConfig(IConfigurationSection section)
+    /// <summary>Creates a <see cref="GeneralConfig"/> loaded from a <c>General</c> configuration section.</summary>
+    public GeneralConfig(IConfigurationSection section)
     {
         if (int.TryParse(section["SettleDelayMs"], out var d) && d > 0)
             SettleDelayMs = d;
@@ -63,14 +56,36 @@ public class AgentConfig
         if (int.TryParse(section["QueueSettleDelayMs"], out var qd) && qd >= 0)
             QueueSettleDelayMs = qd;
 
+        if (bool.TryParse(section["EnableContextReset"], out var r)) EnableContextReset = r;
+        if (bool.TryParse(section["StripHistoryImages"], out var s)) StripHistoryImages = s;
+        if (bool.TryParse(section["EnableDebugMode"], out var dbg)) EnableDebugMode = dbg;
+    }
+}
+
+// ── Agent ─────────────────────────────────────────────────────────────────────
+
+/// <summary>Configuration for the agent's coordinate resolution and screen capture.</summary>
+public class AgentConfig
+{
+    [ConfigField("Coordinate Mode", Description = "Algorithm used to locate UI elements on screen")]
+    public CoordinateMode CoordinateMode { get; set; } = CoordinateMode.DirectAutoNormalize;
+
+    /// <summary>Zero-based monitor index, or <c>null</c> for all-monitors mode. May be updated at runtime per session.</summary>
+    [ConfigField("Monitor Index", Description = "Zero-based index of the monitor to capture; leave empty for all monitors")]
+    public int? MonitorIndex { get; set; }
+
+    // ── Constructors ──────────────────────────────────────────────────────────
+
+    /// <summary>Creates an <see cref="AgentConfig"/> with all default values.</summary>
+    public AgentConfig() { }
+
+    /// <summary>Creates an <see cref="AgentConfig"/> loaded from an <c>Agent</c> configuration section.</summary>
+    public AgentConfig(IConfigurationSection section)
+    {
         if (Enum.TryParse<CoordinateMode>(section["CoordinateMode"], ignoreCase: true, out var coordMode))
             CoordinateMode = coordMode;
 
         MonitorIndex = section.GetValue<int?>("MonitorIndex");
-
-        if (bool.TryParse(section["EnableContextReset"], out var r)) EnableContextReset = r;
-        if (bool.TryParse(section["StripHistoryImages"], out var s)) StripHistoryImages = s;
-        if (bool.TryParse(section["EnableDebugMode"], out var dbg)) EnableDebugMode = dbg;
     }
 }
 
@@ -86,6 +101,7 @@ public class AppConfig
 {
     public GeminiConfig Gemini { get; set; } = new();
     public AgentConfig Agent { get; set; } = new();
+    public GeneralConfig General { get; set; } = new();
 
     // ── Constructors ──────────────────────────────────────────────────────────
 
@@ -95,7 +111,8 @@ public class AppConfig
     /// <summary>Creates an <see cref="AppConfig"/> and loads values from <paramref name="configuration"/>.</summary>
     public AppConfig(IConfiguration configuration)
     {
-        Gemini = new GeminiConfig(configuration.GetSection("Gemini"));
-        Agent = new AgentConfig(configuration.GetSection("Agent"));
+        Gemini  = new GeminiConfig(configuration.GetSection("Gemini"));
+        Agent   = new AgentConfig(configuration.GetSection("Agent"));
+        General = new GeneralConfig(configuration.GetSection("General"));
     }
 }

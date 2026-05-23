@@ -233,7 +233,7 @@ public sealed class GeminiProvider(HttpClient httpClient, AppConfig appConfig, I
 
     private GeminiRequest BuildRequest(AiConversation conversation, AiChatMessage additionalMessage)
     {
-        bool stripHistoryImages = appConfig.Agent.StripHistoryImages;
+        bool stripHistoryImages = appConfig.General.StripHistoryImages;
 
         var contents = new List<GeminiContent>(conversation.Messages.Count + 1);
 

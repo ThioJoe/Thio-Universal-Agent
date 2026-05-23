@@ -97,7 +97,7 @@ public sealed partial class AgentActionExecutor(
             LogActionAtCursorPosition(logger, action.Kind, curX, curY);
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Current Cursor Position", Text: $"({curX}, {curY})")).ConfigureAwait(false);
 
-            if (debugLog is not null || onProgress is not null)
+            if (Globals.ENABLE_TESTING && (debugLog is not null || onProgress is not null))
             {
                 var (imgX, imgY) = screenshot.ToImageRelative(curX, curY);
                 screenshot.Annotated = CoordinatePrompter.CreateAnnotatedImage_PixelCoords(screenshot.Processed, imgX, imgY);
@@ -147,7 +147,7 @@ public sealed partial class AgentActionExecutor(
         {
             ScreenCoordinate coord = ScreenCoordinate.FromNormalizedCoordsString(target, screenshot);
 
-            if (debugLog is not null || onProgress is not null)
+            if (Globals.ENABLE_TESTING && (debugLog is not null || onProgress is not null))
             {
                 screenshot.Annotated = CoordinatePrompter.CreateAnnotatedImage_PixelCoords(screenshot.Processed, coord.ImageX, coord.ImageY);
                 await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Annotated Screenshot", ImageBase64: Convert.ToBase64String(screenshot.Annotated))).ConfigureAwait(false);
@@ -201,7 +201,7 @@ public sealed partial class AgentActionExecutor(
 
             // When testing, capture every intermediate CoordinatePrompter step
             Func<CoordinatePrompter.CoordinateStep, Task>? onCoordStep = null;
-            if (debugLog is not null || onProgress is not null)
+            if (Globals.ENABLE_TESTING && (debugLog is not null || onProgress is not null))
             {
                 onCoordStep = async coordStep =>
                 {
@@ -361,7 +361,7 @@ public sealed partial class AgentActionExecutor(
         await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag Destination Coordinates", Text: endCoordAi?.ToString() ?? $"({endPx}, {endPy})")).ConfigureAwait(false);
 
         // Emit a combined annotated screenshot showing both start (green) and end (red) crosshairs
-        if (debugLog is not null || onProgress is not null)
+        if (Globals.ENABLE_TESTING && (debugLog is not null || onProgress is not null))
         {
             int startImgX = startCoordAi?.ImageX ?? startPx - screenshot.OriginX;
             int startImgY = startCoordAi?.ImageY ?? startPy - screenshot.OriginY;
@@ -396,7 +396,7 @@ public sealed partial class AgentActionExecutor(
         )
     {
         Func<CoordinatePrompter.CoordinateStep, Task>? onCoordStep = null;
-        if (debugLog is not null || onProgress is not null)
+        if (Globals.ENABLE_TESTING && (debugLog is not null || onProgress is not null))
         {
             onCoordStep = async coordStep =>
             {
