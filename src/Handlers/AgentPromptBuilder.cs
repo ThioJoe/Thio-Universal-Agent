@@ -1,4 +1,4 @@
-namespace Thio_Universal_Agent.Logic;
+namespace Thio_Universal_Agent.Handlers;
 
 /// <summary>
 /// Builds the system prompt that teaches the AI model the agent's tool vocabulary,

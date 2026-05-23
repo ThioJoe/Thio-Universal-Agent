@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Thio_Universal_Agent.Handlers;
 
 namespace Thio_Universal_Agent.Logic;
 
@@ -13,7 +14,6 @@ public sealed partial class AgentLoop(
     IAiProvider aiProvider,
     IScreenProvider screenProvider,
     AgentActionExecutor executor,
-    CoordinatePrompter coordinatePrompter,
     AppConfig appConfig,
     ILogger<AgentLoop> logger)
 {
@@ -121,7 +121,10 @@ public sealed partial class AgentLoop(
                 if (debugging)
                     debugLog!.Add(new AgentDebugEntry("Parse Result", Text: $"Success → {parsed.Action.Kind}: {FormatActionDetail(parsed.Action)}"));
 
-                LogStepAction(logger, step, parsed.Thought, parsed.Action.Kind, FormatActionDetail(parsed.Action));
+                if (logger.IsEnabled(LogLevel.Information))
+                    #pragma warning disable CA1873 // Avoid potentially expensive logging
+                    LogStepAction(logger, step, parsed.Thought, parsed.Action.Kind, FormatActionDetail(parsed.Action));
+                    #pragma warning restore CA1873 // Avoid potentially expensive logging
 
                 // Notify the UI immediately so it can show what the agent is about to do
                 // before potentially slow work (e.g. coordinate resolution) begins.
@@ -131,11 +134,14 @@ public sealed partial class AgentLoop(
                 // Create a progress callback that streams each executor debug entry to the UI in real-time.
                 // Always forward image entries; text-only entries are only forwarded in debug mode.
                 int currentStep = step;
-                Func<AgentDebugEntry, Task> executorProgress = async entry =>
+
+                // ---- Local Function -----
+                async Task executorProgress(AgentDebugEntry entry)
                 {
                     if (!debugging && entry.ImageBase64 is null) return;
                     await session.RaiseSubStepUpdateAsync(new AgentSubStep(currentStep, entry)).ConfigureAwait(false);
-                };
+                }
+                // -------------------------
 
                 // Execute the action (executor adds its own debug entries)
                 var executeSw = Stopwatch.StartNew();
@@ -285,11 +291,15 @@ public sealed partial class AgentLoop(
     /// fails to locate the target, reports the failure back to the AI instead of crashing.
     /// </summary>
     private async Task<ActionExecutionResult> ExecuteWithTargetRecoveryAsync(
-        AgentAction action, Screenshot screenshot, AiConversation conversation, CancellationToken ct,
-        List<AgentDebugEntry>? debugLog = null, Func<AgentDebugEntry, Task>? onProgress = null)
+        AgentAction action, Screenshot screenshot, 
+        AiConversation conversation, 
+        CancellationToken ct,
+        List<AgentDebugEntry>? debugLog = null, 
+        Func<AgentDebugEntry, Task>? onProgress = null
+        )
     {
         ActionExecutionResult result = await executor
-            .ExecuteAsync(action, screenshot, ct, onProgress)
+            .ExecuteAsync(action, screenshot, onProgress, ct)
             .ConfigureAwait(false);
 
         // Merge executor's debug entries into our step log

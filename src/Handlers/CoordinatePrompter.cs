@@ -43,7 +43,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
     // Commands / codes that can be used by the AI finding the coordinates
     public sealed record CoordResponseCode
     {
-        private static List<string> _allStrings = [];
+        private static readonly List<string> _allStrings = [];
 
         /// <summary>The string code to be used by the agent in the response</summary>
         public string Code { get; }
@@ -106,7 +106,11 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
     }
 
     /// <summary>Tracks a rectangular crop window in original image pixel coordinates.</summary>
-    private record ViewRegion(double X, double Y, double Width, double Height);
+    private record ViewRegion(double X, double Y, double Width, double Height)
+    {
+        /// <summary>Creates a <see cref="ViewRegion"/> covering the full extent of <paramref name="source"/>.</summary>
+        public ViewRegion(IImage source) : this(0, 0, source.Width, source.Height) { }
+    }
 
     /// <summary>A parsed grid coordinate returned by the LLM.</summary>
     public record GridCoordinate(double X, double Y);
@@ -130,7 +134,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
         int divisions = Screenshot.DefaultDivisions; // Maybe later add a config for this, or a way to set the variable
         int stepNumber = 0;
 
-        using IImage source = LoadImage(screenshot.Processed);
+        using Microsoft.Maui.Graphics.Skia.SkiaImage source = LoadImage(screenshot.Processed);
         ViewRegion view = CreateFullView(source);
         int imageWidth = (int)source.Width;
         int imageHeight = (int)source.Height;
@@ -276,21 +280,20 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
         ArgumentException.ThrowIfNullOrWhiteSpace(itemToIdentify);
 
         mode ??= _defaultCoordinateMode;
-
-        (double x, double y, double? normX, double? normY) = mode switch
+        (double x, double y, _, _) = mode switch
         {
             CoordinateMode.Direct => await GetCoordinatesDirectAsync(
-                screenshot, itemToIdentify, onStepCompleted, cancellationToken,
-                useNormalization: false,
+                screenshot, itemToIdentify, onStepCompleted, useNormalization: false,
                 normalizedWidth: null,
-                normalizedHeight: null).ConfigureAwait(false),
+                normalizedHeight: null,
+                cancellationToken: cancellationToken).ConfigureAwait(false),
 
             CoordinateMode.DirectAutoNormalize => await GetCoordinatesDirectAsync(
-                screenshot, itemToIdentify, onStepCompleted, cancellationToken,
-                useNormalization: true,
+                screenshot, itemToIdentify, onStepCompleted, useNormalization: true,
                 normalizedWidth: Screenshot.DefaultNormalized,
                 normalizedHeight: Screenshot.DefaultNormalized
-                ).ConfigureAwait(false),
+,
+                cancellationToken: cancellationToken).ConfigureAwait(false),
 
             CoordinateMode.Zoom => await GetCoordinatesZoomAsync(
                 screenshot, itemToIdentify, onStepCompleted, cancellationToken).ConfigureAwait(false),
@@ -307,11 +310,11 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
         Screenshot screenshot,
         string itemToIdentify,
         Func<CoordinateStep, Task>? onStepCompleted,
-        CancellationToken cancellationToken,
         bool useNormalization,
         int? normalizedWidth,
         int? normalizedHeight
-        )
+,
+        CancellationToken cancellationToken)
     {
         int originalWidth = screenshot.Width;
         int originalHeight = screenshot.Height;
@@ -429,53 +432,29 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
             // Use default details if none are provided
             if (details == null)
             {
-                switch (reason)
+                details = reason switch
                 {
-                    case ParseFailReasons.EmptyResponse:
-                        details = "Response was entirely empty.";
-                        break;
-                    case ParseFailReasons.CorrectCommand_WrongStructure:
-                        details = "Valid command was used with incorrect structure.";
-                        break;
-                    case ParseFailReasons.MultipleCommandsUsed:
-                        details = "Multiple different response codes were used.";
-                        break;
-                    case ParseFailReasons.NoCommandFound:
-                        details = "No valid commands found in response.";
-                        break;
-                    case ParseFailReasons.InvalidCoordinates:
-                        details = "Coordinates were found but are outside the bounds of the grid.";
-                        break;
-                    default:
-                        details = "An unknown parsing error occurred.";
-                        break;
-                }
+                    ParseFailReasons.EmptyResponse => "Response was entirely empty.",
+                    ParseFailReasons.CorrectCommand_WrongStructure => "Valid command was used with incorrect structure.",
+                    ParseFailReasons.MultipleCommandsUsed => "Multiple different response codes were used.",
+                    ParseFailReasons.NoCommandFound => "No valid commands found in response.",
+                    ParseFailReasons.InvalidCoordinates => "Coordinates were found but are outside the bounds of the grid.",
+                    _ => "An unknown parsing error occurred.",
+                };
             } 
 
             // Use default recovery instructions if none are provided
             if (recoveryInstructions == null)
             {
-                switch (reason)
+                recoveryInstructions = reason switch
                 {
-                    case ParseFailReasons.EmptyResponse:
-                        recoveryInstructions = "Your response appears to have been completely empty or was not retrieved correctly. Please try again and provide a valid response to the same task.";
-                        break;
-                    case ParseFailReasons.CorrectCommand_WrongStructure:
-                        recoveryInstructions = "A correct command code was found, but failed to parse. Please ensure the response command code is used in the correct structure.";
-                        break;
-                    case ParseFailReasons.MultipleCommandsUsed:
-                        recoveryInstructions = "Please use only one command code in the response.";
-                        break;
-                    case ParseFailReasons.NoCommandFound:
-                        recoveryInstructions = "None of the valid response codes were found in the response. Must use exactly one of the following response codes: " + string.Join(", ", CoordResponseCode.AllCodeStrings);
-                        break;
-                    case ParseFailReasons.InvalidCoordinates:
-                        recoveryInstructions = "The coordinates you provided are outside the bounds of the grid. Please provide coordinates where both X and Y are between 0 and " + Screenshot.DefaultDivisions + ", with a single decimal place.";
-                        break;
-                    default:
-                        recoveryInstructions = "Please review the parsing error details and adjust your response accordingly.";
-                        break;
-                }
+                    ParseFailReasons.EmptyResponse => "Your response appears to have been completely empty or was not retrieved correctly. Please try again and provide a valid response to the same task.",
+                    ParseFailReasons.CorrectCommand_WrongStructure => "A correct command code was found, but failed to parse. Please ensure the response command code is used in the correct structure.",
+                    ParseFailReasons.MultipleCommandsUsed => "Please use only one command code in the response.",
+                    ParseFailReasons.NoCommandFound => "None of the valid response codes were found in the response. Must use exactly one of the following response codes: " + string.Join(", ", CoordResponseCode.AllCodeStrings),
+                    ParseFailReasons.InvalidCoordinates => "The coordinates you provided are outside the bounds of the grid. Please provide coordinates where both X and Y are between 0 and " + Screenshot.DefaultDivisions + ", with a single decimal place.",
+                    _ => "Please review the parsing error details and adjust your response accordingly.",
+                };
             }
 
             Details = details;
@@ -691,7 +670,8 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
         ViewRegion currentView,
         GridCoordinate coordinate,
         int cols = Screenshot.DefaultDivisions,
-        int rows = Screenshot.DefaultDivisions)
+        int rows = Screenshot.DefaultDivisions
+        )
     {
         double screenX = currentView.X + (coordinate.X / cols) * currentView.Width;
         double screenY = currentView.Y + (coordinate.Y / rows) * currentView.Height;

@@ -11,7 +11,7 @@ public sealed partial class CoordinatePrompter
     {
         ArgumentNullException.ThrowIfNull(screenshotBytes);
 
-        using IImage source = LoadImage(screenshotBytes);
+        using SkiaImage source = LoadImage(screenshotBytes);
         return ((int)source.Width, (int)source.Height);
     }
 
@@ -42,7 +42,7 @@ public sealed partial class CoordinatePrompter
     }
 
     /// <summary>Decodes raw image bytes into an <see cref="IImage"/> for use with the canvas.</summary>
-    private static IImage LoadImage(byte[] imageBytes)
+    private static SkiaImage LoadImage(byte[] imageBytes)
     {
         return new SkiaImage(SKBitmap.Decode(imageBytes));
     }
@@ -107,7 +107,7 @@ public sealed partial class CoordinatePrompter
     /// </summary>
     internal static byte[] CreateAnnotatedImage_PixelCoords(byte[] imageBytes, double pixelX, double pixelY)
     {
-        using IImage image = LoadImage(imageBytes);
+        using SkiaImage image = LoadImage(imageBytes);
         int w = (int)image.Width;
         int h = (int)image.Height;
 
@@ -141,7 +141,7 @@ public sealed partial class CoordinatePrompter
     /// </summary>
     internal static byte[] CreateAnnotatedImageDrag(byte[] imageBytes, double startX, double startY, double endX, double endY)
     {
-        using IImage image = LoadImage(imageBytes);
+        using SkiaImage image = LoadImage(imageBytes);
         int w = (int)image.Width;
         int h = (int)image.Height;
 
@@ -354,7 +354,7 @@ public sealed partial class CoordinatePrompter
     /// <returns>A byte array containing the PNG image data.</returns>
     private static byte[] CreateGridOverlayImage(
     /// <summary> / Creates a PNG image of the source cropped to <paramref name="view"/> with a grid / overlay and axis labels drawn on top. / </summary>
-        IImage source,
+        SkiaImage source,
         ViewRegion view,
         int cols = Screenshot.DefaultDivisions,
         int rows = Screenshot.DefaultDivisions,
@@ -372,19 +372,18 @@ public sealed partial class CoordinatePrompter
             : ((int)view.Width, (int)view.Height);
         int maxLabelValue = Math.Max(cols, rows);
 
-        int rulerOffset, labelBuffer, canvasWidth, canvasHeight;
+        int rulerOffset, canvasWidth, canvasHeight;
 
         if (!noOuterBorder)
         {
+            int labelBuffer = ComputeLabelBuffer(imageWidth, maxLabelValue);
             rulerOffset = ComputeRulerOffset(imageWidth, maxLabelValue);
-            labelBuffer = ComputeLabelBuffer(imageWidth, maxLabelValue);
             canvasWidth = imageWidth + rulerOffset + labelBuffer;
             canvasHeight = imageHeight + rulerOffset + labelBuffer;
         } 
         else
         {
             rulerOffset = 0;
-            labelBuffer = 0;
             canvasWidth = imageWidth;
             canvasHeight = imageHeight;
         }
@@ -435,7 +434,8 @@ public sealed partial class CoordinatePrompter
         int cols = Screenshot.DefaultDivisions,
         int rows = Screenshot.DefaultDivisions,
         double confidencePixels = DefaultConfidencePixels,
-        double aiEstimatePrecision = DefaultAIEstimatePrecision)
+        double aiEstimatePrecision = DefaultAIEstimatePrecision
+        )
     {
         double cellPixelW = currentView.Width / cols;
         double cellPixelH = currentView.Height / rows;
@@ -456,7 +456,8 @@ public sealed partial class CoordinatePrompter
         double spanX,
         double spanY,
         int cols,
-        int rows)
+        int rows
+        )
     {
         double cellPixelW = currentView.Width / cols;
         double cellPixelH = currentView.Height / rows;
@@ -480,7 +481,8 @@ public sealed partial class CoordinatePrompter
         double sourceWidth,
         double sourceHeight,
         int cols = Screenshot.DefaultDivisions,
-        int rows = Screenshot.DefaultDivisions)
+        int rows = Screenshot.DefaultDivisions
+        )
     {
         double cellPixelW = currentView.Width / cols;
         double cellPixelH = currentView.Height / rows;

@@ -11,7 +11,6 @@ namespace Thio_Universal_Agent.Logic;
 /// </summary>
 public sealed partial class AgentActionExecutor(
     IInputProvider inputProvider,
-    IScreenProvider screenProvider,
     CoordinatePrompter coordinatePrompter,
     ILogger<AgentActionExecutor> logger)
 {
@@ -26,8 +25,9 @@ public sealed partial class AgentActionExecutor(
     public async Task<ActionExecutionResult> ExecuteAsync(
         AgentAction action,
         Screenshot screenshot,
-        CancellationToken cancellationToken = default,
-        Func<AgentDebugEntry, Task>? onProgress = null)
+        Func<AgentDebugEntry, Task>? onProgress = null,
+        CancellationToken cancellationToken = default
+        )
     {
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(screenshot);
@@ -40,10 +40,10 @@ public sealed partial class AgentActionExecutor(
             {
                 AgentActionKind.LeftClick or AgentActionKind.RightClick or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick or AgentActionKind.MoveMouse or
                 AgentActionKind.LeftClickCoords or AgentActionKind.RightClickCoords or AgentActionKind.DoubleClickCoords or AgentActionKind.MiddleClickCoords or AgentActionKind.MoveMouseCoords
-                    => await ExecuteClickAsync(action, screenshot, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
+                    => await ExecuteClickAsync(action, screenshot, debugLog, cancellationToken, onProgress).ConfigureAwait(false),
 
                 AgentActionKind.ClickDrag or AgentActionKind.ClickDragCoords
-                    => await ExecuteClickDragAsync(action, screenshot, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
+                    => await ExecuteClickDragAsync(action, screenshot, debugLog, cancellationToken, onProgress).ConfigureAwait(false),
 
                 AgentActionKind.TypeText 
                     => await ExecuteTypeTextAsync(action, debugLog, onProgress).ConfigureAwait(false),
@@ -55,7 +55,7 @@ public sealed partial class AgentActionExecutor(
                     => await ExecuteScrollAsync(action, debugLog, onProgress).ConfigureAwait(false),
 
                 AgentActionKind.Wait 
-                    => await ExecuteWaitAsync(action, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
+                    => await ExecuteWaitAsync(action, debugLog, cancellationToken, onProgress).ConfigureAwait(false),
 
                 AgentActionKind.Done 
                     => new ActionExecutionResult(true, "Agent declared goal achieved.", IsTerminal: true, GoalAchieved: true),
@@ -83,10 +83,10 @@ public sealed partial class AgentActionExecutor(
 
     /// <summary>Resolves the target to coordinates, then dispatches to the correct click/move method.</summary>
     private async Task<ActionExecutionResult> ExecuteClickAsync(
-        AgentAction action, 
+        AgentAction action,
         Screenshot screenshot,
+        List<AgentDebugEntry>? debugLog,
         CancellationToken cancellationToken,
-        List<AgentDebugEntry>? debugLog, 
         Func<AgentDebugEntry, Task>? onProgress = null
         )
     {
@@ -281,10 +281,10 @@ public sealed partial class AgentActionExecutor(
 
     /// <summary>Resolves source and destination targets to coordinates, then performs a click-drag.</summary>
     private async Task<ActionExecutionResult> ExecuteClickDragAsync(
-        AgentAction action, 
+        AgentAction action,
         Screenshot screenshot,
-        CancellationToken cancellationToken,
         List<AgentDebugEntry>? debugLog,
+        CancellationToken cancellationToken,
         Func<AgentDebugEntry, Task>? onProgress = null
         )
     {
@@ -339,7 +339,7 @@ public sealed partial class AgentActionExecutor(
         }
         else
         {
-            (startCoordAi, startCoordMs) = await ResolveTargetCoordinatesAsync(screenshot, source, cancellationToken, debugLog, onProgress)
+            (startCoordAi, startCoordMs) = await ResolveTargetCoordinatesAsync(screenshot, source, debugLog, cancellationToken, onProgress)
                 .ConfigureAwait(false);
             startPx = startCoordAi.AbsoluteX;
             startPy = startCoordAi.AbsoluteY;
@@ -351,7 +351,7 @@ public sealed partial class AgentActionExecutor(
             LogResolvingDragDestination(logger, destination);
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Drag Destination Resolution", Text: $"Resolving destination: \"{destination}\"")).ConfigureAwait(false);
 
-            (endCoordAi, endCoordMs) = await ResolveTargetCoordinatesAsync(screenshot, destination, cancellationToken, debugLog, onProgress)
+            (endCoordAi, endCoordMs) = await ResolveTargetCoordinatesAsync(screenshot, destination, debugLog, cancellationToken, onProgress)
                 .ConfigureAwait(false);
             endPx = endCoordAi.AbsoluteX;
             endPy = endCoordAi.AbsoluteY;
@@ -391,8 +391,11 @@ public sealed partial class AgentActionExecutor(
 
     /// <summary>Resolves a target description to absolute screen coordinates using the coordinate prompter.</summary>
     private async Task<(ScreenCoordinate coord, long coordMs)> ResolveTargetCoordinatesAsync(
-        Screenshot screenshot, string target, CancellationToken cancellationToken,
-        List<AgentDebugEntry>? debugLog, Func<AgentDebugEntry, Task>? onProgress = null)
+        Screenshot screenshot, string target, 
+        List<AgentDebugEntry>? debugLog,
+        CancellationToken cancellationToken, 
+        Func<AgentDebugEntry, Task>? onProgress = null
+        )
     {
         Func<CoordinatePrompter.CoordinateStep, Task>? onCoordStep = null;
         if (debugLog is not null || onProgress is not null)
@@ -477,7 +480,7 @@ public sealed partial class AgentActionExecutor(
         return new ActionExecutionResult(true, $"{action.Kind} by {action.Amount}.", IsTerminal: false, GoalAchieved: false);
     }
 
-    private static async Task<ActionExecutionResult> ExecuteWaitAsync(AgentAction action, CancellationToken cancellationToken, List<AgentDebugEntry>? debugLog, Func<AgentDebugEntry, Task>? onProgress = null)
+    private static async Task<ActionExecutionResult> ExecuteWaitAsync(AgentAction action, List<AgentDebugEntry>? debugLog, CancellationToken cancellationToken, Func<AgentDebugEntry, Task>? onProgress = null)
     {
         int ms = action.Amount * 1000;
         await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: $"Task.Delay({ms}ms)")).ConfigureAwait(false);
