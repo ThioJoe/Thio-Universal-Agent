@@ -101,8 +101,11 @@ public sealed class AgentActionExecutor(
 
             if (debugLog is not null || onProgress is not null)
             {
-                var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
-                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Annotated Screenshot", ImageBase64: Convert.ToBase64String(screenshot))).ConfigureAwait(false);
+                //var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
+                //px = curX + originX;
+                //py = curY + originY;
+                byte[] annotation = CoordinatePrompter.CreateAnnotatedImageDirect(screenshot, curX, curY);
+                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Annotated Screenshot", ImageBase64: Convert.ToBase64String(annotation))).ConfigureAwait(false);
             }
 
             string cursorMethodCalled;
@@ -150,8 +153,8 @@ public sealed class AgentActionExecutor(
 
             if (debugLog is not null || onProgress is not null)
             {
-                //byte[] annotation = CoordinatePrompter.CreateAnnotatedImageDirect(screenshot, px, py);
-                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Annotated Screenshot", ImageBase64: Convert.ToBase64String(screenshot))).ConfigureAwait(false);
+                byte[] annotation = CoordinatePrompter.CreateAnnotatedImageDirect(screenshot, px, py);
+                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Annotated Screenshot", ImageBase64: Convert.ToBase64String(annotation))).ConfigureAwait(false);
             }
 
             var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
