@@ -28,7 +28,8 @@ internal static class ConfigEndpoints
                         CoordinateMode:      appConfig.Agent.CoordinateMode.ToString(),
                         MonitorIndex:        appConfig.Agent.MonitorIndex,
                         EnableContextReset:  appConfig.Agent.EnableContextReset,
-                        StripHistoryImages:  appConfig.Agent.StripHistoryImages
+                        StripHistoryImages:  appConfig.Agent.StripHistoryImages,
+                        EnableDebugMode:     appConfig.Agent.EnableDebugMode
                     ),
                 Gemini: new GeminiConfigDto(
                     Model:                    appConfig.Gemini.Model,
@@ -173,7 +174,8 @@ internal sealed record AgentConfigDto(
     string? CoordinateMode,
     int? MonitorIndex,
     bool EnableContextReset,
-    bool StripHistoryImages
+    bool StripHistoryImages,
+    bool EnableDebugMode
 );
 
 internal sealed record GeminiConfigDto(

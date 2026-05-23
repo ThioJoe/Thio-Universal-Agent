@@ -46,6 +46,9 @@ public class AgentConfig
     [ConfigField("Strip History Images", Description = "Remove screenshots from older messages to reduce token usage")]
     public bool StripHistoryImages { get; set; } = true;
 
+    [ConfigField("Enable Debug Mode", Description = "Capture verbose debug entries and annotated screenshots; disable to reduce per-step overhead")]
+    public bool EnableDebugMode { get; set; } = false;
+
     // ── Constructors ──────────────────────────────────────────────────────────
 
     /// <summary>Creates an <see cref="AgentConfig"/> with all default values.</summary>
@@ -67,6 +70,7 @@ public class AgentConfig
 
         if (bool.TryParse(section["EnableContextReset"], out var r)) EnableContextReset = r;
         if (bool.TryParse(section["StripHistoryImages"], out var s)) StripHistoryImages = s;
+        if (bool.TryParse(section["EnableDebugMode"], out var dbg)) EnableDebugMode = dbg;
     }
 }
 
