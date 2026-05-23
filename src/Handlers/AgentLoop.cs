@@ -7,7 +7,7 @@ namespace Thio_Universal_Agent;
 /// The core observe-think-act loop that drives an autonomous agent session.
 /// Takes a screenshot, sends it to the AI, parses the response, executes the action,
 /// and repeats until the goal is achieved, the agent fails, or the session is cancelled.
-/// When <see cref="Globals.ENABLE_TESTING"/> is true, captures verbose debug entries at every stage.
+/// When <see cref="GeneralConfig.EnableDebugMode"/> is true, captures verbose debug entries at every stage.
 /// </summary>
 public sealed partial class AgentLoop(
     IAiProvider aiProvider,
@@ -66,7 +66,7 @@ public sealed partial class AgentLoop(
             string lastRawResponse = response.Text;
 
             // Debug entries from context resets carry forward to the next step
-            List<AgentDebugEntry>? carryOverDebug = Globals.ENABLE_TESTING ? [] : null;
+            List<AgentDebugEntry>? carryOverDebug = appConfig.General.EnableDebugMode ? [] : null;
 
             // Carry-forward: time spent on the AI call whose response is consumed by the next step
             long lastAiResponseMs = initialAiSw.ElapsedMilliseconds;
@@ -75,7 +75,7 @@ public sealed partial class AgentLoop(
             {
                 ct.ThrowIfCancellationRequested();
 
-                bool debugging = Globals.ENABLE_TESTING;
+                bool debugging = appConfig.General.EnableDebugMode;
                 List<AgentDebugEntry>? debugLog = [];
 
                 // Prepend any carry-over entries from previous step's context reset
@@ -297,7 +297,7 @@ public sealed partial class AgentLoop(
     {
         for (int attempt = 0; attempt <= MaxParseRetries; attempt++)
         {
-            if (AgentActionParser.TryParse(responseText, out AgentParsedResponse? parsed, out string? error))
+            if (AgentActionParser.TryParse(responseText, appConfig.General.MaxQueueSize, out AgentParsedResponse? parsed, out string? error))
                 return parsed;
 
             LogParseAttemptFailed(logger, attempt + 1, error);

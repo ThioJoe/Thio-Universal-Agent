@@ -18,7 +18,7 @@ internal static class AgentEndpoints
         var group = app.MapGroup("/api/agent");
 
         // Check if verbose debug output is enabled
-        group.MapGet("/debug-enabled", () => Results.Ok(new { enabled = Globals.ENABLE_TESTING }));
+        group.MapGet("/debug-enabled", (AppConfig appConfig) => Results.Ok(new { enabled = appConfig.General.EnableDebugMode }));
 
         // List connected monitors
         group.MapGet("/monitors", (IScreenProvider screenProvider) =>

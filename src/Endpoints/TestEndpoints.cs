@@ -10,16 +10,9 @@ namespace Thio_Universal_Agent.Endpoints;
 internal static class TestEndpoints
 {
 
-    // Might flesh this out later which is why it's its own function
-    private static bool CheckTestingEnabled()
-    {
-        if (Globals.ENABLE_TESTING == true)
-            return true;
-        else
-            return false;
-    }
+    private static bool CheckTestingEnabled(AppConfig appConfig) => appConfig.General.EnableDebugMode;
 
-    private static readonly string TestingDisabledErrorMsg = "Testing endpoints are disabled. To enable, set Globals.ENABLE_TESTING to true.";
+    private static readonly string TestingDisabledErrorMsg = "Testing endpoints are disabled. To enable, set EnableDebugMode to true in the General config section.";
 
     private static readonly ConcurrentDictionary<string, TestConversationSession> _conversations = new();
 
@@ -29,9 +22,9 @@ internal static class TestEndpoints
 
         // Thin HTTP shells for the browser-based test UI.
         // Production agent code calls these C# classes directly — never through these endpoints.
-        group.MapGet("/screenshot", (IScreenProvider screenProvider) =>
+        group.MapGet("/screenshot", (IScreenProvider screenProvider, AppConfig appConfig) =>
         {
-            if (!CheckTestingEnabled())
+            if (!CheckTestingEnabled(appConfig))
                 return Results.Problem(TestingDisabledErrorMsg);
 
             try
@@ -47,9 +40,9 @@ internal static class TestEndpoints
 
         // Thin HTTP shell for the browser-based test UI.
         // Production agent code calls IAiProvider directly in C# — never through this endpoint.
-        group.MapPost("/chat", async (TestChatRequest req, IAiProvider aiProvider, IHttpClientFactory httpClientFactory, IConfiguration config, CancellationToken ct) =>
+        group.MapPost("/chat", async (TestChatRequest req, IAiProvider aiProvider, IHttpClientFactory httpClientFactory, IConfiguration config, AppConfig appConfig, CancellationToken ct) =>
         {
-            if (!CheckTestingEnabled())
+            if (!CheckTestingEnabled(appConfig))
                 return Results.Problem(TestingDisabledErrorMsg);
 
             try
@@ -177,9 +170,9 @@ internal static class TestEndpoints
         });
 
         // Doens't send a request but just uses attached screenshot image to create and display what grid image would be generated
-        group.MapPost("/make-grid-image", async (TestCoordinatePromptRequest req, CoordinatePrompter prompter, CancellationToken ct) =>
+        group.MapPost("/make-grid-image", async (TestCoordinatePromptRequest req, CoordinatePrompter prompter, AppConfig appConfig, CancellationToken ct) =>
         {
-            if (!CheckTestingEnabled())
+            if (!CheckTestingEnabled(appConfig))
                 return Results.Problem(TestingDisabledErrorMsg);
             try
             {
@@ -204,7 +197,7 @@ internal static class TestEndpoints
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
-            if (!CheckTestingEnabled())
+            if (!CheckTestingEnabled(appConfig))
                 return Results.Problem(TestingDisabledErrorMsg);
 
             try

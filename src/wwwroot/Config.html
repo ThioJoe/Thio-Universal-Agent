@@ -305,6 +305,13 @@
             serverDefaults = sections;
             renderSections(sections);
             applyStoredValues();
+
+            // Push all stored browser values to the server so the in-memory
+            // config matches what the user saved, even after a server restart.
+            if (Object.keys(browserValues).length > 0) {
+                try { await pushToServer(browserValues); } catch { /* best-effort */ }
+            }
+
             setStatus('Browser overrides loaded');
         } catch (err) {
             document.getElementById('config-main').textContent = 'Failed to load config schema: ' + err.message;

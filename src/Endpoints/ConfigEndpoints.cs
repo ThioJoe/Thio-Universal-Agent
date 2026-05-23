@@ -67,7 +67,7 @@ internal static class ConfigEndpoints
 
         app.MapPost("/api/config", (JsonElement body, AppConfig appConfig) =>
         {
-            if (body.TryGetProperty("general", out var generalEl)) { ApplyUpdates(appConfig.General, generalEl); Globals.ENABLE_TESTING = appConfig.General.EnableDebugMode; Globals.MAX_QUEUE_SIZE = appConfig.General.MaxQueueSize; }
+            if (body.TryGetProperty("general", out var generalEl)) { ApplyUpdates(appConfig.General, generalEl); }
             if (body.TryGetProperty("gemini",  out var geminiEl))  ApplyUpdates(appConfig.Gemini, geminiEl);
             if (body.TryGetProperty("agent",   out var agentEl))   ApplyUpdates(appConfig.Agent, agentEl);
             return Results.Ok();

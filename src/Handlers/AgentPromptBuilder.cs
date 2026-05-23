@@ -11,6 +11,12 @@ public static class AgentPromptBuilder
     /// any prompts are built. When <see langword="null"/> the system-info block is omitted.
     /// </summary>
     public static ISystemProvider? SystemProvider { get; set; }
+
+    /// <summary>
+    /// Application config used to read runtime values (e.g. max queue size) into prompts.
+    /// Set this once at startup before any prompts are built.
+    /// </summary>
+    public static AppConfig? AppConfig { get; set; }
     /// <summary>
     /// Produces the full instruction prompt including the user's goal.
     /// This is sent as the first message alongside the initial screenshot.
@@ -76,7 +82,7 @@ public static class AgentPromptBuilder
             <action 1>
             <action 2>
             ...
-              Queue up to {AgentActionParser.MaxQueuedActions} actions to execute back-to-back without waiting for a new screenshot between them.
+              Queue up to {AppConfig?.General.MaxQueueSize ?? 5} actions to execute back-to-back without waiting for a new screenshot between them.
               Each queued line uses the exact same syntax as a normal ACTION: call.
               Multi-line actions such as CLICK_DRAG with From:/To: lines are fully supported.
               Use QUEUE: only when the actions are simple and predictable (e.g. click a field then type text).
@@ -97,7 +103,7 @@ public static class AgentPromptBuilder
             THOUGHT: <your reasoning about what you see on screen and what to do next>
             ACTION: <exactly one tool call from the list above>
 
-            Format B — queued actions (up to {AgentActionParser.MaxQueuedActions}):
+            Format B — queued actions (up to {AppConfig?.General.MaxQueueSize ?? 5}):
             THOUGHT: <your reasoning about what you see on screen and what to do next>
             QUEUE:
             <tool call 1>
@@ -123,8 +129,10 @@ public static class AgentPromptBuilder
             11. If using a tool's COORDS mode (if available), give the coordinates normalized within {normDim}x{normDim} coordinates regardless of original aspect ratio or resolution. The true coordinates will be automatically calculated from this.
             12. Always visually confirm the action was taken to ensure it worked is possible. For example, the computer may have missed the action and it needs to be repeated.
             13. Prefer the use of COORDS mode for tools where available. If it repeatly fails to hit the correction location, try using natural language.
-            14. Queued actions should ONLY be used if the user interface is not expected to change from the actions. For example, checking multiple boxes in the same window, but NOT to close a menu then click something behind it.
+            14. Queued actions should ONLY be used if the user interface is not expected to change from the actions. 
+                For example but not limited to: Checking multiple boxes in the same window (but NOT to close a menu then click something behind it), drawing, selecting multiple items. If able, you SHOULD use queued actions as much as possible when possible.
                 Tip: Test an action once by itself before queuing up the rest of the sequence the queue.
+                Tip: The user sets the max action queue. You can feel confident using up to the max queue size.
             ═══════════════════════════════════
             YOUR GOAL
             ═══════════════════════════════════

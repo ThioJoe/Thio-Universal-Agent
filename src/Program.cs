@@ -38,8 +38,7 @@ builder.Services.AddSingleton<AgentSessionManager>();
 var app = builder.Build();
 
 AgentPromptBuilder.SystemProvider = app.Services.GetService<ISystemProvider>();
-Globals.ENABLE_TESTING = app.Services.GetRequiredService<AppConfig>().General.EnableDebugMode;
-Globals.MAX_QUEUE_SIZE = app.Services.GetRequiredService<AppConfig>().General.MaxQueueSize;
+AgentPromptBuilder.AppConfig = app.Services.GetRequiredService<AppConfig>();
 
 var embeddedProvider = new EmbeddedFileProvider(typeof(Program).Assembly, "Thio_Universal_Agent.wwwroot");
 app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = embeddedProvider });

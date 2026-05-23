@@ -16,15 +16,10 @@ public static class AgentActionParser
     private const string ActionPrefix = "ACTION:";
     private const string QueuePrefix = "QUEUE:";
 
-    /// <summary>
-    /// Maximum number of actions the AI may queue in a single <c>QUEUE:</c> block.
-    /// Mirrors <see cref="Globals.MAX_QUEUE_SIZE"/>; configured via <see cref="GeneralConfig.MaxQueueSize"/>.
-    /// </summary>
-    public static int MaxQueuedActions => Globals.MAX_QUEUE_SIZE;
-
     /// <summary> Attempts to parse the AI's response text into a thought and action. </summary>
+    /// <param name="maxQueueSize">Maximum number of actions permitted in a QUEUE: block; sourced from <see cref="GeneralConfig.MaxQueueSize"/>.</param>
     /// <returns>True if parsing succeeded; false otherwise.</returns>
-    public static bool TryParse(string responseText, [NotNullWhen(true)] out AgentParsedResponse? result, [NotNullWhen(false)] out string? error)
+    public static bool TryParse(string responseText, int maxQueueSize, [NotNullWhen(true)] out AgentParsedResponse? result, [NotNullWhen(false)] out string? error)
     {
         result = null;
         error = null;
@@ -49,7 +44,7 @@ public static class AgentActionParser
         }
 
         if (hasQueue)
-            return TryParseQueueResponse(responseText, queueIndex, out result, out error);
+            return TryParseQueueResponse(responseText, queueIndex, maxQueueSize, out result, out error);
 
         // ── Single-action path (original behavior) ────────────────────────────
 
@@ -77,10 +72,10 @@ public static class AgentActionParser
     }
 
     /// <summary>
-    /// Parses a QUEUE: block that contains 1–<see cref="MaxQueuedActions"/> action lines.
+    /// Parses a QUEUE: block that contains 1–<paramref name="maxQueueSize"/> action lines.
     /// </summary>
     private static bool TryParseQueueResponse(
-        string responseText, int queueIndex,
+        string responseText, int queueIndex, int maxQueueSize,
         [NotNullWhen(true)] out AgentParsedResponse? result,
         [NotNullWhen(false)] out string? error)
     {
@@ -96,7 +91,7 @@ public static class AgentActionParser
         string queuePayload = responseText[(queueIndex + QueuePrefix.Length)..].Trim();
         if (queuePayload.Length == 0)
         {
-            error = $"QUEUE: block is present but empty. Provide 1 to {MaxQueuedActions} action lines.";
+            error = $"QUEUE: block is present but empty. Provide 1 to {maxQueueSize} action lines.";
             return false;
         }
 
@@ -106,7 +101,7 @@ public static class AgentActionParser
         // Group lines into per-action payloads.
         // A new action starts whenever a line begins with a known tool token.
         // Non-tool lines (e.g. CLICK_DRAG's From:/To: continuations) are appended to the current block.
-        var actionPayloads = new List<string>(MaxQueuedActions);
+        var actionPayloads = new List<string>(maxQueueSize);
         var currentBlock   = new System.Text.StringBuilder();
 
         foreach (string line in lines)
@@ -132,9 +127,9 @@ public static class AgentActionParser
             return false;
         }
 
-        if (actionPayloads.Count > MaxQueuedActions)
+        if (actionPayloads.Count > maxQueueSize)
         {
-            error = $"QUEUE: block contains {actionPayloads.Count} actions but the maximum is {MaxQueuedActions}.";
+            error = $"QUEUE: block contains {actionPayloads.Count} actions but the maximum is {maxQueueSize}.";
             return false;
         }
 

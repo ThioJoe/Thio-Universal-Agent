@@ -43,7 +43,7 @@ public class GeneralConfig
     [ConfigField("Enable Debug Mode", Description = "Capture verbose debug entries and annotated screenshots; disable to reduce per-step overhead")]
     public bool EnableDebugMode { get; set; } = false;
 
-    [ConfigField("Max Queue Size", Description = "Maximum number of actions the AI may queue in a single QUEUE: batch (1–10)")]
+    [ConfigField("Max Queue Size", Description = "Maximum number of actions the AI may queue in a single QUEUE")]
     public int MaxQueueSize { get; set; } = 5;
 
     // ── Constructors ──────────────────────────────────────────────────────────
