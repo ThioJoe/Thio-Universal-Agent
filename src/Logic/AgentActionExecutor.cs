@@ -32,7 +32,7 @@ public sealed class AgentActionExecutor(
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(currentScreenshot);
 
-        List<AgentDebugEntry>? debugLog = Globals.ENABLE_TESTING ? [] : null;
+        List<AgentDebugEntry>? debugLog = [];
 
         try
         {
@@ -99,6 +99,12 @@ public sealed class AgentActionExecutor(
             logger.LogInformation("{ActionKind} at current cursor position ({X}, {Y}).", action.Kind, curX, curY);
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Current Cursor Position", Text: $"({curX}, {curY})")).ConfigureAwait(false);
 
+            if (debugLog is not null || onProgress is not null)
+            {
+                var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
+                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Annotated Screenshot", ImageBase64: Convert.ToBase64String(screenshot))).ConfigureAwait(false);
+            }
+
             string cursorMethodCalled;
             switch (action.Kind)
             {
@@ -142,11 +148,15 @@ public sealed class AgentActionExecutor(
         {
             (int px, int py) = CoordinatePrompter.ParseAndNormalizeCoords(target, screenshot, screenProvider);
 
+            if (debugLog is not null || onProgress is not null)
+            {
+                //byte[] annotation = CoordinatePrompter.CreateAnnotatedImageDirect(screenshot, px, py);
+                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Annotated Screenshot", ImageBase64: Convert.ToBase64String(screenshot))).ConfigureAwait(false);
+            }
+
             var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
             px = px + originX;
             py = py + originY;
-
-            
 
             logger.LogInformation("{ActionKind} at exact coordinates ({X}, {Y}).", action.Kind, px, py);
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Exact Coordinates", Text: $"({px}, {py})")).ConfigureAwait(false);

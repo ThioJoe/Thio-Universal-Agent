@@ -926,7 +926,7 @@
     }
 
     function handleSubStep(msg) {
-        if (!debugEnabled) return;
+        if (!debugEnabled && !msg.imageBase64) return;
 
         const entry = document.createElement('div');
         entry.className = 'debug-entry';
@@ -994,8 +994,13 @@
         }
 
         // Debug panel
-        if (debugEnabled && msg.debugLog && msg.debugLog.length > 0) {
-            html += renderDebugLog(msg.debugLog);
+        if (msg.debugLog && msg.debugLog.length > 0) {
+            const visibleEntries = debugEnabled
+                ? msg.debugLog
+                : msg.debugLog.filter(e => e.imageBase64);
+            if (visibleEntries.length > 0) {
+                html += renderDebugLog(visibleEntries);
+            }
         }
 
         entry.innerHTML = html;

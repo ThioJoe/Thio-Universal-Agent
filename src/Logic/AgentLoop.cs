@@ -77,7 +77,7 @@ public sealed class AgentLoop(
                 ct.ThrowIfCancellationRequested();
 
                 bool debugging = Globals.ENABLE_TESTING;
-                List<AgentDebugEntry>? debugLog = debugging ? [] : null;
+                List<AgentDebugEntry>? debugLog = [];
 
                 // Prepend any carry-over entries from previous step's context reset
                 if (debugLog is not null && carryOverDebug is { Count: > 0 })
@@ -131,11 +131,14 @@ public sealed class AgentLoop(
                 var preview = new AgentStepPreview(step, parsed.Thought, parsed.Action);
                 await session.RaiseStepStartingAsync(preview).ConfigureAwait(false);
 
-                // Create a progress callback that streams each executor debug entry to the UI in real-time
+                // Create a progress callback that streams each executor debug entry to the UI in real-time.
+                // Always forward image entries; text-only entries are only forwarded in debug mode.
                 int currentStep = step;
-                Func<AgentDebugEntry, Task>? executorProgress = debugging
-                    ? async entry => await session.RaiseSubStepUpdateAsync(new AgentSubStep(currentStep, entry)).ConfigureAwait(false)
-                    : null;
+                Func<AgentDebugEntry, Task> executorProgress = async entry =>
+                {
+                    if (!debugging && entry.ImageBase64 is null) return;
+                    await session.RaiseSubStepUpdateAsync(new AgentSubStep(currentStep, entry)).ConfigureAwait(false);
+                };
 
                 // Execute the action (executor adds its own debug entries)
                 var executeSw = Stopwatch.StartNew();

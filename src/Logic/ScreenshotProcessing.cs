@@ -38,7 +38,7 @@ public sealed partial class CoordinatePrompter
         ArgumentNullException.ThrowIfNull(screenshotBytes);
         using IImage source = LoadImage(screenshotBytes);
         ViewRegion view = CreateFullView(source);
-        return CreateGridOverlayImage(source, view, _divisions, _divisions, normalizedSize: 1000);
+        return CreateGridOverlayImage(source, view, _divisions, _divisions, gridAxisMaxValue: 1000, noOuterBorder: true);
     }
 
     /// <summary>Decodes raw image bytes into an <see cref="IImage"/> for use with the canvas.</summary>
@@ -105,7 +105,7 @@ public sealed partial class CoordinatePrompter
     /// the given absolute pixel position. Used for Direct / DirectAutoNormalize modes where there
     /// is no grid overlay and the coordinate is already an un-normalised pixel location.
     /// </summary>
-    private static byte[] CreateAnnotatedImageDirect(byte[] imageBytes, double pixelX, double pixelY)
+    internal static byte[] CreateAnnotatedImageDirect(byte[] imageBytes, double pixelX, double pixelY)
     {
         using IImage image = LoadImage(imageBytes);
         int w = (int)image.Width;
@@ -234,6 +234,17 @@ public sealed partial class CoordinatePrompter
 
 
     /// <summary>Draws the grid lines, axis labels and tick marks onto the canvas.</summary>
+    /// <param name="canvas"></param>
+    /// <param name="rulerOffset"></param>
+    /// <param name="imageWidth"></param>
+    /// <param name="imageHeight"></param>
+    /// <param name="cols"></param>
+    /// <param name="rows"></param>
+    /// <param name="color"></param>
+    /// <param name="lineThickness"></param>
+    /// <param name="gridAxisMaxValue">The maximum value for axis labels, or <see langword="null"/> to use the maximum of <paramref name="cols"/> and <paramref name="rows"/></param>
+    /// <param name="gridLinesOnly">When <see langword="true"/>, only draw the grid lines without any labels or tick marks. Default is <see langword="false"/>.</param>
+    /// <param name="innerLabels">When <see langword="true"/>, axis labels are drawn inside the grid cells instead of outside. Default is <see langword="false"/>.</param>
     private static void DrawRulerGrid(
         ICanvas canvas,
         int rulerOffset,
@@ -243,7 +254,9 @@ public sealed partial class CoordinatePrompter
         int rows,
         Color color,
         float? lineThickness,
-        int? normalizedSize = null
+        int? gridAxisMaxValue = null,
+        bool gridLinesOnly = false,
+        bool innerLabels = false // NOT YET IMPLEMENTED
         )
     {
         float thickness = lineThickness ?? Math.Max(1f, imageWidth / 1200f);
@@ -269,23 +282,29 @@ public sealed partial class CoordinatePrompter
         {
             float x = rulerOffset + c * cellW;
 
+            if (gridLinesOnly && (c == 0 || c == cols))
+                continue;
+
             // If using column labels that don't reflect the true resolution
             int colLabel = c;
-            if (normalizedSize is int nSize)
+            if (gridAxisMaxValue is int nSize)
             {
                 colLabel = (int)Math.Round((double)(nSize / cols) * c);
             }
 
             canvas.DrawLine(x, rulerOffset, x, rulerOffset + imageHeight);
 
-            string label = colLabel.ToString(CultureInfo.InvariantCulture);
-            float textW = labelSize * label.Length * 0.75f;
-            float textH = labelSize * 1.3f;
-            canvas.DrawString(label,
-                x - textW / 2, rulerOffset - tickLen - labelGap - textH, textW, textH,
-                HorizontalAlignment.Center, VerticalAlignment.Center);
+            if (!gridLinesOnly)
+            {
+                string label = colLabel.ToString(CultureInfo.InvariantCulture);
+                float textW = labelSize * label.Length * 0.75f;
+                float textH = labelSize * 1.3f;
+                canvas.DrawString(label,
+                    x - textW / 2, rulerOffset - tickLen - labelGap - textH, textW, textH,
+                    HorizontalAlignment.Center, VerticalAlignment.Center);
 
-            canvas.DrawLine(x, rulerOffset - tickLen, x, rulerOffset);
+                canvas.DrawLine(x, rulerOffset - tickLen, x, rulerOffset);
+            }
         }
 
         // Horizontal lines + Y axis labels
@@ -293,36 +312,56 @@ public sealed partial class CoordinatePrompter
         {
             float y = rulerOffset + r * cellH;
 
+            if (gridLinesOnly && (r == 0 || r == rows))
+                continue;
+
             // If using column labels that don't reflect the true resolution
             int rowLabel = r;
-            if (normalizedSize is int nSize)
+            if (gridAxisMaxValue is int nSize)
             {
                 rowLabel = (int)Math.Round((double)(nSize / rows) * r);
             }
 
             canvas.DrawLine(rulerOffset, y, rulerOffset + imageWidth, y);
 
-            string label = rowLabel.ToString(CultureInfo.InvariantCulture);
-            float textW = labelSize * label.Length * 0.75f;
-            float textH = labelSize * 1.3f;
-            canvas.DrawString(label,
-                rulerOffset - tickLen - labelGap - textW, y - textH / 2, textW, textH,
-                HorizontalAlignment.Right, VerticalAlignment.Center);
+            if (!gridLinesOnly)
+            {
+                string label = rowLabel.ToString(CultureInfo.InvariantCulture);
+                float textW = labelSize * label.Length * 0.75f;
+                float textH = labelSize * 1.3f;
+                canvas.DrawString(label,
+                    rulerOffset - tickLen - labelGap - textW, y - textH / 2, textW, textH,
+                    HorizontalAlignment.Right, VerticalAlignment.Center);
 
-            canvas.DrawLine(rulerOffset - tickLen, y, rulerOffset, y);
+                canvas.DrawLine(rulerOffset - tickLen, y, rulerOffset, y);
+            }
         }
     }
 
+    /// <summary> / Creates a PNG image of the source image cropped to the specified view region with a grid overlay and axis labels. / </summary>
+    /// <param name="source">The source image to crop and overlay.</param>
+    /// <param name="view">The region of the source image to crop.</param>
+    /// <param name="cols">The number of grid columns. Defaults to DefaultDivisions</param>
+    /// <param name="rows">The number of grid rows. Defaults to DefaultDivisions</param>
+    /// <param name="gridAxisMaxValue">The maximum value for axis labels, or <see langword="null"/> to use the maximum of <paramref name="cols"/> and <paramref name="rows"/></param>
+    /// <param name="gridColor">The color of the grid lines and labels, or <see langword="null"/> to use a default pink color with 40% opacity.</param>
+    /// <param name="lineThickness">The thickness of the grid lines in pixels, or <see langword="null"/> to use a default value.</param>
+    /// <param name="minResolution">The minimum resolution for the output image. When greater than 0, the image is scaled to meet this minimum.A / value of 0 uses the view dimensions directly.</param>
+    /// <param name="noOuterBorder">When <see langword="true"/>, no margin is added around the image for axis labels, and the cropped view is drawn flush to the edges. Default is <see langword="false"/>.</param>
+    /// <param name="innerLabels">When <see langword="true"/>, axis labels are drawn inside the grid cells instead of outside. Default is <see langword="false"/>.</param>
+    /// <returns>A byte array containing the PNG image data.</returns>
     private static byte[] CreateGridOverlayImage(
     /// <summary> / Creates a PNG image of the source cropped to <paramref name="view"/> with a grid / overlay and axis labels drawn on top. / </summary>
         IImage source,
         ViewRegion view,
         int cols = DefaultDivisions,
         int rows = DefaultDivisions,
-        int? normalizedSize = null,
+        int? gridAxisMaxValue = null,
         Color? gridColor = null,
         float? lineThickness = null,
-        int minResolution = 0
+        int minResolution = 0,
+        bool noOuterBorder = false,
+        bool innerLabels = false
         )
     {
         Color color = gridColor ?? Color.FromRgba(236, 72, 153, 102); // ~40% opacity pink
@@ -330,28 +369,58 @@ public sealed partial class CoordinatePrompter
             ? ComputeRenderedSize((int)view.Width, (int)view.Height, minResolution)
             : ((int)view.Width, (int)view.Height);
         int maxLabelValue = Math.Max(cols, rows);
-        int rulerOffset = ComputeRulerOffset(imageWidth, maxLabelValue);
-        int labelBuffer = ComputeLabelBuffer(imageWidth, maxLabelValue);
-        int canvasWidth = imageWidth + rulerOffset + labelBuffer;
-        int canvasHeight = imageHeight + rulerOffset + labelBuffer;
+
+        int rulerOffset, labelBuffer, canvasWidth, canvasHeight;
+
+        if (!noOuterBorder)
+        {
+            rulerOffset = ComputeRulerOffset(imageWidth, maxLabelValue);
+            labelBuffer = ComputeLabelBuffer(imageWidth, maxLabelValue);
+            canvasWidth = imageWidth + rulerOffset + labelBuffer;
+            canvasHeight = imageHeight + rulerOffset + labelBuffer;
+        } 
+        else
+        {
+            rulerOffset = 0;
+            labelBuffer = 0;
+            canvasWidth = imageWidth;
+            canvasHeight = imageHeight;
+        }
 
         using var context = new SkiaBitmapExportContext(canvasWidth, canvasHeight, 1.0f);
         ICanvas canvas = context.Canvas;
 
-        // Black background
-        canvas.FillColor = Colors.Black;
-        canvas.FillRectangle(0, 0, canvasWidth, canvasHeight);
+        if (!noOuterBorder)
+        {
+            // Black background
+            canvas.FillColor = Colors.Black;
+            canvas.FillRectangle(0, 0, canvasWidth, canvasHeight);
 
-        // Draw the cropped view stretched to the full image area via clip + transform
-        canvas.SaveState();
-        canvas.ClipRectangle(rulerOffset, rulerOffset, imageWidth, imageHeight);
-        canvas.Translate(rulerOffset, rulerOffset);
-        canvas.Scale(imageWidth / (float)view.Width, imageHeight / (float)view.Height);
-        canvas.Translate(-(float)view.X, -(float)view.Y);
+            // Draw the cropped view stretched to the full image area via clip + transform
+            canvas.SaveState();
+            canvas.ClipRectangle(rulerOffset, rulerOffset, imageWidth, imageHeight);
+            canvas.Translate(rulerOffset, rulerOffset);
+            canvas.Scale(imageWidth / (float)view.Width, imageHeight / (float)view.Height);
+            canvas.Translate(-(float)view.X, -(float)view.Y);
+        }
+
         canvas.DrawImage(source, 0, 0, source.Width, source.Height);
-        canvas.RestoreState();
+        canvas.RestoreState(); // Restores the transform/clip state, not entire canvas
 
-        DrawRulerGrid(canvas, rulerOffset, imageWidth, imageHeight, cols, rows, color, lineThickness);
+        // We need to determine how to call the DrawRulerGrid function. Whether to tell it to draw labels at all.
+        bool gridLinesOnly; 
+        if (noOuterBorder == true && innerLabels == false)
+        {
+            // If there is no outer border and labels are not drawn inside, then we can't fit any labels or tick marks without them being cut off.
+            // In this case we set gridLinesOnly to true to skip drawing them, since they would be invisible anyway.
+            gridLinesOnly = true;
+        }
+        else
+        {
+            gridLinesOnly = false;
+        }
+
+        DrawRulerGrid(canvas, rulerOffset, imageWidth, imageHeight, cols, rows, color, lineThickness, gridAxisMaxValue, gridLinesOnly, innerLabels);
 
         using var ms = new MemoryStream();
         context.WriteToStream(ms);
