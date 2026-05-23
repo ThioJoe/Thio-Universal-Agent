@@ -35,7 +35,7 @@ public class GeneralConfig
     public int QueueSettleDelayMs { get; set; } = 50;
 
     [ConfigField("Enable Context Reset", Description = "Periodically trim conversation history to keep token usage in check")]
-    public bool EnableContextReset { get; set; } = true;
+    public bool EnableContextReset { get; set; } = false;
 
     [ConfigField("Strip History Images", Description = "Remove screenshots from older messages to reduce token usage")]
     public bool StripHistoryImages { get; set; } = true;
@@ -45,6 +45,12 @@ public class GeneralConfig
 
     [ConfigField("Max Queue Size", Description = "Maximum number of actions the AI may queue in a single QUEUE")]
     public int MaxQueueSize { get; set; } = 5;
+
+    [ConfigField("Max Steps", Description = "Maximum number of observe-think-act steps the agent may take before the session is cancelled")]
+    public int MaxSteps { get; set; } = 50;
+
+    [ConfigField("Context Reset Interval", Description = "Trim conversation history every N steps when context reset is enabled")]
+    public int ContextResetInterval { get; set; } = 8;
 
     // ── Constructors ──────────────────────────────────────────────────────────
 
@@ -64,6 +70,8 @@ public class GeneralConfig
         if (bool.TryParse(section["StripHistoryImages"], out var s)) StripHistoryImages = s;
         if (bool.TryParse(section["EnableDebugMode"], out var dbg)) EnableDebugMode = dbg;
         if (int.TryParse(section["MaxQueueSize"], out var mq) && mq >= 1) MaxQueueSize = mq;
+        if (int.TryParse(section["MaxSteps"], out var ms) && ms >= 1) MaxSteps = ms;
+        if (int.TryParse(section["ContextResetInterval"], out var cri) && cri >= 1) ContextResetInterval = cri;
     }
 }
 

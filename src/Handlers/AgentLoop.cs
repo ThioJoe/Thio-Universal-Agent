@@ -16,12 +16,11 @@ public sealed partial class AgentLoop(
     AppConfig appConfig,
     ILogger<AgentLoop> logger)
 {
-    private const int MaxSteps = 50;
     private const int MaxParseRetries = 2;
-    private const int DefaultSettleDelayMs = 1500;
-    private const int ContextResetInterval = 8;
     private const string ScreenMimeType = "image/jpeg";
 
+    private readonly int _maxSteps = appConfig.General.MaxSteps;
+    private readonly int _contextResetInterval = appConfig.General.ContextResetInterval;
     private readonly int _settleDelayMs = appConfig.General.SettleDelayMs;
     private readonly int _queueSettleDelayMs = appConfig.General.QueueSettleDelayMs;
 
@@ -71,7 +70,7 @@ public sealed partial class AgentLoop(
             // Carry-forward: time spent on the AI call whose response is consumed by the next step
             long lastAiResponseMs = initialAiSw.ElapsedMilliseconds;
 
-            for (int step = 1; step <= MaxSteps; step++)
+            for (int step = 1; step <= _maxSteps; step++)
             {
                 ct.ThrowIfCancellationRequested();
 
@@ -231,7 +230,7 @@ public sealed partial class AgentLoop(
                 screenshot.Processed = CoordinatePrompter.CreateFullGridOverlayImage(screenshot.Original);
 
                 // Episodic context reset to prevent payload bloat
-                if (_enableContextReset && step % ContextResetInterval == 0)
+                if (_enableContextReset && step % _contextResetInterval == 0)
                 {
                     conversation = await ResetContextAsync(conversation, session.Goal, screenshot, ct, carryOverDebug).ConfigureAwait(false);
                 }
@@ -266,8 +265,8 @@ public sealed partial class AgentLoop(
 
             // Exceeded max steps
             session.Status = AgentSessionStatus.Failed;
-            session.FinalResult = $"Exceeded maximum of {MaxSteps} steps without completing the goal.";
-            LogMaxStepsExceeded(logger, session.SessionId, MaxSteps);
+            session.FinalResult = $"Exceeded maximum of {_maxSteps} steps without completing the goal.";
+            LogMaxStepsExceeded(logger, session.SessionId, _maxSteps);
         }
         catch (OperationCanceledException)
         {
