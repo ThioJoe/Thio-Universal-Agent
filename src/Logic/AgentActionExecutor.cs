@@ -38,7 +38,8 @@ public sealed class AgentActionExecutor(
         {
             ActionExecutionResult result = action.Kind switch
             {
-                AgentActionKind.LeftClick or AgentActionKind.RightClick or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick or AgentActionKind.MoveMouse
+                AgentActionKind.LeftClick or AgentActionKind.RightClick or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick or AgentActionKind.MoveMouse or
+                AgentActionKind.LeftClickCoords or AgentActionKind.RightClickCoords or AgentActionKind.DoubleClickCoords or AgentActionKind.MiddleClickCoords or AgentActionKind.MoveMouseCoords
                     => await ExecuteClickAsync(action, currentScreenshot, cancellationToken, debugLog, onProgress).ConfigureAwait(false),
 
                 AgentActionKind.ClickDrag or AgentActionKind.ClickDragCoords
@@ -101,24 +102,29 @@ public sealed class AgentActionExecutor(
             string cursorMethodCalled;
             switch (action.Kind)
             {
-                case AgentActionKind.LeftClick:
+                case AgentActionKind.LeftClick or AgentActionKind.LeftClickCoords:
                     await inputProvider.LeftClick_MonitorCoords(curX, curY).ConfigureAwait(false);
                     cursorMethodCalled = $"LeftClick_MonitorCoords({curX}, {curY})";
                     break;
 
-                case AgentActionKind.RightClick:
+                case AgentActionKind.RightClick or AgentActionKind.RightClickCoords:
                     await inputProvider.RightClick_MonitorCoords(curX, curY).ConfigureAwait(false);
                     cursorMethodCalled = $"RightClick_MonitorCoords({curX}, {curY})";
                     break;
 
-                case AgentActionKind.DoubleClick:
+                case AgentActionKind.DoubleClick or AgentActionKind.DoubleClickCoords:
                     await inputProvider.DoubleClick_MonitorCoords(curX, curY).ConfigureAwait(false);
                     cursorMethodCalled = $"DoubleClick_MonitorCoords({curX}, {curY})";
                     break;
 
-                case AgentActionKind.MiddleClick:
+                case AgentActionKind.MiddleClick or AgentActionKind.MiddleClickCoords:
                     await inputProvider.MiddleMouse_MonitorCoords(curX, curY).ConfigureAwait(false);
                     cursorMethodCalled = $"MiddleMouse_MonitorCoords({curX}, {curY})";
+                    break;
+
+                case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
+                    await inputProvider.MoveMouse_MonitorCoords(curX, curY).ConfigureAwait(false);
+                    cursorMethodCalled = $"MoveMouse_MonitorCoords({curX}, {curY})";
                     break;
 
                 default:
@@ -130,6 +136,58 @@ public sealed class AgentActionExecutor(
 
             string cursorCoordStr = $"({curX.ToString(CultureInfo.InvariantCulture)}, {curY.ToString(CultureInfo.InvariantCulture)})";
             return new ActionExecutionResult(true, $"{action.Kind} at current cursor position {cursorCoordStr}.", IsTerminal: false, GoalAchieved: false);
+        }
+        // If exact coordinates were supplied directly, parse and dispatch without AI resolution.
+        else if (action.AltMode == AgentActionAltMode.ExactCoords)
+        {
+            (int px, int py) = CoordinatePrompter.ParseAndNormalizeCoords(target, screenshot, screenProvider);
+
+            var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
+            px = px + originX;
+            py = py + originY;
+
+            
+
+            logger.LogInformation("{ActionKind} at exact coordinates ({X}, {Y}).", action.Kind, px, py);
+            await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Exact Coordinates", Text: $"({px}, {py})")).ConfigureAwait(false);
+
+            string exactMethodCalled;
+            switch (action.Kind)
+            {
+                case AgentActionKind.LeftClick or AgentActionKind.LeftClickCoords:
+                    await inputProvider.LeftClick_MonitorCoords(px, py).ConfigureAwait(false);
+                    exactMethodCalled = $"LeftClick_MonitorCoords({px}, {py})";
+                    break;
+
+                case AgentActionKind.RightClick or AgentActionKind.RightClickCoords:
+                    await inputProvider.RightClick_MonitorCoords(px, py).ConfigureAwait(false);
+                    exactMethodCalled = $"RightClick_MonitorCoords({px}, {py})";
+                    break;
+
+                case AgentActionKind.DoubleClick or AgentActionKind.DoubleClickCoords:
+                    await inputProvider.DoubleClick_MonitorCoords(px, py).ConfigureAwait(false);
+                    exactMethodCalled = $"DoubleClick_MonitorCoords({px}, {py})";
+                    break;
+
+                case AgentActionKind.MiddleClick or AgentActionKind.MiddleClickCoords:
+                    await inputProvider.MiddleMouse_MonitorCoords(px, py).ConfigureAwait(false);
+                    exactMethodCalled = $"MiddleMouse_MonitorCoords({px}, {py})";
+                    break;
+
+                case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
+                    await inputProvider.MoveMouse_MonitorCoords(px, py).ConfigureAwait(false);
+                    exactMethodCalled = $"MoveMouse_MonitorCoords({px}, {py})";
+                    break;
+
+                default:
+                    exactMethodCalled = "N/A";
+                    break;
+            }
+
+            await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: exactMethodCalled)).ConfigureAwait(false);
+
+            string exactCoordStr = $"({px.ToString(CultureInfo.InvariantCulture)}, {py.ToString(CultureInfo.InvariantCulture)})";
+            return new ActionExecutionResult(true, $"{action.Kind} at exact coordinates {exactCoordStr}.", IsTerminal: false, GoalAchieved: false);
         }
         // If we need to resolve the coordinates from natural language description
         else
@@ -183,27 +241,27 @@ public sealed class AgentActionExecutor(
             string methodCalled;
             switch (action.Kind)
             {
-                case AgentActionKind.LeftClick:
+                case AgentActionKind.LeftClick or AgentActionKind.LeftClickCoords:
                     await inputProvider.LeftClick_MonitorCoords(px, py).ConfigureAwait(false);
                     methodCalled = $"LeftClick_MonitorCoords({px}, {py})";
                     break;
 
-                case AgentActionKind.RightClick:
+                case AgentActionKind.RightClick or AgentActionKind.RightClickCoords:
                     await inputProvider.RightClick_MonitorCoords(px, py).ConfigureAwait(false);
                     methodCalled = $"RightClick_MonitorCoords({px}, {py})";
                     break;
 
-                case AgentActionKind.DoubleClick:
+                case AgentActionKind.DoubleClick or AgentActionKind.DoubleClickCoords:
                     await inputProvider.DoubleClick_MonitorCoords(px, py).ConfigureAwait(false);
                     methodCalled = $"DoubleClick_MonitorCoords({px}, {py})";
                     break;
 
-                case AgentActionKind.MiddleClick:
+                case AgentActionKind.MiddleClick or AgentActionKind.MiddleClickCoords:
                     await inputProvider.MiddleMouse_MonitorCoords(px, py).ConfigureAwait(false);
                     methodCalled = $"MiddleMouse_MonitorCoords({px}, {py})";
                     break;
 
-                case AgentActionKind.MoveMouse:
+                case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
                     await inputProvider.MoveMouse_MonitorCoords(px, py).ConfigureAwait(false);
                     methodCalled = $"MoveMouse_MonitorCoords({px}, {py})";
                     break;
@@ -222,6 +280,8 @@ public sealed class AgentActionExecutor(
             return new ActionExecutionResult(true, $"{action.Kind} at {trueCoordStr}{normSuffix} targeting \"{target}\".", IsTerminal: false, GoalAchieved: false, CoordResolutionMs: coordSw.ElapsedMilliseconds);
         }
     }
+
+
 
     /// <summary>Resolves source and destination targets to coordinates, then performs a click-drag.</summary>
     private async Task<ActionExecutionResult> ExecuteClickDragAsync(
@@ -259,7 +319,7 @@ public sealed class AgentActionExecutor(
             }
             else
             {
-                (startPx, startPy) = ParseAndNormalizeCoords(source);
+                (startPx, startPy) = CoordinatePrompter.ParseAndNormalizeCoords(source, screenshot, screenProvider);
             }
 
             // Resolve end point
@@ -273,30 +333,8 @@ public sealed class AgentActionExecutor(
             }
             else
             {
-                (endPx, endPy) = ParseAndNormalizeCoords(destination);
+                (endPx, endPy) = CoordinatePrompter.ParseAndNormalizeCoords(destination, screenshot, screenProvider);
             }
-
-            // When ExactCoords is enabled, the Target and DragTarget fields contain literal "X,Y" coordinate pairs rather than natural language descriptions.
-            // This allows the AI to bypass the CoordinatePrompter when it needs to perform precise adjustments based on pixel values from the screenshot.
-            (int px, int py) ParseAndNormalizeCoords(string coordStr)
-            {
-                string[] parts = coordStr.Split(',');
-                if (parts.Length != 2
-                    || !int.TryParse(parts[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int px)
-                    || !int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int py))
-                {
-                    throw new FormatException($"Invalid coordinate format: \"{coordStr}\". Expected format: \"X,Y\" with integer values.");
-                }
-                else
-                {
-                    (int imgWidth, int imgHeight) = CoordinatePrompter.GetImageResolution(screenshot);
-                    (double TrueXCoords, double TrueYCoords) = CoordinatePrompter.UnNormalizeCoordinates(px, py, 1000, 1000, imgWidth, imgHeight);
-
-                    var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
-                    return ((int)TrueXCoords + originX, (int)TrueYCoords + originY);
-                }
-
-            } // ---- End local function -----
         }
         else
         {

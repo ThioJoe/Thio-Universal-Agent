@@ -128,33 +128,88 @@ public static class AgentActionParser
         }
     }
 
-    /// <summary>Parses a click/move action whose argument is a quoted target description.</summary>
+    /// <summary>Parses a click/move action whose argument is a quoted target description or a COORDS X,Y pair.</summary>
     private static bool TryParseTargetAction(
         AgentActionKind kind, string args,
         [NotNullWhen(true)] out AgentAction? action,
         [NotNullWhen(false)] out string? error)
     {
         action = null;
-        string target = StripQuotes(args);
-        if (target.Length == 0)
+
+        StringSplitOptions splitOpts = StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries;
+        string kindUpper = kind.ToString().ToUpperInvariant();
+
+        // Handle COORDS keyword: e.g. LEFT_CLICK COORDS 100,200  or  LEFT_CLICK COORDS CURRENT
+        if (args.StartsWith("COORDS ", StringComparison.OrdinalIgnoreCase))
         {
-            error = $"{kind} requires a target description (e.g. {kind.ToString().ToUpperInvariant()} \"the OK button\") or CURRENT keyword for current cursor location.";
+            string coordsPart = args["COORDS ".Length..].Trim();
+
+            AgentActionKind coordsKind = kind switch
+            {
+                AgentActionKind.LeftClick   => AgentActionKind.LeftClickCoords,
+                AgentActionKind.RightClick  => AgentActionKind.RightClickCoords,
+                AgentActionKind.DoubleClick => AgentActionKind.DoubleClickCoords,
+                AgentActionKind.MiddleClick => AgentActionKind.MiddleClickCoords,
+                AgentActionKind.MoveMouse   => AgentActionKind.MoveMouseCoords,
+                _                           => kind,
+            };
+
+            if (coordsPart.Equals("CURRENT", StringComparison.OrdinalIgnoreCase))
+            {
+                error = null;
+                action = new AgentAction(coordsKind, Target: "[Current Cursor Position]", AltMode: AgentActionAltMode.CurrentCursorPosition);
+                return true;
+            }
+
+            // Parse "X,Y" — tolerate a space after the comma ("X, Y")
+            string[] parts = coordsPart.Split(' ', splitOpts);
+            string? coordStr = parts.Length switch
+            {
+                1 => parts[0],                          // "X,Y"
+                2 => $"{parts[0]}{parts[1]}",           // "X, Y" (space after comma)
+                _ => null,
+            };
+
+            if (coordStr is null)
+            {
+                error = $"Invalid COORDS format for {kindUpper}. Expected '{kindUpper} COORDS X,Y' or '{kindUpper} COORDS CURRENT'.";
                 return false;
             }
 
-            AgentActionAltMode altMode = AgentActionAltMode.None;
-            // Check if it has the CURRENT keyword
-            if (target.Equals("CURRENT", StringComparison.OrdinalIgnoreCase))
+            string[] xy = coordStr.Split(',', splitOpts);
+            if (xy.Length != 2
+                || !int.TryParse(xy[0], out int x)
+                || !int.TryParse(xy[1], out int y))
             {
-                altMode = AgentActionAltMode.CurrentCursorPosition;
-                target = "[Current Cursor Position]"; // Clear the target since we're using the CURRENT keyword
-            }
-            // Check if it starts with CURRENT but has other things, if so it's an error
-            else if (target.StartsWith("CURRENT", StringComparison.OrdinalIgnoreCase))
-            {
-                error = $"{kind} cannot have additional text after the CURRENT keyword.";
+                error = $"Invalid COORDS format for {kindUpper}: '{coordsPart}'. Expected integer values like '{kindUpper} COORDS 100,200'.";
                 return false;
             }
+
+            error = null;
+            action = new AgentAction(coordsKind, Target: $"{x},{y}", AltMode: AgentActionAltMode.ExactCoords);
+            return true;
+        }
+
+        string target = StripQuotes(args);
+        if (target.Length == 0)
+        {
+            error = $"{kindUpper} requires a target description (e.g. {kindUpper} \"the OK button\"), the COORDS keyword (e.g. {kindUpper} COORDS 100,200), or the CURRENT keyword for current cursor location.";
+            return false;
+        }
+
+        AgentActionAltMode altMode = AgentActionAltMode.None;
+        // Check if it has the CURRENT keyword
+        if (target.Equals("CURRENT", StringComparison.OrdinalIgnoreCase))
+        {
+            altMode = AgentActionAltMode.CurrentCursorPosition;
+            target = "[Current Cursor Position]"; // Clear the target since we're using the CURRENT keyword
+        }
+        // Check if it starts with CURRENT but has other things, if so it's an error
+        else if (target.StartsWith("CURRENT", StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"{kindUpper} cannot have additional text after the CURRENT keyword.";
+            return false;
+        }
 
         error = null;
         action = new AgentAction(kind, Target: target, AltMode: altMode);

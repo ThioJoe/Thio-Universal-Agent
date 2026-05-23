@@ -29,27 +29,26 @@ public static class AgentPromptBuilder
             AVAILABLE TOOLS
             ═══════════════════════════════════
 
-            LEFT_CLICK <CURRENT or description>
-            RIGHT_CLICK <CURRENT or description>
-            DOUBLE_CLICK <CURRENT or description>
-            MIDDLE_CLICK <CURRENT or description>
-              Clicks using the mouse button type specified.
-              CURRENT clicks at the current cursor location without moving the mouse.
-              Otherwise, it will locate the described UI element on screen and clicks it.
-              Example: LEFT_CLICK CURRENT
-              Example: RIGHT_CLICK "start menu button"
+            LEFT_CLICK <target>
+            RIGHT_CLICK <target>
+            DOUBLE_CLICK <target>
+            MIDDLE_CLICK <target>
+              Clicks at the specified target. <target> can be:
+              · A quoted description — locates the UI element on screen: LEFT_CLICK "the OK button in the Notepad Save-As Dialog"
+              · CURRENT            — clicks at the cursor's current position without moving: LEFT_CLICK CURRENT
+              · COORDS X,Y         — clicks at exact pixel coordinates: LEFT_CLICK COORDS 450,300
 
-            MOVE_MOUSE "description of where to move"
-              Moves the mouse cursor to the described UI element without clicking.
+            MOVE_MOUSE <target>
+              Moves the mouse to the specified target without clicking. Accepts the same target forms as above.
 
             CLICK_DRAG
             From: "description of what to drag"
             To: "description of where to drop"
-              Left-clicks and holds the element described in From, drags to the element described in To, then releases.
+              Drags from the From element to the To element.
 
             CLICK_DRAG COORDS X1,Y1 X2,Y2
-                Left-clicks and holds at the coordinates X1,Y1, drags to X2,Y2, then releases. Use when dragging between two exact points rather than described UI elements.
-                Either coordinate pair can be replaced with CURRENT to use the cursor's present position (e.g. CLICK_DRAG COORDS CURRENT 300,400 or CLICK_DRAG COORDS 100,200 CURRENT).
+              Drags from exact coordinates X1,Y1 to X2,Y2. Either pair can be CURRENT to use the cursor's present position.
+              Example: CLICK_DRAG COORDS CURRENT 300,400
 
             TYPE_TEXT "text to type"
               Types the given text using the keyboard. A text field must already have focus from a prior click.
@@ -90,15 +89,16 @@ public static class AgentPromptBuilder
             1. Study the screenshot carefully before and after every action.
             2. Issue exactly ONE action per response. Never chain multiple actions.
             3. After clicking a text field, use TYPE_TEXT on the NEXT step — never combine a click and typing in one step.
-            4. When describing click targets, be very specific and unambiguous. Reference visual cues like position, color, icon shape, and surrounding text. Describe in natural language.
+            4. When describing click targets in natural language, be very specific and unambiguous. Reference visual cues like position, color, icon shape, and surrounding text.
             5. If your previous action didn't produce the expected result, consider trying a different approach rather than repeating the same action.
             6. If an unexpected dialog, popup, or error appeared, address it before continuing toward the main goal.
             7. Use WAIT when you see a loading spinner, progress bar, or animation that hasn't finished.
             8. Use DONE only when the screen visually confirms the goal is complete.
             9. If you are stuck after several attempts, use FAIL with a clear explanation.
             10. When describing a target, use language only (not coordinates), unless a tool has a COORDS mode you are using.
-            11. If using a tool's COORDS mode (available), give the coordinates normalized within 1000x1000 coordinates regardless of original aspect ratio or resolution. The true coordinates will be automatically calculated from this.
+            11. If using a tool's COORDS mode (if available), give the coordinates normalized within 1000x1000 coordinates regardless of original aspect ratio or resolution. The true coordinates will be automatically calculated from this.
             12. Always visually confirm the action was taken to ensure it worked is possible. For example, the computer may have missed the action and it needs to be repeated.
+            13. Prefer the use of COORDS mode for tools where available. If it repeatly fails to hit the correction location, try using natural language.
 
             ═══════════════════════════════════
             YOUR GOAL

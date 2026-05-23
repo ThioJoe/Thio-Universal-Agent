@@ -731,6 +731,27 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
         return (TrueXCoord, TrueYCoord);
     }
 
+    // When ExactCoords is enabled, the Target and DragTarget fields contain literal "X,Y" coordinate pairs rather than natural language descriptions.
+    // This allows the AI to bypass the CoordinatePrompter when it needs to perform precise adjustments based on pixel values from the screenshot.
+    public static (int px, int py) ParseAndNormalizeCoords(string coordStr, byte[] screenshot, IScreenProvider screenProvider)
+    {
+        string[] parts = coordStr.Split(',');
+        if (parts.Length != 2
+            || !int.TryParse(parts[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int px)
+            || !int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int py))
+        {
+            throw new FormatException($"Invalid coordinate format: \"{coordStr}\". Expected format: \"X,Y\" with integer values.");
+        }
+        else
+        {
+            (int imgWidth, int imgHeight) = CoordinatePrompter.GetImageResolution(screenshot);
+            (double TrueXCoords, double TrueYCoords) = CoordinatePrompter.UnNormalizeCoordinates(px, py, 1000, 1000, imgWidth, imgHeight);
+
+            var (originX, originY) = screenProvider.GetVirtualScreenOrigin();
+            return ((int)TrueXCoords + originX, (int)TrueYCoords + originY);
+        }
+    }
+
     /// <summary> Converts grid coordinates on the current (possibly zoomed) view back to absolute screen pixel coordinates, assuming the original image matches screen resolution. </summary>
     private static (double ScreenX, double ScreenY) CalculateScreenCoordinates(
         ViewRegion currentView,
