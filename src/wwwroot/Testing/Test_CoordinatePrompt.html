@@ -532,7 +532,7 @@
                 const resp = await fetch('/api/test/make-grid-image', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ screenshotBase64 })
+                    body: JSON.stringify({ screenshotBase64, originX: 0, originY: 0 })
                 });
                 if (!resp.ok) {
                     const body = await resp.text();
@@ -572,6 +572,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         screenshotBase64,
+                        originX: 0,
+                        originY: 0,
                         itemToIdentify: itemInput.value.trim(),
                         apiKey: getStoredConfig()?.gemini?.apiKey || null,
                         model:  getStoredConfig()?.gemini?.model  || null,

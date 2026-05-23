@@ -59,13 +59,15 @@ public sealed class Screenshot
     /// Origin defaults to (0, 0) and dimensions are read from the image data.
     /// </summary>
     /// <param name="bytes">Raw image bytes (PNG, JPEG, etc.).</param>
-    public Screenshot(byte[] bytes)
+    /// <param name="originX">Virtual-desktop X origin (defaults to 0).</param>
+    /// <param name="originY">Virtual-desktop Y origin (defaults to 0).</param>
+    public Screenshot(byte[] bytes, int originX, int originY)
     {
         using SKBitmap bmp = SKBitmap.Decode(bytes);
         Original  = bytes;
         Processed = bytes;
-        OriginX   = 0;
-        OriginY   = 0;
+        OriginX   = originX;
+        OriginY   = originY;
         Width     = bmp.Width;
         Height    = bmp.Height;
     }

@@ -187,10 +187,10 @@ internal static class TestEndpoints
                 return Results.Problem(TestingDisabledErrorMsg);
             try
             {
-                if (string.IsNullOrWhiteSpace(req.ScreenshotBase64))
+                if (req.Screenshot is not { } screenshot)
                     return Results.Problem("Screenshot image is required.");
-                byte[] screenshotBytes = Convert.FromBase64String(req.ScreenshotBase64);
-                byte[] gridImageBytes = prompter.CreateFullGridOverlayImage(screenshotBytes);
+
+                byte[] gridImageBytes = prompter.CreateFullGridOverlayImage(screenshot.Original);
                 return Results.File(gridImageBytes, "image/png");
             }
             catch (Exception ex)
@@ -213,8 +213,9 @@ internal static class TestEndpoints
 
             try
             {
-                if (string.IsNullOrWhiteSpace(req.ScreenshotBase64))
+                if (req.Screenshot is null)
                     return Results.Problem("Screenshot image is required.");
+
                 if (string.IsNullOrWhiteSpace(req.ItemToIdentify))
                     return Results.Problem("Item description is required.");
 
@@ -240,11 +241,11 @@ internal static class TestEndpoints
                     prompter = defaultPrompter;
                 }
 
-                byte[] screenshotBytes = Convert.FromBase64String(req.ScreenshotBase64);
-                var screenshot = new Screenshot(screenshotBytes);
+                Screenshot screenshot = req.Screenshot!; // Origin (0, 0) — client has no virtual-desktop context
                 CoordinateMode? coordinateMode = Enum.TryParse<CoordinateMode>(req.Mode, ignoreCase: true, out var parsedMode)
                     ? parsedMode
                     : null;
+
                 var steps = new List<object>();
 
                 ScreenCoordinate result = await prompter.GetCoordinatesForItemAsync(
@@ -286,4 +287,14 @@ internal static class TestEndpoints
 
 // Scoped to this file — it's a transport detail for the test endpoint, not a domain type.
 file record TestChatRequest(string? Prompt, string? ApiKey, string? Model, string? ImageBase64, string? ImageMimeType, string? ConversationId);
-file record TestCoordinatePromptRequest(string? ScreenshotBase64, string? ItemToIdentify, string? ApiKey, string? Model, string? Mode);
+file record TestCoordinatePromptRequest(string? ScreenshotBase64, string? ItemToIdentify, string? ApiKey, string? Model, string? Mode, int OriginX = 0, int OriginY = 0)
+{
+    /// <summary>
+    /// Constructs a <see cref="Screenshot"/> from <see cref="ScreenshotBase64"/> and the
+    /// virtual-desktop origin supplied by the client.
+    /// Returns <see langword="null"/> when <see cref="ScreenshotBase64"/> is null.
+    /// </summary>
+    public Screenshot? Screenshot => ScreenshotBase64 is not null
+        ? new Screenshot(Convert.FromBase64String(ScreenshotBase64), OriginX, OriginY)
+        : null;
+}
