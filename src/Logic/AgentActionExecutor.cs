@@ -449,19 +449,23 @@ public sealed class AgentActionExecutor(
 
     private async Task<ActionExecutionResult> ExecuteKeyComboAsync(AgentAction action, List<AgentDebugEntry>? debugLog, Func<AgentDebugEntry, Task>? onProgress = null)
     {
-        string key = action.Key ?? throw new InvalidOperationException("KeyCombo requires Key.");
+        // Require at least one key press. We'll even allow only modifiers to be pressed.
+        if (action.Key == null && action.Modifiers == ModifierKeys.None)
+            throw new InvalidOperationException("KeyCombo requires Key.");
+
+        string? key = action.Key;
         bool ctrl  = action.Modifiers.HasFlag(ModifierKeys.Ctrl);
         bool shift = action.Modifiers.HasFlag(ModifierKeys.Shift);
         bool alt   = action.Modifiers.HasFlag(ModifierKeys.Alt);
         bool win   = action.Modifiers.HasFlag(ModifierKeys.Win);
 
-        logger.LogInformation("Key combo: {Key} (ctrl={Ctrl}, shift={Shift}, alt={Alt}, win={Win}).", key, ctrl, shift, alt, win);
+        logger.LogInformation("Key combo: {Key} (ctrl={Ctrl}, shift={Shift}, alt={Alt}, win={Win}).", key ?? "[None]", ctrl, shift, alt, win);
         await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call",
-            Text: $"SendModKeyComboAsync(\"{key}\", ctrl={ctrl}, shift={shift}, alt={alt}, win={win})")).ConfigureAwait(false);
+            Text: $"SendModKeyComboAsync(\"{key??"[None]"}\", ctrl={ctrl}, shift={shift}, alt={alt}, win={win})")).ConfigureAwait(false);
 
         await inputProvider.SendModKeyComboAsync(key, ctrl ? true : null, shift ? true : null, alt ? true : null, win ? true : null).ConfigureAwait(false);
 
-        string combo = FormatKeyCombo(key, ctrl, shift, alt, win);
+        string combo = FormatKeyCombo(key??"[None]", ctrl, shift, alt, win);
         return new ActionExecutionResult(true, $"Pressed {combo}.", IsTerminal: false, GoalAchieved: false);
     }
 

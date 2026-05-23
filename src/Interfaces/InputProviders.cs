@@ -17,7 +17,7 @@ namespace Thio_Universal_Agent
         /// <summary>
         /// Simulates pressing a single key with or without modifiers.
         /// </summary>
-        Task SendModKeyComboAsync(string key, bool? ctrl = null, bool? shift = null, bool? alt = null, bool? win = null);
+        Task SendModKeyComboAsync(string? key, bool? ctrl = null, bool? shift = null, bool? alt = null, bool? win = null);
 
         // Methods that use coordinates relative to the entire screen as opposed to within an individual window
         Task LeftClick_MonitorCoords(int x, int y);

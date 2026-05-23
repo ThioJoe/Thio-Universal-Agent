@@ -420,11 +420,11 @@ public static class AgentActionParser
             }
         }
 
-        if (primaryKey is null)
-        {
-            error = "KEY_COMBO must include a primary key (e.g. KEY_COMBO ctrl+s). Only modifiers were found.";
-            return false;
-        }
+        //if (primaryKey is null)
+        //{
+        //    error = "KEY_COMBO must include a primary key (e.g. KEY_COMBO ctrl+s). Only modifiers were found.";
+        //    return false;
+        //}
 
         ModifierKeys modifiers = ModifierKeys.None;
         if (ctrl)  modifiers |= ModifierKeys.Ctrl;

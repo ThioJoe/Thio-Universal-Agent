@@ -222,27 +222,36 @@ namespace Thio_Universal_Agent.OS_Windows
         #endregion
 
 
-        public async Task SendModKeyComboAsync(string key, bool? ctrl = null, bool? shift = null, bool? alt = null, bool? win = null)
+        public async Task SendModKeyComboAsync(string? key, bool? ctrl = null, bool? shift = null, bool? alt = null, bool? win = null)
         {
-            ushort vk;
-            ushort scan;
-            bool extended;
+            // Make all of them nullable in case there is no primary key, meaning only modifier keys are pressed
+            ushort? vk = null;
+            ushort? scan = null;
+            bool? extended = null;
 
-            // Try named keys first (win, enter, tab, f1, etc.) — TextCharCode only handles single typeable characters
-            if (NamedKeys.TryGetValue(key, out var named))
+            if (key != null)
             {
-                vk = named.vk;
-                scan = MapVirtualKey(vk, (uint)MapVirtualKeyType.MAPVK_VK_TO_VSC);
-                extended = named.extended;
-                shift ??= false;
-            }
-            else
+                // Try named keys first (win, enter, tab, f1, etc.) — TextCharCode only handles single typeable characters
+                if (NamedKeys.TryGetValue(key, out var named))
+                {
+                    vk = named.vk;
+                    scan = MapVirtualKey((ushort)vk, (uint)MapVirtualKeyType.MAPVK_VK_TO_VSC);
+                    extended = named.extended;
+                    shift ??= false;
+                }
+                else
+                {
+                    TextCharCode keyChar = new TextCharCode(key);
+                    vk = keyChar.vk;
+                    scan = keyChar.scan;
+                    extended = keyChar.extended;
+                    shift ??= keyChar.shiftState;
+                }
+            } 
+            // Ensure something is pressed or just skip. Should have already been caught but we'll return early to avoid an unnecessary API call
+            else if (key == null && ctrl == false || shift == false || alt == false || win == false) 
             {
-                TextCharCode keyChar = new TextCharCode(key);
-                vk = keyChar.vk;
-                scan = keyChar.scan;
-                extended = keyChar.extended;
-                shift ??= keyChar.shiftState;
+                return;
             }
 
             ctrl ??= false;
@@ -262,9 +271,12 @@ namespace Thio_Universal_Agent.OS_Windows
             if (alt == true)
                 inputList.Add(CreateInput(vk: modifierKeyCodes["LALT"].vk, scan: modifierKeyCodes["LALT"].scan, isKeyUp: false, extended: false));
 
-            // Add main key down and up
-            inputList.Add(CreateInput(vk: vk, scan: scan, isKeyUp: false, extended: extended));
-            inputList.Add(CreateInput(vk: vk, scan: scan, isKeyUp: true, extended: extended));
+            if (key != null && vk != null && scan != null && extended != null)
+            {
+                // Add main key down and up
+                inputList.Add(CreateInput(vk: (ushort)vk, scan: (ushort)scan, isKeyUp: false, extended: (bool)extended));
+                inputList.Add(CreateInput(vk: (ushort)vk, scan: (ushort)scan, isKeyUp: true, extended: (bool)extended));
+            }
 
             // Add modifier keys up
             if (alt == true)
