@@ -733,8 +733,8 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
 
     // When ExactCoords is enabled, the Target and DragTarget fields contain literal "X,Y" coordinate pairs rather than natural language descriptions.
     // This allows the AI to bypass the CoordinatePrompter when it needs to perform precise adjustments based on pixel values from the screenshot.
-    // Returns image-pixel coordinates (no origin offset); callers must add originX/originY themselves, matching the behaviour of GetCoordinatesForItemAsync.
-    public static (int px, int py) ParseAndNormalizeCoords(string coordStr, byte[] screenshot, int originX, int originY)
+    // Returns absolute virtual-desktop coordinates ready for OS input APIs.
+    public static (int px, int py) ParseAndNormalizeCoords(string coordStr, Screenshot screenshot)
     {
         string[] parts = coordStr.Split(',');
         if (parts.Length != 2
@@ -745,10 +745,10 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
         }
         else
         {
-            (int imgWidth, int imgHeight) = CoordinatePrompter.GetImageResolution(screenshot);
+            (int imgWidth, int imgHeight) = CoordinatePrompter.GetImageResolution(screenshot.Processed);
             (double TrueXCoords, double TrueYCoords) = CoordinatePrompter.UnNormalizeCoordinates(px, py, 1000, 1000, imgWidth, imgHeight);
 
-            return ((int)TrueXCoords + originX, (int)TrueYCoords + originY);
+            return screenshot.ToAbsolute((int)TrueXCoords, (int)TrueYCoords);
         }
     }
 

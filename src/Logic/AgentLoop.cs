@@ -40,9 +40,9 @@ public sealed class AgentLoop(
 
         try
         {
-            var (screenshot, originX, originY) = screenProvider.CaptureScreen();
+            var screenshot = screenProvider.CaptureScreen();
             //TODO: Add a config for whether to add grid overlay to regular conversation screenshots. For now default to true
-            screenshot = coordinatePrompter.CreateFullGridOverlayImage(screenshot);
+            screenshot.Processed = coordinatePrompter.CreateFullGridOverlayImage(screenshot.Original);
 
             string systemPrompt = AgentPromptBuilder.BuildSystemPrompt(session.Goal);
             var conversation = new AiConversation();
@@ -50,7 +50,7 @@ public sealed class AgentLoop(
             logger.LogInformation("Agent session {SessionId} started. Goal: \"{Goal}\".", session.SessionId, session.Goal);
 
             var initialAiSw = Stopwatch.StartNew();
-            AiResponse response = await aiProvider.ContinueConversationAsync(conversation, systemPrompt, screenshot, ScreenMimeType, ct)
+            AiResponse response = await aiProvider.ContinueConversationAsync(conversation, systemPrompt, screenshot.Processed, ScreenMimeType, ct)
                 .ConfigureAwait(false);
             initialAiSw.Stop();
 
@@ -90,7 +90,7 @@ public sealed class AgentLoop(
                 if (debugging)
                 {
                     debugLog!.Add(new AgentDebugEntry("Prompt Sent to AI", Text: lastPromptSent));
-                    debugLog!.Add(new AgentDebugEntry("Screenshot Sent", Text: $"({screenshot.Length:N0} bytes, {ScreenMimeType})"));
+                    debugLog!.Add(new AgentDebugEntry("Screenshot Sent", Text: $"({screenshot.Processed.Length:N0} bytes, {ScreenMimeType})"));
                     debugLog!.Add(new AgentDebugEntry("Raw AI Response", Text: lastRawResponse));
                 }
 
@@ -143,7 +143,7 @@ public sealed class AgentLoop(
                 // Execute the action (executor adds its own debug entries)
                 var executeSw = Stopwatch.StartNew();
                 ActionExecutionResult result = await ExecuteWithTargetRecoveryAsync(
-                    parsed.Action, screenshot, originX, originY, conversation, ct, debugLog, executorProgress).ConfigureAwait(false);
+                    parsed.Action, screenshot, conversation, ct, debugLog, executorProgress).ConfigureAwait(false);
                 executeSw.Stop();
 
                 if (debugging)
@@ -184,8 +184,8 @@ public sealed class AgentLoop(
                 await session.WaitIfPausedAsync(ct).ConfigureAwait(false);
 
                 // Observe: take a new screenshot
-                (screenshot, originX, originY) = screenProvider.CaptureScreen();
-                screenshot = coordinatePrompter.CreateFullGridOverlayImage(screenshot);
+                screenshot = screenProvider.CaptureScreen();
+                screenshot.Processed = coordinatePrompter.CreateFullGridOverlayImage(screenshot.Original);
 
                 // Episodic context reset to prevent payload bloat
                 if (_enableContextReset && step % ContextResetInterval == 0)
@@ -198,7 +198,7 @@ public sealed class AgentLoop(
 
                 var aiFeedbackSw = Stopwatch.StartNew();
                 response = await aiProvider.ContinueConversationAsync(
-                    conversation, feedback, screenshot, ScreenMimeType, ct).ConfigureAwait(false);
+                    conversation, feedback, screenshot.Processed, ScreenMimeType, ct).ConfigureAwait(false);
                 aiFeedbackSw.Stop();
 
                 if (!response.Success)
@@ -288,11 +288,11 @@ public sealed class AgentLoop(
     /// fails to locate the target, reports the failure back to the AI instead of crashing.
     /// </summary>
     private async Task<ActionExecutionResult> ExecuteWithTargetRecoveryAsync(
-        AgentAction action, byte[] screenshot, int originX, int originY, AiConversation conversation, CancellationToken ct,
+        AgentAction action, Screenshot screenshot, AiConversation conversation, CancellationToken ct,
         List<AgentDebugEntry>? debugLog = null, Func<AgentDebugEntry, Task>? onProgress = null)
     {
         ActionExecutionResult result = await executor
-            .ExecuteAsync(action, screenshot, originX, originY, ct, onProgress)
+            .ExecuteAsync(action, screenshot, ct, onProgress)
             .ConfigureAwait(false);
 
         // Merge executor's debug entries into our step log
@@ -324,7 +324,7 @@ public sealed class AgentLoop(
     /// with the summary and the latest screenshot.
     /// </summary>
     private async Task<AiConversation> ResetContextAsync(
-        AiConversation oldConversation, string goal, byte[] latestScreenshot, CancellationToken ct,
+        AiConversation oldConversation, string goal, Screenshot latestScreenshot, CancellationToken ct,
         List<AgentDebugEntry>? debugLog = null)
     {
         logger.LogInformation("Performing episodic context reset.");
@@ -350,7 +350,7 @@ public sealed class AgentLoop(
         debugLog?.Add(new AgentDebugEntry("Context Reset — New System Prompt", Text: resetPrompt));
 
         AiResponse resetResponse = await aiProvider
-            .ContinueConversationAsync(newConversation, resetPrompt, latestScreenshot, ScreenMimeType, ct)
+            .ContinueConversationAsync(newConversation, resetPrompt, latestScreenshot.Processed, ScreenMimeType, ct)
             .ConfigureAwait(false);
 
         if (!resetResponse.Success)

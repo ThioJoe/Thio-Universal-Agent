@@ -14,14 +14,14 @@ public sealed record MonitorInfo(int Index, int X, int Y, int Width, int Height,
 public interface IScreenProvider
 {
     /// <summary>
-    /// Captures the screen area determined by the current configuration and simultaneously
-    /// records the virtual-desktop origin of the captured area in a single
-    /// <c>GetCaptureRect</c> call, guaranteeing the image bytes and coordinate offset
-    /// correspond to the same monitor.
+    /// Captures the screen area determined by the current configuration and returns a
+    /// <see cref="Screenshot"/> containing the raw bytes, virtual-desktop origin, and
+    /// physical pixel dimensions — all derived from a single <c>GetCaptureRect</c> call
+    /// so the image and its coordinate offset are guaranteed to correspond to the same monitor.
     /// When <c>Agent:MonitorIndex</c> is set, only that monitor is captured;
     /// otherwise the full virtual screen (all monitors) is captured.
     /// </summary>
-    (byte[] Screenshot, int OriginX, int OriginY) CaptureScreen();
+    Screenshot CaptureScreen();
 
     /// <summary>
     /// Returns the top-left corner of the captured area in virtual-desktop coordinates.
