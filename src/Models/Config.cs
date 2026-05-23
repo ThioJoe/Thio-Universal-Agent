@@ -42,6 +42,9 @@ public class GeneralConfig
     [ConfigField("Enable Debug Mode", Description = "Capture verbose debug entries and annotated screenshots; disable to reduce per-step overhead")]
     public bool EnableDebugMode { get; set; } = false;
 
+    [ConfigField("Max Queue Size", Description = "Maximum number of actions the AI may queue in a single QUEUE: batch (1–10)")]
+    public int MaxQueueSize { get; set; } = 5;
+
     // ── Constructors ──────────────────────────────────────────────────────────
 
     /// <summary>Creates a <see cref="GeneralConfig"/> with all default values.</summary>
@@ -59,6 +62,7 @@ public class GeneralConfig
         if (bool.TryParse(section["EnableContextReset"], out var r)) EnableContextReset = r;
         if (bool.TryParse(section["StripHistoryImages"], out var s)) StripHistoryImages = s;
         if (bool.TryParse(section["EnableDebugMode"], out var dbg)) EnableDebugMode = dbg;
+        if (int.TryParse(section["MaxQueueSize"], out var mq) && mq >= 1) MaxQueueSize = mq;
     }
 }
 

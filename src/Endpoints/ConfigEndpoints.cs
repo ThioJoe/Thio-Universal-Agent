@@ -27,7 +27,8 @@ internal static class ConfigEndpoints
                         QueueSettleDelayMs: appConfig.General.QueueSettleDelayMs,
                         EnableContextReset: appConfig.General.EnableContextReset,
                         StripHistoryImages: appConfig.General.StripHistoryImages,
-                        EnableDebugMode:    appConfig.General.EnableDebugMode
+                        EnableDebugMode:    appConfig.General.EnableDebugMode,
+                        MaxQueueSize:       appConfig.General.MaxQueueSize
                     ),
                 Agent: new AgentConfigDto(
                         CoordinateMode: appConfig.Agent.CoordinateMode.ToString(),
@@ -66,7 +67,7 @@ internal static class ConfigEndpoints
 
         app.MapPost("/api/config", (JsonElement body, AppConfig appConfig) =>
         {
-            if (body.TryGetProperty("general", out var generalEl)) { ApplyUpdates(appConfig.General, generalEl); Globals.ENABLE_TESTING = appConfig.General.EnableDebugMode; }
+            if (body.TryGetProperty("general", out var generalEl)) { ApplyUpdates(appConfig.General, generalEl); Globals.ENABLE_TESTING = appConfig.General.EnableDebugMode; Globals.MAX_QUEUE_SIZE = appConfig.General.MaxQueueSize; }
             if (body.TryGetProperty("gemini",  out var geminiEl))  ApplyUpdates(appConfig.Gemini, geminiEl);
             if (body.TryGetProperty("agent",   out var agentEl))   ApplyUpdates(appConfig.Agent, agentEl);
             return Results.Ok();
@@ -178,7 +179,8 @@ internal sealed record GeneralConfigDto(
     int QueueSettleDelayMs,
     bool EnableContextReset,
     bool StripHistoryImages,
-    bool EnableDebugMode
+    bool EnableDebugMode,
+    int MaxQueueSize
 );
 
 internal sealed record AgentConfigDto(

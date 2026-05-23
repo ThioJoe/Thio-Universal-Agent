@@ -18,9 +18,9 @@ public static class AgentActionParser
 
     /// <summary>
     /// Maximum number of actions the AI may queue in a single <c>QUEUE:</c> block.
-    /// Adjust this constant to change the cap.
+    /// Mirrors <see cref="Globals.MAX_QUEUE_SIZE"/>; configured via <see cref="GeneralConfig.MaxQueueSize"/>.
     /// </summary>
-    public const int MaxQueuedActions = 5;
+    public static int MaxQueuedActions => Globals.MAX_QUEUE_SIZE;
 
     /// <summary> Attempts to parse the AI's response text into a thought and action. </summary>
     /// <returns>True if parsing succeeded; false otherwise.</returns>
