@@ -24,6 +24,7 @@ internal static class ConfigEndpoints
             var response = new AppConfigResponse(
                 Agent: new AgentConfigDto(
                         SettleDelayMs:       appConfig.Agent.SettleDelayMs,
+                        QueueSettleDelayMs:  appConfig.Agent.QueueSettleDelayMs,
                         CoordinateMode:      appConfig.Agent.CoordinateMode.ToString(),
                         MonitorIndex:        appConfig.Agent.MonitorIndex,
                         EnableContextReset:  appConfig.Agent.EnableContextReset,
@@ -168,6 +169,7 @@ internal sealed record AppConfigResponse(
 
 internal sealed record AgentConfigDto(
     int SettleDelayMs,
+    int QueueSettleDelayMs,
     string? CoordinateMode,
     int? MonitorIndex,
     bool EnableContextReset,

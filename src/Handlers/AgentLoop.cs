@@ -23,6 +23,7 @@ public sealed partial class AgentLoop(
     private const string ScreenMimeType = "image/jpeg";
 
     private readonly int _settleDelayMs = appConfig.Agent.SettleDelayMs;
+    private readonly int _queueSettleDelayMs = appConfig.Agent.QueueSettleDelayMs;
 
     private readonly bool _enableContextReset = appConfig.Agent.EnableContextReset;
 
@@ -181,7 +182,9 @@ public sealed partial class AgentLoop(
                         break;
                     }
 
-                    // No settle delay between queued actions — the UI is not expected to change.
+                    // No full settle between queued actions — but a short pause lets the OS register the input.
+                    if (currentAction.Kind != AgentActionKind.Wait && qi < actionsToRun.Count - 1 && _queueSettleDelayMs > 0)
+                        await Task.Delay(_queueSettleDelayMs, ct).ConfigureAwait(false);
                 }
 
                 stepStopwatch.Stop();

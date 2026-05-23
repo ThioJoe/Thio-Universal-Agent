@@ -28,7 +28,10 @@ public sealed class ConfigFieldAttribute(string label) : Attribute
 public class AgentConfig
 {
     [ConfigField("Settle Delay (ms)", Description = "Milliseconds to wait after each action before taking the next screenshot")]
-    public int SettleDelayMs { get; set; } = 1500;
+    public int SettleDelayMs { get; set; } = 1000;
+
+    [ConfigField("Queue Settle Delay (ms)", Description = "Milliseconds to wait between individual actions inside a QUEUE: batch")]
+    public int QueueSettleDelayMs { get; set; } = 50;
 
     [ConfigField("Coordinate Mode", Description = "Algorithm used to locate UI elements on screen")]
     public CoordinateMode CoordinateMode { get; set; } = CoordinateMode.DirectAutoNormalize;
@@ -53,6 +56,9 @@ public class AgentConfig
     {
         if (int.TryParse(section["SettleDelayMs"], out var d) && d > 0)
             SettleDelayMs = d;
+
+        if (int.TryParse(section["QueueSettleDelayMs"], out var qd) && qd >= 0)
+            QueueSettleDelayMs = qd;
 
         if (Enum.TryParse<CoordinateMode>(section["CoordinateMode"], ignoreCase: true, out var coordMode))
             CoordinateMode = coordMode;
