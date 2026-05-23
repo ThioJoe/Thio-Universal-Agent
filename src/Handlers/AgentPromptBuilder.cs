@@ -124,7 +124,8 @@ public static class AgentPromptBuilder
             11. If using a tool's COORDS mode (if available), give the coordinates normalized within {normDim}x{normDim} coordinates regardless of original aspect ratio or resolution. The true coordinates will be automatically calculated from this.
             12. Always visually confirm the action was taken to ensure it worked is possible. For example, the computer may have missed the action and it needs to be repeated.
             13. Prefer the use of COORDS mode for tools where available. If it repeatly fails to hit the correction location, try using natural language.
-            14. If able, you SHOULD use queued actions as much as possible when possible. But do not "blindly" queue actions, such as to click something in a menu that has not appeared yet just because you expect it to appear.
+            14. Queued actions should be used if the user interface is not expected to change from the actions. 
+                For example but not limited to: Checking multiple boxes in the same window (but NOT to close a menu then click something behind it), drawing, selecting multiple items. If able, you SHOULD use queued actions as much as possible when possible.
                 Tip: Test an action once by itself before queuing up the rest of the sequence the queue.
                 Tip: The user sets the max action queue. You can feel confident using up to the max queue size.
             ═══════════════════════════════════
