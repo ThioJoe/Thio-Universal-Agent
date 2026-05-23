@@ -38,7 +38,7 @@ public sealed partial class CoordinatePrompter
         ArgumentNullException.ThrowIfNull(screenshotBytes);
         using IImage source = LoadImage(screenshotBytes);
         ViewRegion view = CreateFullView(source);
-        return CreateGridOverlayImage(source, view, _divisions, _divisions);
+        return CreateGridOverlayImage(source, view, _divisions, _divisions, normalizedSize: 1000);
     }
 
     /// <summary>Decodes raw image bytes into an <see cref="IImage"/> for use with the canvas.</summary>
@@ -242,7 +242,9 @@ public sealed partial class CoordinatePrompter
         int cols,
         int rows,
         Color color,
-        float? lineThickness)
+        float? lineThickness,
+        int? normalizedSize = null
+        )
     {
         float thickness = lineThickness ?? Math.Max(1f, imageWidth / 1200f);
         float labelSize = ComputeLabelSize(imageWidth);
@@ -267,9 +269,16 @@ public sealed partial class CoordinatePrompter
         {
             float x = rulerOffset + c * cellW;
 
+            // If using column labels that don't reflect the true resolution
+            int colLabel = c;
+            if (normalizedSize is int nSize)
+            {
+                colLabel = (int)Math.Round((double)(nSize / cols) * c);
+            }
+
             canvas.DrawLine(x, rulerOffset, x, rulerOffset + imageHeight);
 
-            string label = c.ToString(CultureInfo.InvariantCulture);
+            string label = colLabel.ToString(CultureInfo.InvariantCulture);
             float textW = labelSize * label.Length * 0.75f;
             float textH = labelSize * 1.3f;
             canvas.DrawString(label,
@@ -284,9 +293,16 @@ public sealed partial class CoordinatePrompter
         {
             float y = rulerOffset + r * cellH;
 
+            // If using column labels that don't reflect the true resolution
+            int rowLabel = r;
+            if (normalizedSize is int nSize)
+            {
+                rowLabel = (int)Math.Round((double)(nSize / rows) * r);
+            }
+
             canvas.DrawLine(rulerOffset, y, rulerOffset + imageWidth, y);
 
-            string label = r.ToString(CultureInfo.InvariantCulture);
+            string label = rowLabel.ToString(CultureInfo.InvariantCulture);
             float textW = labelSize * label.Length * 0.75f;
             float textH = labelSize * 1.3f;
             canvas.DrawString(label,
@@ -297,18 +313,17 @@ public sealed partial class CoordinatePrompter
         }
     }
 
-    /// <summary>
-    /// Creates a PNG image of the source cropped to <paramref name="view"/> with a grid
-    /// overlay and axis labels drawn on top.
-    /// </summary>
     private static byte[] CreateGridOverlayImage(
+    /// <summary> / Creates a PNG image of the source cropped to <paramref name="view"/> with a grid / overlay and axis labels drawn on top. / </summary>
         IImage source,
         ViewRegion view,
         int cols = DefaultDivisions,
         int rows = DefaultDivisions,
+        int? normalizedSize = null,
         Color? gridColor = null,
         float? lineThickness = null,
-        int minResolution = 0)
+        int minResolution = 0
+        )
     {
         Color color = gridColor ?? Color.FromRgba(236, 72, 153, 102); // ~40% opacity pink
         (int imageWidth, int imageHeight) = minResolution > 0
@@ -343,10 +358,7 @@ public sealed partial class CoordinatePrompter
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Determines whether another zoom iteration is warranted based on the AI's 
-    /// estimated precision in pixels compared to a confidence threshold.
-    /// </summary>
+    /// <summary> / Determines whether another zoom iteration is warranted based on the AI's / estimated precision in pixels compared to a confidence threshold. / </summary>
     private static bool ShouldContinueZooming(
         ViewRegion currentView,
         int cols = DefaultDivisions,

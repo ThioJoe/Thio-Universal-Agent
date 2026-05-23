@@ -106,7 +106,7 @@ public static class AgentPromptBuilder
 
             {goal}
 
-            Below is a screenshot of the current screen state. Begin.
+            Below is a screenshot of the current screen state with coordinate overlay to be more accurate. Begin.
             """;
     }
 
