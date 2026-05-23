@@ -38,7 +38,6 @@ builder.Services.AddSingleton<AgentSessionManager>();
 var app = builder.Build();
 
 AgentPromptBuilder.SystemProvider = app.Services.GetService<ISystemProvider>();
-AgentPromptBuilder.AppConfig = app.Services.GetRequiredService<AppConfig>();
 
 var embeddedProvider = new EmbeddedFileProvider(typeof(Program).Assembly, "Thio_Universal_Agent.wwwroot");
 app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = embeddedProvider });

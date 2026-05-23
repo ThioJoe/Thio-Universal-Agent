@@ -13,15 +13,10 @@ public static class AgentPromptBuilder
     public static ISystemProvider? SystemProvider { get; set; }
 
     /// <summary>
-    /// Application config used to read runtime values (e.g. max queue size) into prompts.
-    /// Set this once at startup before any prompts are built.
-    /// </summary>
-    public static AppConfig? AppConfig { get; set; }
-    /// <summary>
     /// Produces the full instruction prompt including the user's goal.
     /// This is sent as the first message alongside the initial screenshot.
     /// </summary>
-    public static string BuildSystemPrompt(string goal)
+    public static string BuildSystemPrompt(string goal, int maxQueueSize)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(goal);
         string systemInfo = "Basic System Info:\n" + BuildSystemInfoString();
@@ -82,7 +77,7 @@ public static class AgentPromptBuilder
             <action 1>
             <action 2>
             ...
-              Queue up to {AppConfig?.General.MaxQueueSize ?? 5} actions to execute back-to-back without waiting for a new screenshot between them.
+              Queue up to {maxQueueSize} actions to execute back-to-back without waiting for a new screenshot between them.
               Each queued line uses the exact same syntax as a normal ACTION: call.
               Multi-line actions such as CLICK_DRAG with From:/To: lines are fully supported.
               Use QUEUE: only when the actions are simple and predictable (e.g. click a field then type text).
@@ -103,7 +98,7 @@ public static class AgentPromptBuilder
             THOUGHT: <your reasoning about what you see on screen and what to do next>
             ACTION: <exactly one tool call from the list above>
 
-            Format B — queued actions (up to {AppConfig?.General.MaxQueueSize ?? 5}):
+            Format B — queued actions (up to {maxQueueSize}):
             THOUGHT: <your reasoning about what you see on screen and what to do next>
             QUEUE:
             <tool call 1>
@@ -244,13 +239,13 @@ public static class AgentPromptBuilder
     /// Produces the prompt used to restart the conversation after an episodic context reset,
     /// including the previous progress summary.
     /// </summary>
-    public static string BuildContextResetPrompt(string goal, string progressSummary)
+    public static string BuildContextResetPrompt(string goal, string progressSummary, int maxQueueSize)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(goal);
         ArgumentException.ThrowIfNullOrWhiteSpace(progressSummary);
 
         return $"""
-            {BuildSystemPrompt(goal)}
+            {BuildSystemPrompt(goal, maxQueueSize)}
 
             ═══════════════════════════════════
             PROGRESS SO FAR

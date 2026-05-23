@@ -705,6 +705,18 @@
         try { return JSON.parse(localStorage.getItem(CONFIG_STORE_KEY) || '{}'); } catch { return {}; }
     }
 
+    async function pushConfigToServer() {
+        const cfg = getStoredConfig();
+        if (!cfg || Object.keys(cfg).length === 0) return;
+        try {
+            await fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cfg),
+            });
+        } catch { /* best effort */ }
+    }
+
     let sessionId = null;
     let eventSource = null;
     let debugEnabled = false;
@@ -821,6 +833,8 @@
     async function startAgent() {
         const goal = goalInput.value.trim();
         if (!goal) return;
+
+        await pushConfigToServer();
 
         const cfg = getStoredConfig();
         const apiKey = cfg?.gemini?.apiKey || null;
@@ -965,6 +979,7 @@
         btnPause.disabled = true;
         try {
             if (isPaused) {
+                await pushConfigToServer();
                 await fetch(`/api/agent/${sessionId}/resume`, { method: 'POST' });
             } else {
                 await fetch(`/api/agent/${sessionId}/pause`, { method: 'POST' });
