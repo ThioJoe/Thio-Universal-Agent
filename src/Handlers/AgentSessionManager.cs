@@ -48,6 +48,10 @@ public sealed class AgentSessionManager(
         return session;
     }
 
+    /// <summary>Returns the first session that is currently running or paused, or null if none is active.</summary>
+    public AgentSession? GetActiveSession() =>
+        _sessions.Values.FirstOrDefault(s => s.Status == AgentSessionStatus.Running || s.IsPaused);
+
     /// <summary>Cancels a running session. Returns false if the session was not found.</summary>
     public bool StopSession(string sessionId)
     {

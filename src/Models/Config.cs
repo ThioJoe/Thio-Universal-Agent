@@ -124,6 +124,36 @@ public class AgentConfig
     }
 }
 
+// ── Hotkeys ───────────────────────────────────────────────────────────────────
+
+/// <summary>Configuration for system-wide hotkeys that control the running agent.</summary>
+public class HotkeyConfig
+{
+    [ConfigField("Enable Global Hotkeys", Description = "Register system-wide hotkeys so you can control the agent even when the browser window is not focused")]
+    public bool Enabled { get; set; } = true;
+
+    [ConfigField("Pause / Resume", Description = "Hotkey to pause / resume the running session. Format: modifier(s)+key, e.g. Ctrl+Shift+P. Supported modifiers: Ctrl, Shift, Alt, Win. Supported keys: A-Z, 0-9, F1-F12, Escape")]
+    public string PauseResumeHotkey { get; set; } = "Ctrl+Shift+Alt+P";
+
+    [ConfigField("Stop", Description = "Hotkey to immediately cancel the running session. Format: modifier(s)+key, e.g. Ctrl+Shift+S")]
+    public string StopHotkey { get; set; } = "Ctrl+Shift+Alt+S";
+
+    // ── Constructors ──────────────────────────────────────────────────────────
+
+    /// <summary>Creates a <see cref="HotkeyConfig"/> with all default values.</summary>
+    public HotkeyConfig() { }
+
+    /// <summary>Creates a <see cref="HotkeyConfig"/> loaded from a <c>Hotkeys</c> configuration section.</summary>
+    public HotkeyConfig(IConfigurationSection section)
+    {
+        if (bool.TryParse(section["Enabled"], out var en)) Enabled = en;
+        var pr = section["PauseResumeHotkey"];
+        if (!string.IsNullOrWhiteSpace(pr)) PauseResumeHotkey = pr;
+        var st = section["StopHotkey"];
+        if (!string.IsNullOrWhiteSpace(st)) StopHotkey = st;
+    }
+}
+
 // ── AppConfig (root) ──────────────────────────────────────────────────────────
 
 /// <summary>
@@ -137,6 +167,7 @@ public class AppConfig
     public GeminiConfig Gemini { get; set; } = new();
     public AgentConfig Agent { get; set; } = new();
     public GeneralConfig General { get; set; } = new();
+    public HotkeyConfig Hotkeys { get; set; } = new();
 
     // ── Constructors ──────────────────────────────────────────────────────────
 
@@ -149,5 +180,6 @@ public class AppConfig
         Gemini  = new GeminiConfig(configuration.GetSection("Gemini"));
         Agent   = new AgentConfig(configuration.GetSection("Agent"));
         General = new GeneralConfig(configuration.GetSection("General"));
+        Hotkeys = new HotkeyConfig(configuration.GetSection("Hotkeys"));
     }
 }

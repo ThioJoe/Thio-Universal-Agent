@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using Thio_Universal_Agent.Handlers;
 
 namespace Thio_Universal_Agent.Endpoints;
 
@@ -43,6 +44,11 @@ internal static class ConfigEndpoints
                     CoordinateMaxOutputTokens: appConfig.Gemini.CoordinateMaxOutputTokens,
                     ThinkingBudget:            appConfig.Gemini.ThinkingBudget,
                     ThinkingLevel:             appConfig.Gemini.ThinkingLevel?.ToString()
+                ),
+                Hotkeys: new HotkeyConfigDto(
+                    Enabled:            appConfig.Hotkeys.Enabled,
+                    PauseResumeHotkey:  appConfig.Hotkeys.PauseResumeHotkey,
+                    StopHotkey:         appConfig.Hotkeys.StopHotkey
                 )
             );
 
@@ -59,17 +65,23 @@ internal static class ConfigEndpoints
                 BuildSection("general", "General", appConfig.General, isProvider: false),
                 BuildSection("gemini",  "Gemini",  appConfig.Gemini,  isProvider: true),
                 BuildSection("agent",   "Agent",   appConfig.Agent,   isProvider: false),
+                BuildSection("hotkeys", "Hotkeys", appConfig.Hotkeys, isProvider: false),
             };
             return Results.Ok(new { sections });
         });
 
         // ── Update endpoint ───────────────────────────────────────────────────
 
-        app.MapPost("/api/config", (JsonElement body, AppConfig appConfig) =>
+        app.MapPost("/api/config", (JsonElement body, AppConfig appConfig, HotkeyService? hotkeyService) =>
         {
             if (body.TryGetProperty("general", out var generalEl)) { ApplyUpdates(appConfig.General, generalEl); }
             if (body.TryGetProperty("gemini",  out var geminiEl))  ApplyUpdates(appConfig.Gemini, geminiEl);
             if (body.TryGetProperty("agent",   out var agentEl))   ApplyUpdates(appConfig.Agent, agentEl);
+            if (body.TryGetProperty("hotkeys", out var hotkeysEl))
+            {
+                ApplyUpdates(appConfig.Hotkeys, hotkeysEl);
+                hotkeyService?.ReloadHotkeys();
+            }
             return Results.Ok();
         });
     }
@@ -176,7 +188,8 @@ internal static class ConfigEndpoints
 internal sealed record AppConfigResponse(
     GeneralConfigDto General,
     AgentConfigDto Agent,
-    GeminiConfigDto Gemini
+    GeminiConfigDto Gemini,
+    HotkeyConfigDto Hotkeys
 );
 
 internal sealed record GeneralConfigDto(
@@ -202,4 +215,10 @@ internal sealed record GeminiConfigDto(
     int? CoordinateMaxOutputTokens,
     int? ThinkingBudget,
     string? ThinkingLevel
+);
+
+internal sealed record HotkeyConfigDto(
+    bool Enabled,
+    string PauseResumeHotkey,
+    string StopHotkey
 );

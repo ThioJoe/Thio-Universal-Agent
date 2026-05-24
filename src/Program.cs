@@ -14,6 +14,9 @@ if (OperatingSystem.IsWindows())
     builder.Services.AddSingleton<IScreenProvider, WindowsScreenProvider>();
     builder.Services.AddSingleton<IInputProvider, WindowsInputProvider>();
     builder.Services.AddSingleton<ISystemProvider, WindowsSystemProvider>();
+    builder.Services.AddSingleton<IHotkeyProvider, WindowsHotkeyProvider>();
+    builder.Services.AddSingleton<HotkeyService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<HotkeyService>());
 }
 else if (OperatingSystem.IsMacOS())
 {
