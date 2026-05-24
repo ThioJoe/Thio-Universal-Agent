@@ -20,12 +20,5 @@ public class OpenAIConfig : IAiProviderConfig
 
     public OpenAIConfig() { }
 
-    public OpenAIConfig(IConfigurationSection section)
-    {
-        ApiKey = section["ApiKey"] is { } k && !string.IsNullOrWhiteSpace(k) ? k : null;
-        Model = section["Model"] ?? Model;
-
-        if (float.TryParse(section["Temperature"], out var temp)) Temperature = temp;
-        if (int.TryParse(section["MaxOutputTokens"], out var mOut)) MaxOutputTokens = mOut;
-    }
+    public OpenAIConfig(IConfigurationSection section) => ConfigSectionBinder.Bind(this, section);
 }

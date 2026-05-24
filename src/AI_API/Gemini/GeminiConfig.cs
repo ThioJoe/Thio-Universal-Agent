@@ -45,21 +45,5 @@ public class GeminiConfig : IAiProviderConfig
     public GeminiConfig() { }
 
     /// <summary>Creates a <see cref="GeminiConfig"/> loaded from a <c>Gemini</c> configuration section.</summary>
-    public GeminiConfig(IConfigurationSection section)
-    {
-        ApiKey = section["ApiKey"] is { } k && !string.IsNullOrWhiteSpace(k) ? k : null;
-        Model = section["Model"] ?? Model;
-
-        if (Enum.TryParse<GeminiMediaResolution>(section["MediaResolution"], ignoreCase: true, out var res))
-            MediaResolution = res;
-
-        if (float.TryParse(section["Temperature"], out var temp))             Temperature = temp;
-        if (float.TryParse(section["TopP"], out var topP))                    TopP = topP;
-        if (int.TryParse(section["TopK"], out var topK))                      TopK = topK;
-        if (int.TryParse(section["MaxOutputTokens"], out var mOut))           MaxOutputTokens = mOut;
-        if (int.TryParse(section["CoordinateMaxOutputTokens"], out var cOut)) CoordinateMaxOutputTokens = cOut;
-        if (int.TryParse(section["ThinkingBudget"], out var tb))              ThinkingBudget = tb;
-        if (Enum.TryParse<GeminiThinkingLevel>(section["ThinkingLevel"], ignoreCase: true, out var tl))
-            ThinkingLevel = tl;
-    }
+    public GeminiConfig(IConfigurationSection section) => ConfigSectionBinder.Bind(this, section);
 }

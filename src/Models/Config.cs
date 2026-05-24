@@ -1,4 +1,6 @@
-﻿using Thio_Universal_Agent.AI_API.Gemini;
+﻿using System.Globalization;
+using System.Reflection;
+using Thio_Universal_Agent.AI_API.Gemini;
 using Thio_Universal_Agent.AI_API.OpenAI;
 using Thio_Universal_Agent.AI_API.Anthropic;
 using Thio_Universal_Agent;
@@ -26,6 +28,45 @@ public sealed class ConfigFieldAttribute(string label) : Attribute
 
     /// <summary>When true the field is rendered as a full-width prompt-template editor in the UI.</summary>
     public bool IsPromptTemplate { get; init; }
+}
+
+/// <summary>
+/// Populates all public writable properties on <paramref name="target"/> from a matching
+/// <see cref="IConfigurationSection"/> key, using the property name as the key.
+/// Handles <see langword="string"/>, <see langword="bool"/>, <see langword="int"/>,
+/// <see langword="float"/>, <see langword="double"/>, enums, and their nullable equivalents.
+/// </summary>
+internal static class ConfigSectionBinder
+{
+    internal static void Bind(object target, IConfigurationSection section)
+    {
+        foreach (var prop in target.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (!prop.CanWrite) continue;
+
+            var raw = section[prop.Name];
+            if (raw is null) continue;
+
+            var underlying = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+
+            try
+            {
+                if (underlying == typeof(string))
+                    prop.SetValue(target, string.IsNullOrWhiteSpace(raw) ? null : raw);
+                else if (underlying == typeof(bool))
+                { if (bool.TryParse(raw, out var v)) prop.SetValue(target, v); }
+                else if (underlying == typeof(int))
+                { if (int.TryParse(raw, out var v)) prop.SetValue(target, v); }
+                else if (underlying == typeof(float))
+                { if (float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) prop.SetValue(target, v); }
+                else if (underlying == typeof(double))
+                { if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) prop.SetValue(target, v); }
+                else if (underlying.IsEnum)
+                { if (Enum.TryParse(underlying, raw, ignoreCase: true, out var v)) prop.SetValue(target, v); }
+            }
+            catch { /* skip individual invalid values */ }
+        }
+    }
 }
 
 public enum AiProviderType
@@ -87,28 +128,7 @@ public class GeneralConfig
     public GeneralConfig() { }
 
     /// <summary>Creates a <see cref="GeneralConfig"/> loaded from a <c>General</c> configuration section.</summary>
-    public GeneralConfig(IConfigurationSection section)
-    {
-        if (Enum.TryParse<AiProviderType>(section["ActiveProvider"], ignoreCase: true, out var ap)) ActiveProvider = ap;
-
-        if (int.TryParse(section["SettleDelayMs"], out var d) && d > 0)
-            SettleDelayMs = d;
-
-        if (int.TryParse(section["QueueSettleDelayMs"], out var qd) && qd >= 0)
-            QueueSettleDelayMs = qd;
-
-        if (bool.TryParse(section["EnableContextReset"], out var r)) EnableContextReset = r;
-        if (bool.TryParse(section["StripHistoryImages"], out var s)) StripHistoryImages = s;
-        if (bool.TryParse(section["EnableDebugMode"], out var dbg)) EnableDebugMode = dbg;
-        if (int.TryParse(section["MaxQueueSize"], out var mq) && mq >= 1) MaxQueueSize = mq;
-        if (int.TryParse(section["MaxSteps"], out var ms) && ms >= 1) MaxSteps = ms;
-        if (int.TryParse(section["ContextResetInterval"], out var cri) && cri >= 1) ContextResetInterval = cri;
-        if (int.TryParse(section["MaxParseRetries"], out var mpr) && mpr >= 0) MaxParseRetries = mpr;
-        if (int.TryParse(section["DoubleClickDelayMs"], out var dcd) && dcd >= 0) DoubleClickDelayMs = dcd;
-        if (bool.TryParse(section["AddGridOverlay"], out var ago)) AddGridOverlay = ago;
-        var spt = section["SystemPromptTemplate"];
-        if (!string.IsNullOrEmpty(spt)) SystemPromptTemplate = spt;
-    }
+    public GeneralConfig(IConfigurationSection section) => ConfigSectionBinder.Bind(this, section);
 }
 
 // ── Agent ─────────────────────────────────────────────────────────────────────
@@ -132,14 +152,7 @@ public class AgentConfig
     public AgentConfig() { }
 
     /// <summary>Creates an <see cref="AgentConfig"/> loaded from an <c>Agent</c> configuration section.</summary>
-    public AgentConfig(IConfigurationSection section)
-    {
-        if (Enum.TryParse<CoordinateMode>(section["CoordinateMode"], ignoreCase: true, out var coordMode))
-            CoordinateMode = coordMode;
-
-        MonitorIndex = section.GetValue<int?>("MonitorIndex");
-        if (int.TryParse(section["MaxZoomIterations"], out var mzi) && mzi >= 1) MaxZoomIterations = mzi;
-    }
+    public AgentConfig(IConfigurationSection section) => ConfigSectionBinder.Bind(this, section);
 }
 
 // ── Hotkeys ───────────────────────────────────────────────────────────────────
@@ -162,14 +175,7 @@ public class HotkeyConfig
     public HotkeyConfig() { }
 
     /// <summary>Creates a <see cref="HotkeyConfig"/> loaded from a <c>Hotkeys</c> configuration section.</summary>
-    public HotkeyConfig(IConfigurationSection section)
-    {
-        if (bool.TryParse(section["Enabled"], out var en)) Enabled = en;
-        var pr = section["PauseResumeHotkey"];
-        if (!string.IsNullOrWhiteSpace(pr)) PauseResumeHotkey = pr;
-        var st = section["StopHotkey"];
-        if (!string.IsNullOrWhiteSpace(st)) StopHotkey = st;
-    }
+    public HotkeyConfig(IConfigurationSection section) => ConfigSectionBinder.Bind(this, section);
 }
 
 // ── AppConfig (root) ──────────────────────────────────────────────────────────
