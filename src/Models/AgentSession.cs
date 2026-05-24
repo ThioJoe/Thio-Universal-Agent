@@ -209,7 +209,7 @@ public sealed class AgentSession
     private readonly ConcurrentQueue<string> _pendingGuidance = new();
 
     /// <summary>Fired when the user enqueues a guidance message, so the SSE stream can acknowledge it.</summary>
-    public event Func<string, Task>? OnGuidanceQueued;
+    public event Func<string, bool, Task>? OnGuidanceQueued;
 
     /// <summary>Enqueues a freeform guidance message to be injected into the next AI feedback call.</summary>
     /// <param name="message">The guidance text.</param>
@@ -223,7 +223,7 @@ public sealed class AgentSession
         _pendingGuidance.Enqueue(message);
         if (cancelNextAction)
             _cancelNextAction = true;
-        _ = OnGuidanceQueued?.Invoke(message);
+        _ = OnGuidanceQueued?.Invoke(message, cancelNextAction);
     }
 
     private volatile bool _cancelNextAction;

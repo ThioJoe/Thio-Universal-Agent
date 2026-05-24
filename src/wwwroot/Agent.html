@@ -428,6 +428,34 @@
             color: #cc8833;
         }
 
+        .step-entry.guidance-entry {
+            border-left: 3px solid #3a6ea8;
+            background: #080f18;
+        }
+
+        .step-entry.guidance-entry .guidance-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #4a7abf;
+            margin-right: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .step-entry.guidance-entry .guidance-text {
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+            color: #7ab0e8;
+            font-size: 12px;
+        }
+
+        .step-entry.guidance-entry.cancel-flag .guidance-label {
+            color: #b87030;
+        }
+
+        .step-entry.guidance-entry.cancel-flag .guidance-text {
+            color: #d4924a;
+        }
+
         /* ---- Final Result Banner ---- */
         .final-result {
             padding: 14px 20px;
@@ -1059,7 +1087,7 @@
             else if (msg.type === 'paused') handlePaused();
             else if (msg.type === 'resumed') handleResumed();
             else if (msg.type === 'countdown') handleCountdown(msg);
-            else if (msg.type === 'guidanceQueued') handleGuidanceQueued(msg);
+            else if (msg.type === 'guidanceQueued') handleGuidanceQueued(msg, msg.cancelNextAction);
             else if (msg.type === 'done') handleDone(msg);
         };
         eventSource.onerror = () => {
@@ -1146,7 +1174,7 @@
             if (res.ok) {
                 guidanceInput.value = '';
                 document.getElementById('guidance-cancel').checked = false;
-                handleGuidanceQueued(msg, cancelNext);
+                // The SSE guidanceQueued event will fire shortly and add the log entry + ack badge.
             } else {
                 const body = await res.json().catch(() => ({}));
                 const ackEl = document.getElementById('guidance-ack');
@@ -1160,12 +1188,23 @@
         }
     }
 
-    function handleGuidanceQueued(_msg, cancelNext) {
+    function handleGuidanceQueued(msg, cancelNext) {
+        // msg may be the raw SSE payload object {type, message} or undefined when called directly from sendGuidance
+        const text = (typeof msg === 'object' && msg.message) ? msg.message : (typeof msg === 'string' ? msg : '');
+        const isCancel = cancelNext ?? false;
+
+        // Insert a visual entry into the step log
+        const entry = document.createElement('div');
+        entry.className = 'step-entry guidance-entry' + (isCancel ? ' cancel-flag' : '');
+        entry.innerHTML = `<span class="guidance-label">${isCancel ? '\u26a0\ufe0e Guidance (cancel next)' : '\ud83d\udcac Guidance'}</span><span class="guidance-text">${escapeHtml(text)}</span>`;
+        stepLog.appendChild(entry);
+        stepLog.scrollTop = stepLog.scrollHeight;
+
+        // Flash the ack badge (only meaningful when called from the local sendGuidance path)
         const ackEl = document.getElementById('guidance-ack');
-        ackEl.textContent = cancelNext ? '\u26a0 Queued (will cancel next action)' : '\u2713 Queued';
-        ackEl.style.color = cancelNext ? '#cc9944' : '';
+        ackEl.textContent = isCancel ? '\u26a0 Queued (will cancel next action)' : '\u2713 Queued';
+        ackEl.style.color = isCancel ? '#cc9944' : '';
         ackEl.classList.remove('show');
-        // Force reflow so the transition re-fires if sent multiple times quickly
         void ackEl.offsetWidth;
         ackEl.classList.add('show');
         setTimeout(() => { ackEl.classList.remove('show'); ackEl.style.color = ''; ackEl.textContent = '\u2713 Queued'; }, 2500);

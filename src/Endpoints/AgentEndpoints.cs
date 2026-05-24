@@ -182,11 +182,11 @@ internal static class AgentEndpoints
                 }
             }
 
-            async Task OnGuidanceQueued(string message)
+            async Task OnGuidanceQueued(string message, bool cancelNextAction)
             {
                 try
                 {
-                    await WriteGuidanceQueuedEventAsync(httpContext.Response, message, ct).ConfigureAwait(false);
+                    await WriteGuidanceQueuedEventAsync(httpContext.Response, message, cancelNextAction, ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -366,12 +366,13 @@ internal static class AgentEndpoints
         await response.Body.FlushAsync(ct).ConfigureAwait(false);
     }
 
-    private static async Task WriteGuidanceQueuedEventAsync(HttpResponse response, string message, CancellationToken ct)
+    private static async Task WriteGuidanceQueuedEventAsync(HttpResponse response, string message, bool cancelNextAction, CancellationToken ct)
     {
         var payload = new
         {
             type = "guidanceQueued",
             message,
+            cancelNextAction,
         };
 
         string json = JsonSerializer.Serialize(payload, JsonOptions);
