@@ -369,7 +369,9 @@
 
 <div class="action-bar">
     <button class="btn btn-primary" id="btn-save">Save to browser</button>
-    <button class="btn" id="btn-export">Export JSON</button>
+    <button class="btn" id="btn-export">Export Settings</button>
+    <button class="btn" id="btn-import">Import Settings</button>
+    <input type="file" id="file-import" accept=".json" style="display:none">
     <div class="spacer"></div>
     <span class="status-badge" id="save-status">Loading…</span>
     <button class="btn btn-danger" id="btn-reset">Reset all to defaults</button>
@@ -760,6 +762,73 @@
         a.download = 'tua-config.json';
         a.click();
         URL.revokeObjectURL(url);
+    });
+
+    // ── Import ────────────────────────────────────────────────────────────────
+
+    document.getElementById('btn-import').addEventListener('click', () => {
+        document.getElementById('file-import').click();
+    });
+
+    document.getElementById('file-import').addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        e.target.value = ''; // reset so the same file can be re-imported
+
+        let importedObj;
+        try {
+            importedObj = JSON.parse(await file.text());
+        } catch {
+            alert('Invalid JSON file.');
+            return;
+        }
+
+        // Build label → key lookup maps from serverDefaults
+        const sectionByLabel = {};
+        for (const section of serverDefaults) {
+            sectionByLabel[section.label] = section;
+        }
+
+        let count = 0;
+        for (const [sectionLabel, fields] of Object.entries(importedObj)) {
+            const section = sectionByLabel[sectionLabel];
+            if (!section) continue;
+
+            const fieldByLabel = {};
+            for (const field of section.fields) {
+                fieldByLabel[field.label] = field;
+            }
+
+            for (const [fieldLabel, value] of Object.entries(fields)) {
+                const field = fieldByLabel[fieldLabel];
+                if (!field) continue;
+                // Skip password placeholder strings — the real value can't be reconstructed
+                if (field.type === 'password') continue;
+                if (value === null || value === undefined) continue;
+
+                const input = findInput(section.key, field.key);
+                if (!input) continue;
+
+                setInputValue(input, value, field.type);
+                pendingChanges[section.key] ??= {};
+                pendingChanges[section.key][field.key] = value;
+
+                if (input.tagName === 'TEXTAREA') {
+                    input.closest('.prompt-editor-scroller')?.classList.add('changed');
+                } else {
+                    input.classList.add('changed');
+                }
+                count++;
+            }
+        }
+
+        if (count > 0) {
+            setStatus(`Imported ${count} field(s) — click Save to apply`);
+            showToast('Imported');
+        } else {
+            setStatus('Nothing to import');
+            showToast('Nothing to import');
+        }
     });
 
     // ── Reset ─────────────────────────────────────────────────────────────────
