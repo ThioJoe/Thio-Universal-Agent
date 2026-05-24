@@ -375,6 +375,7 @@
             transition: border-color 0.2s;
         }
         .vault-section.unlocked { border-color: #2a4a2a; }
+        .vault-section.session  { border-color: #2a3a4a; }
 
         .vault-header {
             padding: 14px 20px;
@@ -386,6 +387,7 @@
             transition: background 0.2s, border-color 0.2s;
         }
         .vault-section.unlocked .vault-header { background: #1a221a; border-bottom-color: #2a3a2a; }
+        .vault-section.session  .vault-header { background: #1a1e22; border-bottom-color: #2a3540; }
 
         .vault-title { font-size: 13px; font-weight: 700; color: #e0e0e0; flex: 1; }
 
@@ -402,6 +404,7 @@
             transition: color 0.2s, background 0.2s, border-color 0.2s;
         }
         .vault-section.unlocked .vault-badge { color: #55aa55; background: #0d2010; border-color: #1a4a1a; }
+        .vault-section.session  .vault-badge { color: #5599cc; background: #0d1a2e; border-color: #1a3a5c; }
 
         .vault-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
 
@@ -482,7 +485,8 @@
     let browserValues  = {}; // persisted overrides { sectionKey: { fieldKey: value } }
     let pendingChanges = {}; // unsaved UI edits { sectionKey: { fieldKey: value } }
 
-    let vaultPasswordHash = null; // SHA-256 hex of vault password, in-memory only when unlocked
+    let vaultPasswordHash  = null;  // SHA-256 hex provided by the browser this page visit
+    let vaultSessionActive = false; // true when server already has the hash from a prior unlock
 
     // ── Vault helpers ─────────────────────────────────────────────────────────
 
@@ -529,9 +533,11 @@
      * Returns 'ok', 'wrong-password', or 'error'.
      */
     async function tryUnlockVault(hash) {
+        // hash may be null when the server already holds the session hash.
         const passwordFields = getPasswordFields();
         const serverUpdates  = {};
         let   wrongPassword  = false;
+        let   anyLoaded      = false;
 
         for (const { sectionKey, fieldKey } of passwordFields) {
             const key = secretKeyFor(sectionKey, fieldKey);
@@ -540,7 +546,8 @@
                 res = await fetch('/api/secrets/load', {
                     method:  'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify({ keyName: key, passwordHash: hash }),
+                    // Omit passwordHash when null — server will use its session hash.
+                    body:    JSON.stringify({ keyName: key, passwordHash: hash ?? null }),
                 });
             } catch { return 'error'; }
 
@@ -550,7 +557,13 @@
                 serverUpdates[sectionKey][fieldKey] = secret;
                 const input = findInput(sectionKey, fieldKey);
                 if (input) input.placeholder = '(set — enter to change)';
+                anyLoaded = true;
             } else if (res.status === 401) {
+                wrongPassword = true;
+                break;
+            }
+            // 400 = vault not unlocked server-side either; treat as wrong-password
+            else if (res.status === 400) {
                 wrongPassword = true;
                 break;
             }
@@ -559,11 +572,30 @@
 
         if (wrongPassword) return 'wrong-password';
 
-        vaultPasswordHash = hash;
+        vaultPasswordHash = hash;       // null when using server session
+        vaultSessionActive = (hash === null && anyLoaded);
         if (Object.keys(serverUpdates).length > 0) {
             try { await pushToServer(serverUpdates); } catch { /* best-effort */ }
         }
         return 'ok';
+    }
+
+    /** Checks the server-side vault status and, if unlocked, loads secrets via the stored session hash. */
+    async function checkAndApplyServerVaultSession() {
+        try {
+            const res = await fetch('/api/secrets/vault/status');
+            if (!res.ok) { setStatus('Browser overrides loaded'); return; }
+            const { unlocked } = await res.json();
+            if (unlocked) {
+                const result = await tryUnlockVault(null);
+                if (result === 'ok') {
+                    setVaultUnlocked(true, 'session');
+                    setStatus('Vault session active');
+                    return;
+                }
+            }
+        } catch { /* best-effort */ }
+        setStatus('Browser overrides loaded');
     }
 
     /** Renders the vault section and inserts it at the top of #config-main. */
@@ -645,7 +677,7 @@
             } else {
                 if (remCheck.checked) localStorage.setItem(VAULT_KEY, hash);
                 else                  localStorage.removeItem(VAULT_KEY);
-                setVaultUnlocked(true);
+                setVaultUnlocked(true, 'browser');
                 pwInput.value = '';
                 showToast('Vault unlocked');
             }
@@ -659,14 +691,16 @@
         btnLock.type        = 'button';
         btnLock.textContent = 'Lock';
         btnLock.style.display = 'none';
-        btnLock.addEventListener('click', () => {
-            vaultPasswordHash = null;
+        btnLock.addEventListener('click', async () => {
+            vaultPasswordHash  = null;
+            vaultSessionActive = false;
             for (const { sectionKey, fieldKey } of getPasswordFields()) {
                 const input = findInput(sectionKey, fieldKey);
                 if (input) { input.value = ''; input.placeholder = '(encrypted — unlock vault to load)'; }
             }
             setVaultUnlocked(false);
             showToast('Vault locked');
+            try { await fetch('/api/secrets/vault/lock', { method: 'POST' }); } catch { /* best-effort */ }
         });
         row.appendChild(btnLock);
 
@@ -677,18 +711,19 @@
         main.insertBefore(wrap, main.firstChild);
     }
 
-    function setVaultUnlocked(on) {
+    function setVaultUnlocked(on, source = 'browser') {
         const section = document.getElementById('vault-section');
         const badge   = document.getElementById('vault-badge');
         const unlock  = document.getElementById('btn-vault-unlock');
         const lock    = document.getElementById('btn-vault-lock');
         const input   = document.getElementById('vault-pw-input');
         if (!section) return;
-        section.classList.toggle('unlocked', on);
-        if (badge)  badge.textContent     = on ? 'Unlocked' : 'Locked';
-        if (unlock) unlock.style.display  = on ? 'none'     : '';
-        if (lock)   lock.style.display    = on ? ''         : 'none';
-        if (input)  input.disabled        = on;
+        section.classList.toggle('unlocked', on && source === 'browser');
+        section.classList.toggle('session',  on && source === 'session');
+        if (badge)  badge.textContent    = on ? (source === 'session' ? 'Session Active' : 'Unlocked') : 'Locked';
+        if (unlock) unlock.style.display = on ? 'none' : '';
+        if (lock)   lock.style.display   = on ? ''     : 'none';
+        if (input)  input.disabled       = on;
     }
 
     // ── Boot ──────────────────────────────────────────────────────────────────
@@ -718,15 +753,15 @@
             if (storedHash) {
                 const result = await tryUnlockVault(storedHash);
                 if (result === 'ok') {
-                    setVaultUnlocked(true);
+                    setVaultUnlocked(true, 'browser');
                     setStatus('Vault auto-unlocked');
                 } else {
-                    // Stored hash is stale (password changed) — clear it.
+                    // Stored hash is stale (password changed) — clear it, then check server session.
                     localStorage.removeItem(VAULT_KEY);
-                    setStatus('Browser overrides loaded');
+                    await checkAndApplyServerVaultSession();
                 }
             } else {
-                setStatus('Browser overrides loaded');
+                await checkAndApplyServerVaultSession();
             }
         } catch (err) {
             document.getElementById('config-main').textContent = 'Failed to load config schema: ' + err.message;
@@ -990,7 +1025,7 @@
                 const meta = findFieldMeta(s, k);
                 if (meta?.type === 'password') {
                     if (v) { // only queue non-empty password changes
-                        if (!vaultPasswordHash) { hasLockedSecret = true; }
+                        if (!vaultPasswordHash && !vaultSessionActive) { hasLockedSecret = true; }
                         else { secretChanges[s] ??= {}; secretChanges[s][k] = v; }
                     }
                 } else {
@@ -1048,7 +1083,7 @@
         for (const [s, fields] of Object.entries(pendingChanges)) {
             for (const [k, v] of Object.entries(fields)) {
                 const meta = findFieldMeta(s, k);
-                const isLockedSecret = meta?.type === 'password' && v && !vaultPasswordHash;
+                const isLockedSecret = meta?.type === 'password' && v && !vaultPasswordHash && !vaultSessionActive;
                 if (isLockedSecret) {
                     retainedPending[s] ??= {};
                     retainedPending[s][k] = v;

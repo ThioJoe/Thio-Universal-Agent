@@ -35,6 +35,7 @@ else
 
 builder.Services.AddSingleton<AppConfig>();
 builder.Services.AddSingleton<ISecretProvider, SecretsHandler>();
+builder.Services.AddSingleton<VaultSession>();
 
 // Register all API providers
 builder.Services.AddHttpClient<GeminiProvider>();
