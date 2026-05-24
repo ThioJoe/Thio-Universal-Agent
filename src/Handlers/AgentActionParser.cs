@@ -139,6 +139,11 @@ public static class AgentActionParser
         {
             if (!TryParseActionLine(payload, out AgentAction? act, out error))
                 return false;
+            if (act.Kind == AgentActionKind.Done)
+            {
+                error = "DONE cannot be queued. It must be issued as a standalone ACTION: to allow final visual verification before completing the task.";
+                return false;
+            }
             actions.Add(act);
         }
 
