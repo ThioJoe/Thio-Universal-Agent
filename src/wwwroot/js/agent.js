@@ -11,7 +11,7 @@
 /** @typedef {{ type: 'guidanceQueued', message: string, cancelNextAction: boolean }} AgentGuidanceQueuedMessage */
 /** @typedef {{ type: 'done', status: string, finalResult?: string, totalDurationMs?: number }} AgentDoneMessage */
 /** @typedef {AgentStepMessage | AgentStepStartingMessage | AgentSubStepMessage | AgentCountdownMessage | AgentGuidanceQueuedMessage | AgentDoneMessage | { type: 'paused' } | { type: 'resumed' }} AgentSseMessage */
-/** @typedef {{ gemini?: { model?: string, apiKey?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData */
+/** @typedef {{ general?: { activeProvider?: string }, gemini?: { model?: string, apiKey?: string }, openai?: { model?: string, apiKey?: string }, anthropic?: { model?: string, apiKey?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData */
 /** @typedef {{ index: number, isPrimary: boolean, width: number, height: number }} MonitorInfo */
 /** @typedef {{ goal?: string, status: string, isPaused: boolean, startedAt?: string, totalDurationMs?: number, finalResult?: string }} SessionStatusResponse */
 /** @typedef {{ sessionId: string }} StartAgentResponse */
@@ -97,9 +97,13 @@ let elapsedIntervalId;
 
         if (cfgRes.ok) {
             const cfg = await cfgRes.json();
-            const storedModel = getStoredConfig()?.gemini?.model;
-            const model = storedModel || cfg.gemini?.model || '';
-            if (model) modelBadge.textContent = model;
+            const stored = getStoredConfig();
+            const activeProvider = stored?.general?.activeProvider || cfg.general?.activeProvider || 'Gemini';
+            const providerKeyMap = /** @type {Record<string, string>} */({ 'Gemini': 'gemini', 'ChatGPT': 'openai', 'Claude': 'anthropic' });
+            const providerKey = providerKeyMap[activeProvider] ?? activeProvider.toLowerCase();
+            const storedModel = stored?.[providerKey]?.model;
+            const model = storedModel || cfg[providerKey]?.model || '';
+            modelBadge.textContent = model ? `${activeProvider}: ${model}` : activeProvider;
         }
 
         if (dbgRes.ok) {
@@ -202,8 +206,12 @@ async function startAgent() {
     await pushConfigToServer();
 
     const cfg = getStoredConfig();
-    const apiKey = cfg?.gemini?.apiKey || null;
-    const model  = cfg?.gemini?.model  || null;
+    const activeProvider = cfg?.general?.activeProvider || 'Gemini';
+    const providerKeyMap = /** @type {Record<string, string>} */({ 'Gemini': 'gemini', 'ChatGPT': 'openai', 'Claude': 'anthropic' });
+    const providerKey = providerKeyMap[activeProvider] ?? activeProvider.toLowerCase();
+    const providerCfg = /** @type {{ model?: string, apiKey?: string } | undefined} */ (cfg?.[providerKey]);
+    const apiKey = providerCfg?.apiKey || null;
+    const model  = providerCfg?.model  || null;
 
     // Clear any previous session from storage so a fresh session takes over
     localStorage.removeItem(SESSION_STORE_KEY);
