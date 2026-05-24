@@ -97,6 +97,16 @@ async function tryUnlockVault(hash) {
 
     for (const { sectionKey, fieldKey } of passwordFields) {
         const key = secretKeyFor(sectionKey, fieldKey);
+
+        // Skip keys that have never been saved — avoids a noisy 404 in the console.
+        try {
+            const existsRes = await fetch(`/api/secrets/${encodeURIComponent(key)}/exists`);
+            if (existsRes.ok) {
+                const { exists } = await existsRes.json();
+                if (!exists) continue;
+            }
+        } catch { return 'error'; }
+
         let res;
         try {
             res = await fetch('/api/secrets/load', {
