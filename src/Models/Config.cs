@@ -52,6 +52,12 @@ public class GeneralConfig
     [ConfigField("Context Reset Interval", Description = "Trim conversation history every N steps when context reset is enabled")]
     public int ContextResetInterval { get; set; } = 8;
 
+    [ConfigField("Max Parse Retries", Description = "Number of times the agent may ask the AI to correct a malformed response before giving up")]
+    public int MaxParseRetries { get; set; } = 2;
+
+    [ConfigField("Double-Click Delay (ms)", Description = "Milliseconds between the two clicks of a double-click action")]
+    public int DoubleClickDelayMs { get; set; } = 60;
+
     // ── Constructors ──────────────────────────────────────────────────────────
 
     /// <summary>Creates a <see cref="GeneralConfig"/> with all default values.</summary>
@@ -72,6 +78,8 @@ public class GeneralConfig
         if (int.TryParse(section["MaxQueueSize"], out var mq) && mq >= 1) MaxQueueSize = mq;
         if (int.TryParse(section["MaxSteps"], out var ms) && ms >= 1) MaxSteps = ms;
         if (int.TryParse(section["ContextResetInterval"], out var cri) && cri >= 1) ContextResetInterval = cri;
+        if (int.TryParse(section["MaxParseRetries"], out var mpr) && mpr >= 0) MaxParseRetries = mpr;
+        if (int.TryParse(section["DoubleClickDelayMs"], out var dcd) && dcd >= 0) DoubleClickDelayMs = dcd;
     }
 }
 
@@ -87,6 +95,9 @@ public class AgentConfig
     [ConfigField("Monitor Index", Description = "Zero-based index of the monitor to capture; leave empty for all monitors")]
     public int? MonitorIndex { get; set; }
 
+    [ConfigField("Max Zoom Iterations", Description = "Maximum number of grid zoom steps when using Zoom coordinate mode")]
+    public int MaxZoomIterations { get; set; } = 10;
+
     // ── Constructors ──────────────────────────────────────────────────────────
 
     /// <summary>Creates an <see cref="AgentConfig"/> with all default values.</summary>
@@ -99,6 +110,7 @@ public class AgentConfig
             CoordinateMode = coordMode;
 
         MonitorIndex = section.GetValue<int?>("MonitorIndex");
+        if (int.TryParse(section["MaxZoomIterations"], out var mzi) && mzi >= 1) MaxZoomIterations = mzi;
     }
 }
 

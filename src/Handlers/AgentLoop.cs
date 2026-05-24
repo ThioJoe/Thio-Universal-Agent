@@ -16,10 +16,10 @@ public sealed partial class AgentLoop(
     AppConfig appConfig,
     ILogger<AgentLoop> logger)
 {
-    private const int MaxParseRetries = 2;
     private const string ScreenMimeType = "image/jpeg";
 
     private readonly int _maxSteps = appConfig.General.MaxSteps;
+    private readonly int _maxParseRetries = appConfig.General.MaxParseRetries;
     private readonly int _contextResetInterval = appConfig.General.ContextResetInterval;
     private readonly int _settleDelayMs = appConfig.General.SettleDelayMs;
     private readonly int _queueSettleDelayMs = appConfig.General.QueueSettleDelayMs;
@@ -294,7 +294,7 @@ public sealed partial class AgentLoop(
         AiConversation conversation, string responseText, CancellationToken ct,
         List<AgentDebugEntry>? debugLog = null)
     {
-        for (int attempt = 0; attempt <= MaxParseRetries; attempt++)
+        for (int attempt = 0; attempt <= _maxParseRetries; attempt++)
         {
             if (AgentActionParser.TryParse(responseText, appConfig.General.MaxQueueSize, out AgentParsedResponse? parsed, out string? error))
                 return parsed;
@@ -302,7 +302,7 @@ public sealed partial class AgentLoop(
             LogParseAttemptFailed(logger, attempt + 1, error);
             debugLog?.Add(new AgentDebugEntry($"Parse Attempt {attempt + 1} Failed", Text: error));
 
-            if (attempt == MaxParseRetries)
+            if (attempt == _maxParseRetries)
                 break;
 
             // Send a correction prompt and get a new response

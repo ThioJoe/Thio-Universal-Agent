@@ -34,7 +34,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
     private readonly CoordinateMode _defaultCoordinateMode = appConfig.Agent.CoordinateMode;
 
     private const double DefaultConfidencePixels = 15.0;
-    private const int MaxZoomIterations = 10;
+    private readonly int _maxZoomIterations = appConfig.Agent.MaxZoomIterations;
     private const double DefaultAIEstimatePrecision = 0.3; // Assume AI is accurate within ~0.3 of a grid cell
     private const int MinZoomResolution = 1920; // Upscale zoomed grid images so the longer side is at least this many pixels
 
@@ -208,7 +208,7 @@ public sealed partial class CoordinatePrompter(IAiProvider aiProvider, AppConfig
         }
 
         // Iteratively zoom in until each grid cell is within the confidence threshold
-        for (int i = 0; i < MaxZoomIterations && ShouldContinueZooming(view, divisions, divisions); i++)
+        for (int i = 0; i < _maxZoomIterations && ShouldContinueZooming(view, divisions, divisions); i++)
         {
             view = CalculateZoomRegion(view, coordinate, imageWidth, imageHeight, divisions, divisions);
             byte[] zoomedImage = CreateGridOverlayImage(source, view, minResolution: MinZoomResolution);

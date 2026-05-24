@@ -13,7 +13,7 @@ public sealed partial class AgentActionExecutor(
     AppConfig appConfig,
     ILogger<AgentActionExecutor> logger)
 {
-    private const int DoubleClickDelayMs = 60;
+    private readonly int _doubleClickDelayMs = appConfig.General.DoubleClickDelayMs;
 
     /// <summary>
     /// Executes the given action against the OS.
