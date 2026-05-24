@@ -16,11 +16,13 @@ public enum AgentActionKind
     MoveMouse,
     /// <summary>Left click and hold, then moves the mouse to another location before releasing. </summary>
     ClickDrag,
+    // Direct coordinate versions of click and move commands
     LeftClickCoords,
     RightClickCoords,
     DoubleClickCoords,
     MiddleClickCoords,
     MoveMouseCoords,
+
     /// <summary>Left click and hold at exact coordinates, then move to another set of coordinates before releasing.</summary>
     ClickDragCoords,
     /// <summary>Types a string of text via the keyboard.</summary>

@@ -31,6 +31,17 @@ namespace Thio_Universal_Agent
         /// Returns the current cursor position in absolute screen coordinates.
         /// </summary>
         (int X, int Y) GetCursorPosition() => (0, 0);
+
+        /// <summary>
+        /// Sends key-down events for the specified modifier keys so they are held during a subsequent mouse action.
+        /// Call <see cref="ReleaseModifierKeys"/> after the mouse action to release them.
+        /// </summary>
+        void HoldModifierKeys(ModifierKeys modifiers) { }
+
+        /// <summary>
+        /// Sends key-up events for the specified modifier keys, releasing them after a mouse action.
+        /// </summary>
+        void ReleaseModifierKeys(ModifierKeys modifiers) { }
     }
 
 

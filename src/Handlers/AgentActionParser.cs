@@ -228,6 +228,40 @@ public static class AgentActionParser
         }
     }
 
+    /// <summary>
+    /// Attempts to strip a leading modifier prefix (e.g. "ctrl+shift ") from <paramref name="args"/>.
+    /// Returns the parsed <see cref="ModifierKeys"/> and the remaining argument string.
+    /// If the first token contains any non-modifier word the method returns <see cref="ModifierKeys.None"/> and the original string.
+    /// </summary>
+    private static (ModifierKeys modifiers, string remainingArgs) TryStripModifierPrefix(string args)
+    {
+        int spaceIdx = args.IndexOf(' ');
+        if (spaceIdx <= 0)
+            return (ModifierKeys.None, args);
+
+        string firstToken = args[..spaceIdx].ToLowerInvariant();
+        string[] parts = firstToken.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        ModifierKeys modifiers = ModifierKeys.None;
+        foreach (string part in parts)
+        {
+            switch (part)
+            {
+                case "ctrl" or "control": modifiers |= ModifierKeys.Ctrl;  break;
+                case "shift":             modifiers |= ModifierKeys.Shift; break;
+                case "alt":               modifiers |= ModifierKeys.Alt;   break;
+                case "win" or "windows" or "super": modifiers |= ModifierKeys.Win; break;
+                default:
+                    // Non-modifier word in first token — not a modifier prefix
+                    return (ModifierKeys.None, args);
+            }
+        }
+
+        return modifiers == ModifierKeys.None
+            ? (ModifierKeys.None, args)
+            : (modifiers, args[(spaceIdx + 1)..].TrimStart());
+    }
+
     /// <summary>Parses a click/move action whose argument is a quoted target description or a COORDS X,Y pair.</summary>
     private static bool TryParseTargetAction(
         AgentActionKind kind, string args,
@@ -238,6 +272,10 @@ public static class AgentActionParser
 
         StringSplitOptions splitOpts = StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries;
         string kindUpper = kind.ToString().ToUpperInvariant();
+
+        // Strip optional leading modifier prefix, e.g. "ctrl+shift " from "ctrl+shift COORDS 100,200"
+        var (modifiers, strippedArgs) = TryStripModifierPrefix(args);
+        args = strippedArgs;
 
         // Handle COORDS keyword: e.g. LEFT_CLICK COORDS 100,200  or  LEFT_CLICK COORDS CURRENT
         if (args.StartsWith("COORDS ", StringComparison.OrdinalIgnoreCase))
@@ -257,7 +295,7 @@ public static class AgentActionParser
             if (coordsPart.Equals("CURRENT", StringComparison.OrdinalIgnoreCase))
             {
                 error = null;
-                action = new AgentAction(coordsKind, Target: "[Current Cursor Position]", AltMode: AgentActionAltMode.CurrentCursorPosition);
+                action = new AgentAction(coordsKind, Target: "[Current Cursor Position]", AltMode: AgentActionAltMode.CurrentCursorPosition, Modifiers: modifiers);
                 return true;
             }
 
@@ -286,7 +324,7 @@ public static class AgentActionParser
             }
 
             error = null;
-            action = new AgentAction(coordsKind, Target: $"{x},{y}", AltMode: AgentActionAltMode.ExactCoords);
+            action = new AgentAction(coordsKind, Target: $"{x},{y}", AltMode: AgentActionAltMode.ExactCoords, Modifiers: modifiers);
             return true;
         }
 
@@ -312,7 +350,7 @@ public static class AgentActionParser
         }
 
         error = null;
-        action = new AgentAction(kind, Target: target, AltMode: altMode);
+        action = new AgentAction(kind, Target: target, AltMode: altMode, Modifiers: modifiers);
         return true;
     }
 

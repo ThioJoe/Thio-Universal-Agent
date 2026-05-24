@@ -294,6 +294,38 @@ namespace Thio_Universal_Agent.OS_Windows
             }
         }
 
+        /// <inheritdoc/>
+        public void HoldModifierKeys(ModifierKeys modifiers)
+        {
+            List<INPUT> inputList = [];
+            if (modifiers.HasFlag(ModifierKeys.Win))
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LWIN"].vk, scan: modifierKeyCodes["LWIN"].scan, isKeyUp: false, extended: modifierKeyCodes["LWIN"].extended));
+            if (modifiers.HasFlag(ModifierKeys.Ctrl))
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LCTRL"].vk, scan: modifierKeyCodes["LCTRL"].scan, isKeyUp: false, extended: false));
+            if (modifiers.HasFlag(ModifierKeys.Shift))
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LSHIFT"].vk, scan: modifierKeyCodes["LSHIFT"].scan, isKeyUp: false, extended: false));
+            if (modifiers.HasFlag(ModifierKeys.Alt))
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LALT"].vk, scan: modifierKeyCodes["LALT"].scan, isKeyUp: false, extended: false));
+            if (inputList.Count > 0)
+                SendInput((uint)inputList.Count, [.. inputList], Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        /// <inheritdoc/>
+        public void ReleaseModifierKeys(ModifierKeys modifiers)
+        {
+            List<INPUT> inputList = [];
+            if (modifiers.HasFlag(ModifierKeys.Alt))
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LALT"].vk, scan: modifierKeyCodes["LALT"].scan, isKeyUp: true, extended: false));
+            if (modifiers.HasFlag(ModifierKeys.Shift))
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LSHIFT"].vk, scan: modifierKeyCodes["LSHIFT"].scan, isKeyUp: true, extended: false));
+            if (modifiers.HasFlag(ModifierKeys.Ctrl))
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LCTRL"].vk, scan: modifierKeyCodes["LCTRL"].scan, isKeyUp: true, extended: false));
+            if (modifiers.HasFlag(ModifierKeys.Win))
+                inputList.Add(CreateInput(vk: modifierKeyCodes["LWIN"].vk, scan: modifierKeyCodes["LWIN"].scan, isKeyUp: true, extended: modifierKeyCodes["LWIN"].extended));
+            if (inputList.Count > 0)
+                SendInput((uint)inputList.Count, [.. inputList], Marshal.SizeOf(typeof(INPUT)));
+        }
+
         /// <summary>
         /// Types the specified text using the helper methods to construct inputs.
         /// This handles shift states for standard keys and falls back to Unicode for others.

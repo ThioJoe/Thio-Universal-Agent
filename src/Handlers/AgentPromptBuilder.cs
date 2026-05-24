@@ -27,14 +27,18 @@ public static class AgentPromptBuilder
         AVAILABLE TOOLS
         ═══════════════════════════════════
 
-        LEFT_CLICK <target>
-        RIGHT_CLICK <target>
-        DOUBLE_CLICK <target>
-        MIDDLE_CLICK <target>
-          Clicks at the specified target. <target> can be:
+        LEFT_CLICK <modifiers> <target>
+        RIGHT_CLICK <modifiers> <target>
+        DOUBLE_CLICK <modifiers> <target>
+        MIDDLE_CLICK <modifiers> <target>
+          Clicks at the specified target. 
+          <target> can be:
           · A quoted description — locates the UI element on screen: LEFT_CLICK "the OK button in the Notepad Save-As Dialog"
           · CURRENT            — clicks at the cursor's current position without moving: LEFT_CLICK CURRENT
           · COORDS X,Y         — clicks at exact pixel coordinates: LEFT_CLICK COORDS 450,300
+          <modifiers> can be left out, or can be and combination of [shift, ctrl, alt, win] separated by +
+            Example: RIGHT_CLICK ctrl+shift "the file menu dropdown in the top left"
+
 
         MOVE_MOUSE <target>
           Moves the mouse to the specified target without clicking. Accepts the same target forms as above.

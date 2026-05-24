@@ -106,36 +106,47 @@ public sealed partial class AgentActionExecutor(
             }
 
             string cursorMethodCalled;
-            switch (action.Kind)
+            if (action.Modifiers != ModifierKeys.None)
+                inputProvider.HoldModifierKeys(action.Modifiers);
+
+            try
             {
-                case AgentActionKind.LeftClick or AgentActionKind.LeftClickCoords:
-                    await inputProvider.LeftClick_MonitorCoords(curX, curY).ConfigureAwait(false);
-                    cursorMethodCalled = $"LeftClick_MonitorCoords({curX}, {curY})";
-                    break;
+                switch (action.Kind)
+                {
+                    case AgentActionKind.LeftClick or AgentActionKind.LeftClickCoords:
+                        await inputProvider.LeftClick_MonitorCoords(curX, curY).ConfigureAwait(false);
+                        cursorMethodCalled = $"LeftClick_MonitorCoords({curX}, {curY})";
+                        break;
 
-                case AgentActionKind.RightClick or AgentActionKind.RightClickCoords:
-                    await inputProvider.RightClick_MonitorCoords(curX, curY).ConfigureAwait(false);
-                    cursorMethodCalled = $"RightClick_MonitorCoords({curX}, {curY})";
-                    break;
+                    case AgentActionKind.RightClick or AgentActionKind.RightClickCoords:
+                        await inputProvider.RightClick_MonitorCoords(curX, curY).ConfigureAwait(false);
+                        cursorMethodCalled = $"RightClick_MonitorCoords({curX}, {curY})";
+                        break;
 
-                case AgentActionKind.DoubleClick or AgentActionKind.DoubleClickCoords:
-                    await inputProvider.DoubleClick_MonitorCoords(curX, curY).ConfigureAwait(false);
-                    cursorMethodCalled = $"DoubleClick_MonitorCoords({curX}, {curY})";
-                    break;
+                    case AgentActionKind.DoubleClick or AgentActionKind.DoubleClickCoords:
+                        await inputProvider.DoubleClick_MonitorCoords(curX, curY).ConfigureAwait(false);
+                        cursorMethodCalled = $"DoubleClick_MonitorCoords({curX}, {curY})";
+                        break;
 
-                case AgentActionKind.MiddleClick or AgentActionKind.MiddleClickCoords:
-                    await inputProvider.MiddleMouse_MonitorCoords(curX, curY).ConfigureAwait(false);
-                    cursorMethodCalled = $"MiddleMouse_MonitorCoords({curX}, {curY})";
-                    break;
+                    case AgentActionKind.MiddleClick or AgentActionKind.MiddleClickCoords:
+                        await inputProvider.MiddleMouse_MonitorCoords(curX, curY).ConfigureAwait(false);
+                        cursorMethodCalled = $"MiddleMouse_MonitorCoords({curX}, {curY})";
+                        break;
 
-                case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
-                    await inputProvider.MoveMouse_MonitorCoords(curX, curY).ConfigureAwait(false);
-                    cursorMethodCalled = $"MoveMouse_MonitorCoords({curX}, {curY})";
-                    break;
+                    case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
+                        await inputProvider.MoveMouse_MonitorCoords(curX, curY).ConfigureAwait(false);
+                        cursorMethodCalled = $"MoveMouse_MonitorCoords({curX}, {curY})";
+                        break;
 
-                default:
-                    cursorMethodCalled = "N/A";
-                    break;
+                    default:
+                        cursorMethodCalled = "N/A";
+                        break;
+                }
+            }
+            finally
+            {
+                if (action.Modifiers != ModifierKeys.None)
+                    inputProvider.ReleaseModifierKeys(action.Modifiers);
             }
 
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: cursorMethodCalled)).ConfigureAwait(false);
@@ -158,36 +169,46 @@ public sealed partial class AgentActionExecutor(
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Exact Coordinates", Text: coord.ToString())).ConfigureAwait(false);
 
             string exactMethodCalled;
-            switch (action.Kind)
+            if (action.Modifiers != ModifierKeys.None)
+                inputProvider.HoldModifierKeys(action.Modifiers);
+            try
             {
-                case AgentActionKind.LeftClick or AgentActionKind.LeftClickCoords:
-                    await inputProvider.LeftClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    exactMethodCalled = $"LeftClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                switch (action.Kind)
+                {
+                    case AgentActionKind.LeftClick or AgentActionKind.LeftClickCoords:
+                        await inputProvider.LeftClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        exactMethodCalled = $"LeftClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                case AgentActionKind.RightClick or AgentActionKind.RightClickCoords:
-                    await inputProvider.RightClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    exactMethodCalled = $"RightClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                    case AgentActionKind.RightClick or AgentActionKind.RightClickCoords:
+                        await inputProvider.RightClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        exactMethodCalled = $"RightClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                case AgentActionKind.DoubleClick or AgentActionKind.DoubleClickCoords:
-                    await inputProvider.DoubleClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    exactMethodCalled = $"DoubleClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                    case AgentActionKind.DoubleClick or AgentActionKind.DoubleClickCoords:
+                        await inputProvider.DoubleClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        exactMethodCalled = $"DoubleClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                case AgentActionKind.MiddleClick or AgentActionKind.MiddleClickCoords:
-                    await inputProvider.MiddleMouse_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    exactMethodCalled = $"MiddleMouse_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                    case AgentActionKind.MiddleClick or AgentActionKind.MiddleClickCoords:
+                        await inputProvider.MiddleMouse_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        exactMethodCalled = $"MiddleMouse_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
-                    await inputProvider.MoveMouse_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    exactMethodCalled = $"MoveMouse_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                    case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
+                        await inputProvider.MoveMouse_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        exactMethodCalled = $"MoveMouse_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                default:
-                    exactMethodCalled = "N/A";
-                    break;
+                    default:
+                        exactMethodCalled = "N/A";
+                        break;
+                }
+            }
+            finally
+            {
+                if (action.Modifiers != ModifierKeys.None)
+                    inputProvider.ReleaseModifierKeys(action.Modifiers);
             }
 
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: exactMethodCalled)).ConfigureAwait(false);
@@ -237,36 +258,47 @@ public sealed partial class AgentActionExecutor(
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Final Resolved Coordinates", Text: coord.ToString())).ConfigureAwait(false);
 
             string methodCalled;
-            switch (action.Kind)
+            if (action.Modifiers != ModifierKeys.None)
+                inputProvider.HoldModifierKeys(action.Modifiers);
+
+            try
             {
-                case AgentActionKind.LeftClick or AgentActionKind.LeftClickCoords:
-                    await inputProvider.LeftClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    methodCalled = $"LeftClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                switch (action.Kind)
+                {
+                    case AgentActionKind.LeftClick or AgentActionKind.LeftClickCoords:
+                        await inputProvider.LeftClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        methodCalled = $"LeftClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                case AgentActionKind.RightClick or AgentActionKind.RightClickCoords:
-                    await inputProvider.RightClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    methodCalled = $"RightClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                    case AgentActionKind.RightClick or AgentActionKind.RightClickCoords:
+                        await inputProvider.RightClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        methodCalled = $"RightClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                case AgentActionKind.DoubleClick or AgentActionKind.DoubleClickCoords:
-                    await inputProvider.DoubleClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    methodCalled = $"DoubleClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                    case AgentActionKind.DoubleClick or AgentActionKind.DoubleClickCoords:
+                        await inputProvider.DoubleClick_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        methodCalled = $"DoubleClick_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                case AgentActionKind.MiddleClick or AgentActionKind.MiddleClickCoords:
-                    await inputProvider.MiddleMouse_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    methodCalled = $"MiddleMouse_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                    case AgentActionKind.MiddleClick or AgentActionKind.MiddleClickCoords:
+                        await inputProvider.MiddleMouse_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        methodCalled = $"MiddleMouse_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
-                    await inputProvider.MoveMouse_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
-                    methodCalled = $"MoveMouse_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
-                    break;
+                    case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
+                        await inputProvider.MoveMouse_MonitorCoords(coord.AbsoluteX, coord.AbsoluteY).ConfigureAwait(false);
+                        methodCalled = $"MoveMouse_MonitorCoords({coord.AbsoluteX}, {coord.AbsoluteY})";
+                        break;
 
-                default:
-                    methodCalled = "N/A";
-                    break;
+                    default:
+                        methodCalled = "N/A";
+                        break;
+                }
+            }
+            finally
+            {
+                if (action.Modifiers != ModifierKeys.None)
+                    inputProvider.ReleaseModifierKeys(action.Modifiers);
             }
 
             await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: methodCalled)).ConfigureAwait(false);
