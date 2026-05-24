@@ -170,10 +170,23 @@ internal static class AgentEndpoints
                 }
             }
 
+            async Task OnResumeCountdown(int secondsRemaining)
+            {
+                try
+                {
+                    await WriteCountdownEventAsync(httpContext.Response, secondsRemaining, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    tcs.TrySetResult();
+                }
+            }
+
             session.OnSubStepUpdate += OnSubStepUpdate;
             session.OnStepStarting += OnStepStarting;
             session.OnStepCompleted += OnStep;
             session.OnPauseChanged += OnPauseChanged;
+            session.OnResumeCountdown += OnResumeCountdown;
 
             try
             {
@@ -201,6 +214,7 @@ internal static class AgentEndpoints
                 session.OnStepStarting -= OnStepStarting;
                 session.OnStepCompleted -= OnStep;
                 session.OnPauseChanged -= OnPauseChanged;
+                session.OnResumeCountdown -= OnResumeCountdown;
             }
         });
 
@@ -296,6 +310,19 @@ internal static class AgentEndpoints
                 },
                 debugLog = s.DebugLog?.Select(e => new { e.Label, e.Text, e.ImageBase64 }),
             }),
+        };
+
+        string json = JsonSerializer.Serialize(payload, JsonOptions);
+        await response.WriteAsync($"data: {json}\n\n", ct).ConfigureAwait(false);
+        await response.Body.FlushAsync(ct).ConfigureAwait(false);
+    }
+
+    private static async Task WriteCountdownEventAsync(HttpResponse response, int secondsRemaining, CancellationToken ct)
+    {
+        var payload = new
+        {
+            type = "countdown",
+            seconds = secondsRemaining,
         };
 
         string json = JsonSerializer.Serialize(payload, JsonOptions);

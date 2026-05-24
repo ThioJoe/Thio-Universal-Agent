@@ -164,6 +164,27 @@
 
         #status-text { font-weight: 600; }
 
+        /* ---- Resume countdown banner ---- */
+        #countdown-banner {
+            padding: 8px 32px;
+            background: #1a1600;
+            border-bottom: 1px solid #3a3000;
+            font-size: 12px;
+            color: #e0c060;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #countdown-banner .countdown-num {
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+            font-size: 20px;
+            font-weight: 700;
+            color: #f0d060;
+            min-width: 22px;
+            text-align: center;
+        }
+
         /* ---- Main Layout ---- */
         main {
             flex: 1;
@@ -651,6 +672,12 @@
     <span id="elapsed-timer"></span>
 </div>
 
+<div id="countdown-banner" style="display:none;">
+    <span>▶ Resuming in</span>
+    <span class="countdown-num" id="countdown-num">5</span>
+    <span>seconds&hellip;</span>
+</div>
+
 <div class="prompt-banner" id="prompt-banner" style="display:none;">
     <details id="prompt-details">
         <summary>Goal&nbsp;<span class="prompt-preview" id="prompt-preview"></span></summary>
@@ -678,6 +705,10 @@
     const monitorSelect = document.getElementById('monitor-select');
     const goalInput = document.getElementById('goal-input');
     const btnStart = document.getElementById('btn-start');
+    // @ts-ignore
+    const countdownBanner = document.getElementById('countdown-banner');
+    // @ts-ignore
+    const countdownNum = document.getElementById('countdown-num');
     const btnPause = document.getElementById('btn-pause');
     const btnStop = document.getElementById('btn-stop');
     const btnNewSession = document.getElementById('btn-new-session');
@@ -919,6 +950,7 @@
             else if (msg.type === 'step') handleStep(msg);
             else if (msg.type === 'paused') handlePaused();
             else if (msg.type === 'resumed') handleResumed();
+            else if (msg.type === 'countdown') handleCountdown(msg);
             else if (msg.type === 'done') handleDone(msg);
         };
         eventSource.onerror = () => {
@@ -959,6 +991,7 @@
         // Reset all UI
         stepLog.innerHTML = '';
         promptBanner.style.display = 'none';
+        countdownBanner.style.display = 'none';
         finalResultEl.className = 'final-result';
         finalResultEl.style.display = 'none';
         finalResultMsg.textContent = '';
@@ -1001,6 +1034,17 @@
         btnPause.textContent = 'Pause';
         btnPause.classList.remove('resuming');
         setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
+        // Countdown will appear via countdown events; clear any leftover banner just in case.
+        countdownBanner.style.display = 'none';
+    }
+
+    function handleCountdown(msg) {
+        if (msg.seconds > 0) {
+            countdownNum.textContent = msg.seconds;
+            countdownBanner.style.display = 'flex';
+        } else {
+            countdownBanner.style.display = 'none';
+        }
     }
 
     function handleStepStarting(msg) {
@@ -1254,6 +1298,7 @@
             eventSource.close();
             eventSource = null;
         }
+        countdownBanner.style.display = 'none';
         resetControls();
     }
 

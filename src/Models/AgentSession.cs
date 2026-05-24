@@ -106,6 +106,62 @@ public sealed class AgentSession
     }
 
     /// <summary>
+    /// Like <see cref="WaitIfPausedAsync"/>, but after the pause lifts fires a descending countdown
+    /// (from <paramref name="countdownSeconds"/> down to 0) before returning, giving the user time to
+    /// reposition windows before the pending action executes.
+    /// Each tick raises <see cref="OnResumeCountdown"/> with the remaining seconds.
+    /// </summary>
+    internal async Task WaitIfPausedWithCountdownAsync(int countdownSeconds, CancellationToken ct)
+    {
+        while (true)
+        {
+            Task? pauseTask;
+            lock (_pauseLock)
+            {
+                pauseTask = _pauseTcs?.Task;
+            }
+            if (pauseTask is null) return;
+
+            await pauseTask.WaitAsync(ct).ConfigureAwait(false);
+
+            // Count down, but bail out immediately if the user pauses again mid-countdown.
+            bool repaused = false;
+            for (int i = countdownSeconds; i >= 1; i--)
+            {
+                await RaiseResumeCountdownAsync(i).ConfigureAwait(false);
+                await Task.Delay(1000, ct).ConfigureAwait(false);
+
+                lock (_pauseLock)
+                {
+                    if (_pauseTcs is not null)
+                    {
+                        repaused = true;
+                        break;
+                    }
+                }
+            }
+
+            // Always send 0 to hide the banner, then either loop back to wait or return.
+            await RaiseResumeCountdownAsync(0).ConfigureAwait(false);
+            if (!repaused) return;
+        }
+    }
+
+    /// <summary>
+    /// Fired once per second during the post-resume countdown with the number of seconds remaining.
+    /// A value of 0 signals the countdown has finished and execution is about to resume.
+    /// </summary>
+    public event Func<int, Task>? OnResumeCountdown;
+
+    /// <summary>Raises <see cref="OnResumeCountdown"/> with the given remaining-seconds value.</summary>
+    internal async Task RaiseResumeCountdownAsync(int secondsRemaining)
+    {
+        Func<int, Task>? handler = OnResumeCountdown;
+        if (handler is not null)
+            await handler(secondsRemaining).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Event raised right after the AI's response is parsed but before the action is executed.
     /// Allows the UI to show the intended action while coordinate resolution or other slow work proceeds.
     /// </summary>

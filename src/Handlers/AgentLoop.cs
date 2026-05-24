@@ -74,6 +74,10 @@ public sealed partial class AgentLoop(
             {
                 ct.ThrowIfCancellationRequested();
 
+                // If the user paused while the AI was responding, block here until resumed.
+                // After resume, a short countdown fires before the pending action executes.
+                await session.WaitIfPausedWithCountdownAsync(5, ct).ConfigureAwait(false);
+
                 bool debugging = appConfig.General.EnableDebugMode;
                 List<AgentDebugEntry>? debugLog = [];
 
