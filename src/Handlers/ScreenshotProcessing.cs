@@ -26,12 +26,13 @@ public sealed partial class CoordinatePrompter
     /// Produces the full-image grid overlay PNG from raw screenshot bytes with no AI calls or zooming.
     /// Used by the test endpoint to preview what the first-iteration grid image looks like.
     /// </summary>
-    public static byte[] CreateFullGridOverlayImage(byte[] screenshotBytes)
+    public static byte[] CreateFullGridOverlayImage(byte[] screenshotBytes, AppConfig appConfig)
     {
         ArgumentNullException.ThrowIfNull(screenshotBytes);
+        ArgumentNullException.ThrowIfNull(appConfig);
         using SkiaImage source = LoadImage(screenshotBytes);
         ViewRegion view = new ViewRegion(source);
-        return CreateGridOverlayImage(source, view, Screenshot.DefaultDivisions, Screenshot.DefaultDivisions, gridAxisMaxValue: Screenshot.DefaultNormalized, noOuterBorder: true);
+        return CreateGridOverlayImage(source, view, Screenshot.DefaultDivisions, Screenshot.DefaultDivisions, gridAxisMaxValue: Screenshot.DefaultNormalized, noOuterBorder: true, addGridOverlay: appConfig.General.AddGridOverlay);
     }
 
     /// <summary>Decodes raw image bytes into an <see cref="IImage"/> for use with the canvas.</summary>

@@ -40,7 +40,7 @@ public sealed partial class AgentLoop(
         {
             var screenshot = screenProvider.CaptureScreen();
             //TODO: Add a config for whether to add grid overlay to regular conversation screenshots. For now default to true
-            screenshot.Processed = CoordinatePrompter.CreateFullGridOverlayImage(screenshot.Original);
+            screenshot.Processed = CoordinatePrompter.CreateFullGridOverlayImage(screenshot.Original, appConfig);
 
             string systemPrompt = AgentPromptBuilder.BuildSystemPrompt(session.Goal, appConfig.General.MaxQueueSize, appConfig.General.SystemPromptTemplate);
             var conversation = new AiConversation();
@@ -170,7 +170,7 @@ public sealed partial class AgentLoop(
 
                     // Take a fresh screenshot so the AI has current state.
                     screenshot = screenProvider.CaptureScreen();
-                    screenshot.Processed = CoordinatePrompter.CreateFullGridOverlayImage(screenshot.Original);
+                    screenshot.Processed = CoordinatePrompter.CreateFullGridOverlayImage(screenshot.Original, appConfig);
 
                     // Drain guidance (may include the cancellation message itself) and tell the AI.
                     var cancelGuidance = new List<string>();
@@ -293,7 +293,7 @@ public sealed partial class AgentLoop(
 
                 // Observe: take a new screenshot
                 screenshot = screenProvider.CaptureScreen();
-                screenshot.Processed = CoordinatePrompter.CreateFullGridOverlayImage(screenshot.Original);
+                screenshot.Processed = CoordinatePrompter.CreateFullGridOverlayImage(screenshot.Original, appConfig);
 
                 // Episodic context reset to prevent payload bloat
                 if (_enableContextReset && step % _contextResetInterval == 0)
