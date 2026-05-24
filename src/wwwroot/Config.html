@@ -358,6 +358,77 @@
             transition: background 0.15s, border-color 0.15s, color 0.15s;
         }
         .btn-xs:hover { background: #222; border-color: #4a9eff; color: #4a9eff; }
+
+        /* ── vault section ── */
+        .vault-section {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .vault-section.unlocked { border-color: #2a4a2a; }
+
+        .vault-header {
+            padding: 14px 20px;
+            background: #1d1d1d;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .vault-section.unlocked .vault-header { background: #1a221a; border-bottom-color: #2a3a2a; }
+
+        .vault-title { font-size: 13px; font-weight: 700; color: #e0e0e0; flex: 1; }
+
+        .vault-badge {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 2px 7px;
+            border-radius: 3px;
+            border: 1px solid #444;
+            color: #777;
+            background: #222;
+            transition: color 0.2s, background 0.2s, border-color 0.2s;
+        }
+        .vault-section.unlocked .vault-badge { color: #55aa55; background: #0d2010; border-color: #1a4a1a; }
+
+        .vault-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+
+        .vault-info { font-size: 11px; color: #555; line-height: 1.5; }
+
+        .vault-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+        .vault-pw-wrap { position: relative; flex: 1; min-width: 180px; }
+        .vault-pw-wrap input {
+            width: 100%;
+            padding: 8px 32px 8px 10px;
+            background: #141414;
+            border: 1px solid #333;
+            border-radius: 5px;
+            color: #e0e0e0;
+            font-size: 13px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .vault-pw-wrap input:focus { border-color: #4a9eff; }
+        .vault-pw-wrap input:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .vault-remember {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #888;
+            cursor: pointer;
+            white-space: nowrap;
+            user-select: none;
+        }
+        .vault-remember input[type=checkbox] { accent-color: #4a9eff; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -386,9 +457,10 @@
 <div id="modal-overlay">
     <div id="modal-box">
         <h3>Reset all settings?</h3>
-        <p>This will clear every setting you have saved in the browser and reload the server defaults. This cannot be undone.</p>
+        <p>This will clear every setting saved in the browser and reload the server defaults. This cannot be undone.</p>
         <div class="modal-actions">
             <button class="btn" id="modal-cancel">Cancel</button>
+            <button class="btn btn-danger" id="modal-confirm-erase">Reset + Erase API Keys</button>
             <button class="btn btn-danger" id="modal-confirm">Reset</button>
         </div>
     </div>
@@ -396,11 +468,221 @@
 
 <script>
     // @ts-nocheck
-    const STORAGE_KEY = 'tua_config_v1';
+    const STORAGE_KEY  = 'tua_config_v1';
+    const VAULT_KEY    = 'tua_vault_hash_v1'; // stored only when "remember" is checked
 
     let serverDefaults = {}; // raw schema sections from /api/config/schema
     let browserValues  = {}; // persisted overrides { sectionKey: { fieldKey: value } }
     let pendingChanges = {}; // unsaved UI edits { sectionKey: { fieldKey: value } }
+
+    let vaultPasswordHash = null; // SHA-256 hex of vault password, in-memory only when unlocked
+
+    // ── Vault helpers ─────────────────────────────────────────────────────────
+
+    async function hashPassword(password) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function getPasswordFields() {
+        const result = [];
+        for (const section of serverDefaults) {
+            for (const field of section.fields) {
+                if (field.type === 'password') result.push({ sectionKey: section.key, fieldKey: field.key });
+            }
+        }
+        return result;
+    }
+
+    function secretKeyFor(sectionKey, fieldKey) {
+        return `${sectionKey}_${fieldKey}`;
+    }
+
+    /** Checks /api/secrets/{key}/exists for every password field and updates placeholders. */
+    async function updatePasswordPlaceholders() {
+        for (const { sectionKey, fieldKey } of getPasswordFields()) {
+            const input = findInput(sectionKey, fieldKey);
+            if (!input) continue;
+            try {
+                const res = await fetch(`/api/secrets/${encodeURIComponent(secretKeyFor(sectionKey, fieldKey))}/exists`);
+                if (res.ok) {
+                    const { exists } = await res.json();
+                    if (!vaultPasswordHash) {
+                        input.placeholder = exists ? '(encrypted — unlock vault to load)' : '(not set)';
+                    }
+                }
+            } catch { /* best-effort */ }
+        }
+    }
+
+    /**
+     * Attempts to unlock the vault with the given password hash.
+     * Loads each secret from the backend, pushes plaintext to /api/config for the current session,
+     * and updates password field placeholders to reflect loaded state.
+     * Returns 'ok', 'wrong-password', or 'error'.
+     */
+    async function tryUnlockVault(hash) {
+        const passwordFields = getPasswordFields();
+        const serverUpdates  = {};
+        let   wrongPassword  = false;
+
+        for (const { sectionKey, fieldKey } of passwordFields) {
+            const key = secretKeyFor(sectionKey, fieldKey);
+            let res;
+            try {
+                res = await fetch('/api/secrets/load', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ keyName: key, passwordHash: hash }),
+                });
+            } catch { return 'error'; }
+
+            if (res.ok) {
+                const { secret } = await res.json();
+                serverUpdates[sectionKey] ??= {};
+                serverUpdates[sectionKey][fieldKey] = secret;
+                const input = findInput(sectionKey, fieldKey);
+                if (input) input.placeholder = '(set — enter to change)';
+            } else if (res.status === 401) {
+                wrongPassword = true;
+                break;
+            }
+            // 404 = not yet saved; leave placeholder as-is
+        }
+
+        if (wrongPassword) return 'wrong-password';
+
+        vaultPasswordHash = hash;
+        if (Object.keys(serverUpdates).length > 0) {
+            try { await pushToServer(serverUpdates); } catch { /* best-effort */ }
+        }
+        return 'ok';
+    }
+
+    /** Renders the vault section and inserts it at the top of #config-main. */
+    function renderVaultSection() {
+        const wrap = document.createElement('div');
+        wrap.className = 'vault-section';
+        wrap.id = 'vault-section';
+
+        const hdr = document.createElement('div');
+        hdr.className = 'vault-header';
+        hdr.innerHTML =
+            '<span class="vault-title">🔑 API Key Vault</span>' +
+            '<span class="vault-badge" id="vault-badge">Locked</span>';
+        wrap.appendChild(hdr);
+
+        const body = document.createElement('div');
+        body.className = 'vault-body';
+
+        const info = document.createElement('div');
+        info.className = 'vault-info';
+        info.textContent =
+            'API keys are encrypted and stored on the server. ' +
+            'Your vault password is hashed in the browser — it never leaves your device. ' +
+            'The hash can optionally be remembered in browser storage to auto-unlock on next visit.';
+        body.appendChild(info);
+
+        const row = document.createElement('div');
+        row.className = 'vault-row';
+
+        // Password input
+        const pwWrap = document.createElement('div');
+        pwWrap.className = 'vault-pw-wrap';
+        const pwInput = document.createElement('input');
+        pwInput.type        = 'password';
+        pwInput.id          = 'vault-pw-input';
+        pwInput.placeholder = 'Vault password';
+        pwInput.addEventListener('keydown', e => { if (e.key === 'Enter') btnUnlock.click(); });
+        const showBtn = document.createElement('button');
+        showBtn.className = 'show-pw-btn';
+        showBtn.type      = 'button';
+        showBtn.textContent = '👁';
+        showBtn.title = 'Show / hide';
+        showBtn.addEventListener('click', () => { pwInput.type = pwInput.type === 'password' ? 'text' : 'password'; });
+        pwWrap.appendChild(pwInput);
+        pwWrap.appendChild(showBtn);
+        row.appendChild(pwWrap);
+
+        // Remember checkbox
+        const remLabel = document.createElement('label');
+        remLabel.className = 'vault-remember';
+        const remCheck = document.createElement('input');
+        remCheck.type    = 'checkbox';
+        remCheck.id      = 'vault-remember';
+        remCheck.title   = 'Store the password hash in browser storage so the vault unlocks automatically next time';
+        remCheck.checked = !!localStorage.getItem(VAULT_KEY);
+        remLabel.appendChild(remCheck);
+        remLabel.appendChild(document.createTextNode(' Remember hash'));
+        row.appendChild(remLabel);
+
+        // Unlock button
+        const btnUnlock = document.createElement('button');
+        btnUnlock.className   = 'btn btn-primary';
+        btnUnlock.id          = 'btn-vault-unlock';
+        btnUnlock.type        = 'button';
+        btnUnlock.textContent = 'Unlock';
+        btnUnlock.addEventListener('click', async () => {
+            const pw = pwInput.value;
+            if (!pw) { showToast('Enter a vault password'); return; }
+            btnUnlock.disabled = true;
+            btnUnlock.textContent = 'Unlocking…';
+            const hash   = await hashPassword(pw);
+            const result = await tryUnlockVault(hash);
+            btnUnlock.disabled = false;
+            btnUnlock.textContent = 'Unlock';
+            if (result === 'wrong-password') {
+                showToast('Wrong password');
+            } else if (result === 'error') {
+                showToast('Error contacting server');
+            } else {
+                if (remCheck.checked) localStorage.setItem(VAULT_KEY, hash);
+                else                  localStorage.removeItem(VAULT_KEY);
+                setVaultUnlocked(true);
+                pwInput.value = '';
+                showToast('Vault unlocked');
+            }
+        });
+        row.appendChild(btnUnlock);
+
+        // Lock button (hidden until unlocked)
+        const btnLock = document.createElement('button');
+        btnLock.className   = 'btn';
+        btnLock.id          = 'btn-vault-lock';
+        btnLock.type        = 'button';
+        btnLock.textContent = 'Lock';
+        btnLock.style.display = 'none';
+        btnLock.addEventListener('click', () => {
+            vaultPasswordHash = null;
+            for (const { sectionKey, fieldKey } of getPasswordFields()) {
+                const input = findInput(sectionKey, fieldKey);
+                if (input) { input.value = ''; input.placeholder = '(encrypted — unlock vault to load)'; }
+            }
+            setVaultUnlocked(false);
+            showToast('Vault locked');
+        });
+        row.appendChild(btnLock);
+
+        body.appendChild(row);
+        wrap.appendChild(body);
+
+        const main = document.getElementById('config-main');
+        main.insertBefore(wrap, main.firstChild);
+    }
+
+    function setVaultUnlocked(on) {
+        const section = document.getElementById('vault-section');
+        const badge   = document.getElementById('vault-badge');
+        const unlock  = document.getElementById('btn-vault-unlock');
+        const lock    = document.getElementById('btn-vault-lock');
+        const input   = document.getElementById('vault-pw-input');
+        if (!section) return;
+        section.classList.toggle('unlocked', on);
+        if (badge)  badge.textContent     = on ? 'Unlocked' : 'Locked';
+        if (unlock) unlock.style.display  = on ? 'none'     : '';
+        if (lock)   lock.style.display    = on ? ''         : 'none';
+        if (input)  input.disabled        = on;
+    }
 
     // ── Boot ──────────────────────────────────────────────────────────────────
 
@@ -413,15 +695,32 @@
             const { sections } = await res.json();
             serverDefaults = sections;
             renderSections(sections);
+            renderVaultSection();
             applyStoredValues();
 
-            // Push all stored browser values to the server so the in-memory
-            // config matches what the user saved, even after a server restart.
+            // Push all stored browser values (non-password) to the server.
             if (Object.keys(browserValues).length > 0) {
                 try { await pushToServer(browserValues); } catch { /* best-effort */ }
             }
 
-            setStatus('Browser overrides loaded');
+            // Check which API keys have been saved to the vault and update placeholders.
+            await updatePasswordPlaceholders();
+
+            // Auto-unlock if the user has a remembered hash.
+            const storedHash = localStorage.getItem(VAULT_KEY);
+            if (storedHash) {
+                const result = await tryUnlockVault(storedHash);
+                if (result === 'ok') {
+                    setVaultUnlocked(true);
+                    setStatus('Vault auto-unlocked');
+                } else {
+                    // Stored hash is stale (password changed) — clear it.
+                    localStorage.removeItem(VAULT_KEY);
+                    setStatus('Browser overrides loaded');
+                }
+            } else {
+                setStatus('Browser overrides loaded');
+            }
         } catch (err) {
             document.getElementById('config-main').textContent = 'Failed to load config schema: ' + err.message;
         }
@@ -635,9 +934,10 @@
     function applyStoredValues() {
         for (const [sectionKey, fields] of Object.entries(browserValues)) {
             for (const [fieldKey, value] of Object.entries(fields)) {
+                const field = findFieldMeta(sectionKey, fieldKey);
+                if (field?.type === 'password') continue; // managed by vault, not localStorage
                 const input = findInput(sectionKey, fieldKey);
                 if (!input) continue;
-                const field = findFieldMeta(sectionKey, fieldKey);
                 setInputValue(input, value, field?.type ?? 'string');
                 markBrowserOverride(sectionKey, fieldKey, true);
             }
@@ -673,45 +973,85 @@
             return;
         }
 
-        // Merge pending into browserValues
+        // Separate password fields (vault) from regular fields (localStorage).
+        const regularChanges  = {};
+        const secretChanges   = {};
+        let   hasLockedSecret = false;
+
         for (const [s, fields] of Object.entries(pendingChanges)) {
-            browserValues[s] ??= {};
             for (const [k, v] of Object.entries(fields)) {
-                if (v === null || v === undefined || v === '') {
-                    delete browserValues[s][k];
+                const meta = findFieldMeta(s, k);
+                if (meta?.type === 'password') {
+                    if (v) { // only queue non-empty password changes
+                        if (!vaultPasswordHash) { hasLockedSecret = true; }
+                        else { secretChanges[s] ??= {}; secretChanges[s][k] = v; }
+                    }
                 } else {
-                    browserValues[s][k] = v;
+                    regularChanges[s] ??= {};
+                    regularChanges[s][k] = v;
                 }
             }
         }
-        persistToStorage(browserValues);
 
-        // Push to server
-        try {
-            await pushToServer(pendingChanges);
-        } catch { /* non-critical — server values are best-effort */ }
+        if (hasLockedSecret) {
+            showToast('Unlock vault to save API keys');
+            // Still continue saving regular fields below.
+        }
 
-        // Update badge state
+        // ── Regular fields → localStorage + /api/config ───────────────────────
+        if (Object.keys(regularChanges).length > 0) {
+            for (const [s, fields] of Object.entries(regularChanges)) {
+                browserValues[s] ??= {};
+                for (const [k, v] of Object.entries(fields)) {
+                    if (v === null || v === undefined || v === '') delete browserValues[s][k];
+                    else browserValues[s][k] = v;
+                }
+            }
+            persistToStorage(browserValues);
+            try { await pushToServer(regularChanges); } catch { /* best-effort */ }
+        }
+
+        // ── Secret fields → vault backend + /api/config (plaintext, in-memory) ─
+        if (Object.keys(secretChanges).length > 0) {
+            const serverUpdates = {};
+            for (const [s, fields] of Object.entries(secretChanges)) {
+                for (const [k, v] of Object.entries(fields)) {
+                    try {
+                        await fetch('/api/secrets/save', {
+                            method:  'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body:    JSON.stringify({ keyName: secretKeyFor(s, k), secret: v, passwordHash: vaultPasswordHash }),
+                        });
+                    } catch { /* best-effort */ }
+                    serverUpdates[s] ??= {};
+                    serverUpdates[s][k] = v;
+                    // Update placeholder to reflect that the key is now set
+                    const inp = findInput(s, k);
+                    if (inp) { inp.value = ''; inp.placeholder = '(set — enter to change)'; }
+                }
+            }
+            // Push decrypted value to server in-memory config for the current session
+            try { await pushToServer(serverUpdates); } catch { /* best-effort */ }
+        }
+
+        // ── Clear changed indicators for all pending fields ───────────────────
         for (const [s, fields] of Object.entries(pendingChanges)) {
             for (const k of Object.keys(fields)) {
-                const v = browserValues[s]?.[k];
-                const overridden = (v !== null && v !== undefined && v !== '');
-                markBrowserOverride(s, k, overridden);
-                const inp = findInput(s, k);
-                if (inp?.tagName === 'TEXTAREA') {
-                    inp.closest('.prompt-editor-scroller')?.classList.remove('changed');
-                } else {
-                    inp?.classList.remove('changed');
+                const meta = findFieldMeta(s, k);
+                if (meta?.type !== 'password') {
+                    const v = browserValues[s]?.[k];
+                    markBrowserOverride(s, k, v !== null && v !== undefined && v !== '');
                 }
+                const inp = findInput(s, k);
+                if (inp?.tagName === 'TEXTAREA') inp.closest('.prompt-editor-scroller')?.classList.remove('changed');
+                else inp?.classList.remove('changed');
             }
         }
 
-        // Keep Agent.html legacy keys in sync
         syncLegacyKeys();
-
         pendingChanges = {};
-        showToast('Saved');
-        setStatus('Saved to browser');
+        if (!hasLockedSecret) showToast('Saved');
+        setStatus('Saved');
     });
 
     async function pushToServer(changes) {
@@ -839,15 +1179,27 @@
     document.getElementById('modal-cancel').addEventListener('click', () => {
         document.getElementById('modal-overlay').classList.remove('show');
     });
-    document.getElementById('modal-confirm').addEventListener('click', async () => {
+
+    async function performReset(eraseSecrets) {
         document.getElementById('modal-overlay').classList.remove('show');
+
+        // Erase encrypted secret files from the server if requested
+        if (eraseSecrets) {
+            for (const { sectionKey, fieldKey } of getPasswordFields()) {
+                try {
+                    await fetch(`/api/secrets/${encodeURIComponent(secretKeyFor(sectionKey, fieldKey))}`, { method: 'DELETE' });
+                } catch { /* best-effort */ }
+            }
+        }
 
         // Clear browser storage
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(VAULT_KEY);
         localStorage.removeItem('gemini_api_key');
         localStorage.removeItem('agent_model');
-        browserValues  = {};
-        pendingChanges = {};
+        browserValues     = {};
+        pendingChanges    = {};
+        vaultPasswordHash = null;
 
         // Reload server defaults and re-render
         try {
@@ -855,14 +1207,18 @@
             const { sections } = await res.json();
             serverDefaults = sections;
             renderSections(sections);
-            // No stored values to re-apply
-            // Also push empty patches so runtime AppConfig also resets to its defaults on next restart
-            showToast('Reset to defaults');
+            renderVaultSection();
+            setVaultUnlocked(false);
+            await updatePasswordPlaceholders();
+            showToast(eraseSecrets ? 'Reset — API keys erased' : 'Reset to defaults');
             setStatus('All browser overrides cleared');
         } catch {
             location.reload();
         }
-    });
+    }
+
+    document.getElementById('modal-confirm').addEventListener('click', () => performReset(false));
+    document.getElementById('modal-confirm-erase').addEventListener('click', () => performReset(true));
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

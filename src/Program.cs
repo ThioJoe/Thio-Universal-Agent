@@ -34,6 +34,7 @@ else
 }
 
 builder.Services.AddSingleton<AppConfig>();
+builder.Services.AddSingleton<ISecretProvider, SecretsHandler>();
 
 // Register all API providers
 builder.Services.AddHttpClient<GeminiProvider>();
@@ -74,5 +75,6 @@ app.Lifetime.ApplicationStarted.Register(() =>
 app.MapTestEndpoints();
 app.MapAgentEndpoints();
 app.MapConfigEndpoints();
+app.MapSecretsEndpoints();
 
 app.Run();

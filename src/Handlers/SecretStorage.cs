@@ -8,6 +8,8 @@ public interface ISecretProvider
 {
     void SaveSecret(string keyName, string plainTextSecret, string passwordHash);
     string? LoadSecret(string keyName, string passwordHash);
+    bool SecretExists(string keyName);
+    void DeleteSecret(string keyName);
 }
 
 /// <summary>
@@ -81,6 +83,19 @@ public class SecretsHandler : ISecretProvider
         {
             return null;
         }
+    }
+
+    public bool SecretExists(string keyName)
+    {
+        string filePath = Path.Combine(_appDataFolder, $"{keyName}.dat");
+        return File.Exists(filePath);
+    }
+
+    public void DeleteSecret(string keyName)
+    {
+        string filePath = Path.Combine(_appDataFolder, $"{keyName}.dat");
+        if (File.Exists(filePath))
+            File.Delete(filePath);
     }
 
     private static byte[] DeriveKey(byte[] passwordHashEntropy)
