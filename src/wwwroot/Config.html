@@ -30,21 +30,28 @@
         /* ── toast ── */
         #toast {
             position: fixed;
-            bottom: 28px;
-            right: 32px;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%);
             background: #1e2e1e;
             border: 1px solid #2c7a2c;
             color: #55cc77;
-            padding: 10px 20px;
+            padding: 11px 24px;
             border-radius: 6px;
             font-size: 13px;
             font-weight: 600;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s;
-            z-index: 100;
+            z-index: 1000;
+            white-space: nowrap;
         }
         #toast.show { opacity: 1; pointer-events: none; }
+        #toast.error {
+            background: #2e1a1a;
+            border-color: #8a2c2c;
+            color: #ff7070;
+        }
 
         /* ── action bar ── */
         .action-bar {
@@ -624,7 +631,7 @@
         btnUnlock.textContent = 'Unlock';
         btnUnlock.addEventListener('click', async () => {
             const pw = pwInput.value;
-            if (!pw) { showToast('Enter a vault password'); return; }
+            if (!pw) { showToast('Enter a vault password', true); return; }
             btnUnlock.disabled = true;
             btnUnlock.textContent = 'Unlocking…';
             const hash   = await hashPassword(pw);
@@ -632,9 +639,9 @@
             btnUnlock.disabled = false;
             btnUnlock.textContent = 'Unlock';
             if (result === 'wrong-password') {
-                showToast('Wrong password');
+                showToast('Wrong password', true);
             } else if (result === 'error') {
-                showToast('Error contacting server');
+                showToast('Error contacting server', true);
             } else {
                 if (remCheck.checked) localStorage.setItem(VAULT_KEY, hash);
                 else                  localStorage.removeItem(VAULT_KEY);
@@ -994,7 +1001,7 @@
         }
 
         if (hasLockedSecret) {
-            showToast('Unlock vault to save API keys');
+            showToast('Unlock vault to save API keys', true);
             // Still continue saving regular fields below.
         }
 
@@ -1035,12 +1042,21 @@
         }
 
         // ── Clear changed indicators for all pending fields ───────────────────
+        // Locked password fields (vault not unlocked) are kept in pendingChanges so
+        // a second Save attempt doesn't falsely report "Nothing to save".
+        const retainedPending = {};
         for (const [s, fields] of Object.entries(pendingChanges)) {
-            for (const k of Object.keys(fields)) {
+            for (const [k, v] of Object.entries(fields)) {
                 const meta = findFieldMeta(s, k);
+                const isLockedSecret = meta?.type === 'password' && v && !vaultPasswordHash;
+                if (isLockedSecret) {
+                    retainedPending[s] ??= {};
+                    retainedPending[s][k] = v;
+                    continue; // leave the changed indicator on the input
+                }
                 if (meta?.type !== 'password') {
-                    const v = browserValues[s]?.[k];
-                    markBrowserOverride(s, k, v !== null && v !== undefined && v !== '');
+                    const v2 = browserValues[s]?.[k];
+                    markBrowserOverride(s, k, v2 !== null && v2 !== undefined && v2 !== '');
                 }
                 const inp = findInput(s, k);
                 if (inp?.tagName === 'TEXTAREA') inp.closest('.prompt-editor-scroller')?.classList.remove('changed');
@@ -1049,7 +1065,7 @@
         }
 
         syncLegacyKeys();
-        pendingChanges = {};
+        pendingChanges = retainedPending;
         if (!hasLockedSecret) showToast('Saved');
         setStatus('Saved');
     }
@@ -1288,12 +1304,13 @@
     }
 
     let toastTimer;
-    function showToast(msg) {
+    function showToast(msg, isError = false) {
         const t = document.getElementById('toast');
         t.textContent = msg;
+        t.classList.toggle('error', isError);
         t.classList.add('show');
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+        toastTimer = setTimeout(() => t.classList.remove('show'), isError ? 3500 : 2000);
     }
 
     function escHtml(str) {
