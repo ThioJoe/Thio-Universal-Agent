@@ -75,45 +75,128 @@
 </main>
 
 <script>
-    // @ts-nocheck
-    const monitorSelect = document.getElementById('monitor-select');
-    const goalInput = document.getElementById('goal-input');
-    const btnStart = document.getElementById('btn-start');
-    // @ts-ignore
-    const countdownBanner = document.getElementById('countdown-banner');
-    // @ts-ignore
-    const countdownNum = document.getElementById('countdown-num');
-    const btnPause = document.getElementById('btn-pause');
-    const btnStop = document.getElementById('btn-stop');
-    const btnNewSession = document.getElementById('btn-new-session');
-    const statusDot = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
-    const stepCounter = document.getElementById('step-counter');
-    const finalResultEl = document.getElementById('final-result');
-    const finalResultMsg = document.getElementById('final-result-msg');
-    const finalResultTime = document.getElementById('final-result-time');
-    const currentThought = document.getElementById('current-thought');
-    const currentAction = document.getElementById('current-action');
-    const currentResult = document.getElementById('current-result');
-    const liveSubsteps = document.getElementById('live-substeps');
-    const stepLog = document.getElementById('step-log');
-    const promptBanner = document.getElementById('prompt-banner');
-    const promptPreview = document.getElementById('prompt-preview');
-    const promptFull = document.getElementById('prompt-full');
-    const elapsedTimer = document.getElementById('elapsed-timer');
-    const modelBadge = document.getElementById('model-badge');
-    const guidancePanel = document.getElementById('guidance-panel');
-    const guidanceInput = document.getElementById('guidance-input');
-    const btnGuidance = document.getElementById('btn-guidance');
-    const guidanceAck = document.getElementById('guidance-ack');
+    // ── Type definitions ──────────────────────────────────────────────────────
+
+    /**
+     * @typedef {{ aiResponseMs: number, parseMs: number, executionMs: number, coordResolutionMs?: number }} StepTimings
+     */
+    /**
+     * @typedef {{ label: string, text?: string, imageBase64?: string }} DebugLogEntry
+     */
+    /**
+     * @typedef {{ action: string, result: string, durationMs: number, success: boolean, debugLog?: DebugLogEntry[] }} QueuedSubStep
+     */
+    /**
+     * @typedef {{ type: 'step', stepNumber: number, thought: string, action: string, result: string, durationMs: number, success: boolean, isTerminal?: boolean, goalAchieved?: boolean, isParseRejected?: boolean, timings?: StepTimings, debugLog?: DebugLogEntry[], queuedSubSteps?: QueuedSubStep[] }} AgentStepMessage
+     */
+    /**
+     * @typedef {{ type: 'stepStarting', stepNumber: number, thought: string, action: string, queueSize: number }} AgentStepStartingMessage
+     */
+    /**
+     * @typedef {{ type: 'subStep', label: string, text?: string, imageBase64?: string }} AgentSubStepMessage
+     */
+    /**
+     * @typedef {{ type: 'countdown', seconds: number }} AgentCountdownMessage
+     */
+    /**
+     * @typedef {{ type: 'guidanceQueued', message: string, cancelNextAction: boolean }} AgentGuidanceQueuedMessage
+     */
+    /**
+     * @typedef {{ type: 'done', status: string, finalResult?: string, totalDurationMs?: number }} AgentDoneMessage
+     */
+    /**
+     * @typedef {AgentStepMessage | AgentStepStartingMessage | AgentSubStepMessage | AgentCountdownMessage | AgentGuidanceQueuedMessage | AgentDoneMessage | { type: 'paused' } | { type: 'resumed' }} AgentSseMessage
+     */
+    /**
+     * @typedef {{ gemini?: { model?: string, apiKey?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData
+     */
+    /**
+     * @typedef {{ index: number, isPrimary: boolean, width: number, height: number }} MonitorInfo
+     */
+    /**
+     * @typedef {{ goal?: string, status: string, isPaused: boolean, startedAt?: string, totalDurationMs?: number, finalResult?: string }} SessionStatusResponse
+     */
+    /**
+     * @typedef {{ sessionId: string }} StartAgentResponse
+     */
+    /**
+     * @typedef {{ label: string, text?: string, image?: string }} CopyDebugEntry
+     */
+    /**
+     * @typedef {{ stepNumber: number, thought: string, action: string, result: string, durationMs: number, timings?: StepTimings, isTerminal?: true, goalAchieved?: boolean, debugLog?: CopyDebugEntry[] }} CopyOutputStep
+     */
+    /**
+     * @typedef {{ goal: string, status: string, finalResult?: string, steps: CopyOutputStep[] }} CopyOutput
+     */
+
+    /** @type {HTMLSelectElement} */
+    const monitorSelect = /** @type {HTMLSelectElement} */ (document.getElementById('monitor-select'));
+    /** @type {HTMLInputElement} */
+    const goalInput = /** @type {HTMLInputElement} */ (document.getElementById('goal-input'));
+    /** @type {HTMLButtonElement} */
+    const btnStart = /** @type {HTMLButtonElement} */ (document.getElementById('btn-start'));
+    /** @type {HTMLDivElement} */
+    const countdownBanner = /** @type {HTMLDivElement} */ (document.getElementById('countdown-banner'));
+    /** @type {HTMLSpanElement} */
+    const countdownNum = /** @type {HTMLSpanElement} */ (document.getElementById('countdown-num'));
+    /** @type {HTMLButtonElement} */
+    const btnPause = /** @type {HTMLButtonElement} */ (document.getElementById('btn-pause'));
+    /** @type {HTMLButtonElement} */
+    const btnStop = /** @type {HTMLButtonElement} */ (document.getElementById('btn-stop'));
+    /** @type {HTMLButtonElement} */
+    const btnNewSession = /** @type {HTMLButtonElement} */ (document.getElementById('btn-new-session'));
+    /** @type {HTMLDivElement} */
+    const statusDot = /** @type {HTMLDivElement} */ (document.getElementById('status-dot'));
+    /** @type {HTMLSpanElement} */
+    const statusText = /** @type {HTMLSpanElement} */ (document.getElementById('status-text'));
+    /** @type {HTMLSpanElement} */
+    const stepCounter = /** @type {HTMLSpanElement} */ (document.getElementById('step-counter'));
+    /** @type {HTMLDivElement} */
+    const finalResultEl = /** @type {HTMLDivElement} */ (document.getElementById('final-result'));
+    /** @type {HTMLSpanElement} */
+    const finalResultMsg = /** @type {HTMLSpanElement} */ (document.getElementById('final-result-msg'));
+    /** @type {HTMLSpanElement} */
+    const finalResultTime = /** @type {HTMLSpanElement} */ (document.getElementById('final-result-time'));
+    /** @type {HTMLDivElement} */
+    const currentThought = /** @type {HTMLDivElement} */ (document.getElementById('current-thought'));
+    /** @type {HTMLDivElement} */
+    const currentAction = /** @type {HTMLDivElement} */ (document.getElementById('current-action'));
+    /** @type {HTMLDivElement} */
+    const currentResult = /** @type {HTMLDivElement} */ (document.getElementById('current-result'));
+    /** @type {HTMLDivElement} */
+    const liveSubsteps = /** @type {HTMLDivElement} */ (document.getElementById('live-substeps'));
+    /** @type {HTMLDivElement} */
+    const stepLog = /** @type {HTMLDivElement} */ (document.getElementById('step-log'));
+    /** @type {HTMLDivElement} */
+    const promptBanner = /** @type {HTMLDivElement} */ (document.getElementById('prompt-banner'));
+    /** @type {HTMLSpanElement} */
+    const promptPreview = /** @type {HTMLSpanElement} */ (document.getElementById('prompt-preview'));
+    /** @type {HTMLDivElement} */
+    const promptFull = /** @type {HTMLDivElement} */ (document.getElementById('prompt-full'));
+    /** @type {HTMLSpanElement} */
+    const elapsedTimer = /** @type {HTMLSpanElement} */ (document.getElementById('elapsed-timer'));
+    /** @type {HTMLSpanElement} */
+    const modelBadge = /** @type {HTMLSpanElement} */ (document.getElementById('model-badge'));
+    /** @type {HTMLDivElement} */
+    const guidancePanel = /** @type {HTMLDivElement} */ (document.getElementById('guidance-panel'));
+    /** @type {HTMLInputElement} */
+    const guidanceInput = /** @type {HTMLInputElement} */ (document.getElementById('guidance-input'));
+    /** @type {HTMLButtonElement} */
+    const btnGuidance = /** @type {HTMLButtonElement} */ (document.getElementById('btn-guidance'));
+    /** @type {HTMLSpanElement} */
+    const guidanceAck = /** @type {HTMLSpanElement} */ (document.getElementById('guidance-ack'));
 
     const SESSION_STORE_KEY = 'tua_session_id';
     const CONFIG_STORE_KEY  = 'tua_config_v1';
 
+    /**
+     * @returns {StoredConfigData}
+     */
     function getStoredConfig() {
         try { return JSON.parse(localStorage.getItem(CONFIG_STORE_KEY) || '{}'); } catch { return {}; }
     }
 
+    /** @returns {Promise<void>} */
     async function pushConfigToServer() {
         const cfg = getStoredConfig();
         if (!cfg || Object.keys(cfg).length === 0) return;
@@ -126,14 +209,19 @@
         } catch { /* best effort */ }
     }
 
+    /** @type {string | null} */
     let sessionId = null;
+    /** @type {EventSource | null} */
     let eventSource = null;
     let debugEnabled = false;
+    /** @type {AgentStepMessage[]} */
     let stepsData = [];
     let sessionGoal = '';
     let sessionFinalResult = '';
     let isPaused = false;
+    /** @type {number | null} */
     let sessionStartTime = null;
+    /** @type {ReturnType<typeof setInterval> | null} */
     let elapsedIntervalId = null;
 
     // ── Boot: fetch server config + try to resume a stored session ──────────
@@ -244,6 +332,7 @@
     guidanceInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendGuidance(); });
     document.getElementById('btn-skip-countdown').addEventListener('click', skipCountdown);
 
+    /** @returns {Promise<void>} */
     async function startAgent() {
         const goal = goalInput.value.trim();
         if (!goal) return;
@@ -325,11 +414,15 @@
         }
     }
 
+    /**
+     * @param {string} id Session ID to connect to
+     * @returns {void}
+     */
     function connectStream(id) {
         if (eventSource) { eventSource.close(); eventSource = null; }
         eventSource = new EventSource(`/api/agent/${id}/stream`);
         eventSource.onmessage = (e) => {
-            const msg = JSON.parse(e.data);
+            const msg = /** @type {AgentSseMessage} */ (JSON.parse(e.data));
             if (msg.type === 'stepStarting') handleStepStarting(msg);
             else if (msg.type === 'subStep') handleSubStep(msg);
             else if (msg.type === 'step') handleStep(msg);
@@ -349,6 +442,7 @@
         };
     }
 
+    /** @returns {Promise<void>} */
     async function stopAgent() {
         if (!sessionId) return;
         btnStop.disabled = true;
@@ -357,6 +451,7 @@
         } catch { /* best effort */ }
     }
 
+    /** @returns {Promise<void>} */
     async function skipCountdown() {
         if (!sessionId) return;
         try {
@@ -364,6 +459,7 @@
         } catch { /* best effort */ }
     }
 
+    /** @returns {Promise<void>} */
     async function newSession() {
         // Cancel any in-progress session first (best effort)
         if (sessionId) {
@@ -400,6 +496,7 @@
         resetControls();
     }
 
+    /** @returns {Promise<void>} */
     async function togglePause() {
         if (!sessionId) return;
         btnPause.disabled = true;
@@ -415,11 +512,12 @@
         }
     }
 
+    /** @returns {Promise<void>} */
     async function sendGuidance() {
         if (!sessionId) return;
         const msg = guidanceInput.value.trim();
         if (!msg) return;
-        const cancelNext = document.getElementById('guidance-cancel').checked;
+        const cancelNext = /** @type {HTMLInputElement | null} */ (document.getElementById('guidance-cancel'))?.checked ?? false;
         btnGuidance.disabled = true;
         try {
             const res = await fetch(`/api/agent/${sessionId}/guidance`, {
@@ -429,7 +527,8 @@
             });
             if (res.ok) {
                 guidanceInput.value = '';
-                document.getElementById('guidance-cancel').checked = false;
+                const cancelEl = /** @type {HTMLInputElement | null} */ (document.getElementById('guidance-cancel'));
+                if (cancelEl) cancelEl.checked = false;
                 // The SSE guidanceQueued event will fire shortly and add the log entry + ack badge.
             } else {
                 const body = await res.json().catch(() => ({}));
@@ -444,6 +543,11 @@
         }
     }
 
+    /**
+     * @param {AgentGuidanceQueuedMessage | string} msg
+     * @param {boolean} cancelNext
+     * @returns {void}
+     */
     function handleGuidanceQueued(msg, cancelNext) {
         // msg may be the raw SSE payload object {type, message} or undefined when called directly from sendGuidance
         const text = (typeof msg === 'object' && msg.message) ? msg.message : (typeof msg === 'string' ? msg : '');
@@ -466,6 +570,7 @@
         setTimeout(() => { ackEl.classList.remove('show'); ackEl.style.color = ''; ackEl.textContent = '\u2713 Queued'; }, 2500);
     }
 
+    /** @returns {void} */
     function handlePaused() {
         isPaused = true;
         btnPause.textContent = 'Resume';
@@ -473,6 +578,7 @@
         setStatus('paused', debugEnabled ? 'Paused (Debug Mode)' : 'Paused');
     }
 
+    /** @returns {void} */
     function handleResumed() {
         isPaused = false;
         btnPause.textContent = 'Pause';
@@ -482,6 +588,10 @@
         countdownBanner.style.display = 'none';
     }
 
+    /**
+     * @param {AgentCountdownMessage} msg
+     * @returns {void}
+     */
     function handleCountdown(msg) {
         if (msg.seconds > 0) {
             countdownNum.textContent = msg.seconds;
@@ -491,6 +601,10 @@
         }
     }
 
+    /**
+     * @param {AgentStepStartingMessage} msg
+     * @returns {void}
+     */
     function handleStepStarting(msg) {
         stepCounter.textContent = `Step ${msg.stepNumber}`;
 
@@ -502,6 +616,10 @@
         liveSubsteps.innerHTML = '';
     }
 
+    /**
+     * @param {AgentSubStepMessage} msg
+     * @returns {void}
+     */
     function handleSubStep(msg) {
         if (!debugEnabled && !msg.imageBase64) return;
 
@@ -533,6 +651,10 @@
         liveSubsteps.scrollTop = liveSubsteps.scrollHeight;
     }
 
+    /**
+     * @param {AgentStepMessage} msg
+     * @returns {void}
+     */
     function handleStep(msg) {
         stepsData.push(msg);
         stepCounter.textContent = `Step ${msg.stepNumber}`;
@@ -604,6 +726,10 @@
         }
     }
 
+    /**
+     * @param {QueuedSubStep[]} subSteps
+     * @returns {string} HTML string
+     */
     function renderQueuedSubSteps(subSteps) {
         let html = `<details class="queue-substeps"><summary>Queued Actions <span class="queue-badge">${subSteps.length} actions</span></summary><div class="queue-substep-list">`;
         for (const s of subSteps) {
@@ -621,6 +747,10 @@
         return html;
     }
 
+    /**
+     * @param {DebugLogEntry[]} entries
+     * @returns {string} HTML string
+     */
     function renderDebugLog(entries) {
         let html = `<details class="debug-toggle"><summary>Debug Info <span class="debug-badge">${entries.length} entries</span></summary><div class="debug-entries">`;
 
@@ -643,6 +773,10 @@
         return html;
     }
 
+    /**
+     * @param {AgentDoneMessage} msg
+     * @returns {void}
+     */
     function handleDone(msg) {
         const statusKey = msg.status.toLowerCase();
         if (msg.finalResult) sessionFinalResult = msg.finalResult;
@@ -653,6 +787,7 @@
         cleanup();
     }
 
+    /** @returns {Promise<void>} */
     async function copySteps() {
         if (stepsData.length === 0) return;
         const btn = document.getElementById('btn-copy-steps');
@@ -700,6 +835,10 @@
         setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
     }
 
+    /**
+     * @param {number | null | undefined} totalDurationMs
+     * @returns {void}
+     */
     function stopElapsedTimer(totalDurationMs) {
         clearInterval(elapsedIntervalId);
         elapsedIntervalId = null;
@@ -711,6 +850,10 @@
         }
     }
 
+    /**
+     * @param {number} ms
+     * @returns {string}
+     */
     function formatElapsed(ms) {
         if (ms == null) return '';
         const totalSec = Math.floor(ms / 1000);
@@ -721,17 +864,31 @@
         return `${m}:${String(s).padStart(2,'0')}`;
     }
 
+    /**
+     * @param {number | null | undefined} ms
+     * @returns {string}
+     */
     function formatDuration(ms) {
         if (ms == null) return '';
         if (ms < 1000) return `${ms}ms`;
         return `${(ms / 1000).toFixed(1)}s`;
     }
 
+    /**
+     * @param {string} key CSS class key for the status dot
+     * @param {string} label Display text
+     * @returns {void}
+     */
     function setStatus(key, label) {
         statusDot.className = 'status-dot ' + key;
         statusText.textContent = label;
     }
 
+    /**
+     * @param {string} statusKey CSS class suffix
+     * @param {string} message Result text to display
+     * @returns {void}
+     */
     function showFinalResult(statusKey, message) {
         finalResultEl.className = 'final-result ' + statusKey;
         finalResultMsg.textContent = message;
@@ -739,6 +896,7 @@
         finalResultEl.style.display = 'flex';
     }
 
+    /** @returns {void} */
     function cleanup() {
         if (eventSource) {
             eventSource.close();
@@ -748,6 +906,7 @@
         resetControls();
     }
 
+    /** @returns {void} */
     function resetControls() {
         btnStart.disabled = false;
         btnPause.disabled = true;
@@ -760,6 +919,10 @@
         guidanceAck.classList.remove('show');
     }
 
+    /**
+     * @param {string} str
+     * @returns {string}
+     */
     function escapeHtml(str) {
         if (!str) return '';
         const div = document.createElement('div');

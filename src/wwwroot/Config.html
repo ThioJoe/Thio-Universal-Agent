@@ -46,24 +46,70 @@
 </div>
 
 <script>
-    // @ts-nocheck
+    // ── Type definitions ──────────────────────────────────────────────────────
+
+    /**
+     * @typedef {{ key: string, label: string, type: string, value: unknown, nullable?: boolean, options?: string[], description?: string, defaultTemplate?: string }} ConfigField
+     */
+    /**
+     * @typedef {{ key: string, label: string, isProvider?: boolean, fields: ConfigField[] }} ConfigSection
+     */
+    /**
+     * @typedef {{ sectionKey: string, fieldKey: string }} PasswordFieldRef
+     */
+    /**
+     * @typedef {'ok' | 'wrong-password' | 'error'} VaultUnlockResult
+     */
+    /**
+     * @typedef {'browser' | 'session'} VaultUnlockSource
+     */
+    /**
+     * @typedef {Record<string, Record<string, unknown>>} SectionValueMap
+     */
+    /**
+     * @typedef {{ exists: boolean }} SecretExistsResponse
+     */
+    /**
+     * @typedef {{ secret: string }} SecretLoadResponse
+     */
+    /**
+     * @typedef {{ unlocked: boolean }} VaultStatusResponse
+     */
+    /**
+     * @typedef {{ entries: Record<string, string> }} VaultExportEntriesResponse
+     */
+    /**
+     * @typedef {{ sections: ConfigSection[] }} ConfigSchemaResponse
+     */
+
     const STORAGE_KEY  = 'tua_config_v1';
     const VAULT_KEY    = 'tua_vault_hash_v1'; // stored only when "remember" is checked
 
-    let serverDefaults = {}; // raw schema sections from /api/config/schema
+    /** @type {ConfigSection[]} */
+    let serverDefaults = []; // raw schema sections from /api/config/schema
+    /** @type {SectionValueMap} */
     let browserValues  = {}; // persisted overrides { sectionKey: { fieldKey: value } }
+    /** @type {SectionValueMap} */
     let pendingChanges = {}; // unsaved UI edits { sectionKey: { fieldKey: value } }
 
+    /** @type {string | null} */
     let vaultPasswordHash  = null;  // SHA-256 hex provided by the browser this page visit
     let vaultSessionActive = false; // true when server already has the hash from a prior unlock
 
     // ── Vault helpers ─────────────────────────────────────────────────────────
 
+    /**
+     * @param {string} password
+     * @returns {Promise<string>} SHA-256 hex digest
+     */
     async function hashPassword(password) {
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
         return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
+    /**
+     * @returns {PasswordFieldRef[]}
+     */
     function getPasswordFields() {
         const result = [];
         for (const section of serverDefaults) {
@@ -74,11 +120,19 @@
         return result;
     }
 
+    /**
+     * @param {string} sectionKey
+     * @param {string} fieldKey
+     * @returns {string}
+     */
     function secretKeyFor(sectionKey, fieldKey) {
         return `${sectionKey}_${fieldKey}`;
     }
 
-    /** Checks /api/secrets/{key}/exists for every password field and updates placeholders. */
+    /**
+     * Checks /api/secrets/{key}/exists for every password field and updates placeholders.
+     * @returns {Promise<void>}
+     */
     async function updatePasswordPlaceholders() {
         for (const { sectionKey, fieldKey } of getPasswordFields()) {
             const input = findInput(sectionKey, fieldKey);
@@ -99,7 +153,8 @@
      * Attempts to unlock the vault with the given password hash.
      * Loads each secret from the backend, pushes plaintext to /api/config for the current session,
      * and updates password field placeholders to reflect loaded state.
-     * Returns 'ok', 'wrong-password', or 'error'.
+     * @param {string | null} hash SHA-256 hex of the vault password, or null to use the server session
+     * @returns {Promise<VaultUnlockResult>}
      */
     async function tryUnlockVault(hash) {
         // hash may be null when the server already holds the session hash.
@@ -149,7 +204,10 @@
         return 'ok';
     }
 
-    /** Checks the server-side vault status and, if unlocked, loads secrets via the stored session hash. */
+    /**
+     * Checks the server-side vault status and, if unlocked, loads secrets via the stored session hash.
+     * @returns {Promise<void>}
+     */
     async function checkAndApplyServerVaultSession() {
         try {
             const res = await fetch('/api/secrets/vault/status');
@@ -167,7 +225,10 @@
         setStatus('Browser overrides loaded');
     }
 
-    /** Renders the vault section and inserts it at the top of #config-main. */
+    /**
+     * Renders the vault section and inserts it at the top of #config-main.
+     * @returns {void}
+     */
     function renderVaultSection() {
         const wrap = document.createElement('div');
         wrap.className = 'vault-section';
@@ -290,6 +351,11 @@
         main.insertBefore(wrap, main.firstChild);
     }
 
+    /**
+     * @param {boolean} on
+     * @param {VaultUnlockSource} [source]
+     * @returns {void}
+     */
     function setVaultUnlocked(on, source = 'browser') {
         const section = document.getElementById('vault-section');
         const badge   = document.getElementById('vault-badge');
@@ -310,6 +376,7 @@
 
     // ── Boot ──────────────────────────────────────────────────────────────────
 
+    /** @returns {Promise<void>} */
     async function init() {
         browserValues = loadFromStorage();
 
@@ -352,6 +419,10 @@
 
     // ── Render ────────────────────────────────────────────────────────────────
 
+    /**
+     * @param {ConfigSection[]} sections
+     * @returns {void}
+     */
     function renderSections(sections) {
         const main = document.getElementById('config-main');
         main.innerHTML = '';
@@ -383,9 +454,14 @@
         }
     }
 
+    /**
+     * @param {string} sectionKey
+     * @param {ConfigField} field
+     * @returns {HTMLDivElement}
+     */
     function buildFieldRow(sectionKey, field) {
         const row = document.createElement('div');
-        row.className = 'field-row' + (field.type === 'string' || field.type === 'password' || field.type === 'prompt-template' ? ' full-width' : '');
+        row.className = 'field-row'
         row.dataset.section = sectionKey;
         row.dataset.field   = field.key;
 
@@ -504,6 +580,7 @@
             textarea.spellcheck      = false;
             textarea.autocomplete    = 'off';
 
+            /** @returns {void} */
             function syncBackdrop() {
                 const raw = escHtml(textarea.value);
                 backdrop.innerHTML = raw.replace(/\{(\w+)\}/g, '<mark>{$1}</mark>');
@@ -555,6 +632,7 @@
 
     // ── Apply stored browser values ───────────────────────────────────────────
 
+    /** @returns {void} */
     function applyStoredValues() {
         for (const [sectionKey, fields] of Object.entries(browserValues)) {
             for (const [fieldKey, value] of Object.entries(fields)) {
@@ -570,6 +648,10 @@
 
     // ── Change tracking ───────────────────────────────────────────────────────
 
+    /**
+     * @param {Event & { target: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement }} e
+     * @returns {void}
+     */
     function onFieldChange(e) {
         const input   = e.target;
         const section = input.dataset.section;
@@ -591,6 +673,7 @@
 
     // ── Save ──────────────────────────────────────────────────────────────────
 
+    /** @returns {Promise<void>} */
     async function saveSettings() {
         if (Object.keys(pendingChanges).length === 0) {
             showToast('Nothing to save');
@@ -689,6 +772,10 @@
 
     document.getElementById('btn-save').addEventListener('click', saveSettings);
 
+    /**
+     * @param {SectionValueMap} changes
+     * @returns {Promise<void>}
+     */
     async function pushToServer(changes) {
         // POST only the sections that changed
         const payload = {};
@@ -705,6 +792,7 @@
         });
     }
 
+    /** @returns {void} */
     function syncLegacyKeys() {
         const apiKey = browserValues?.gemini?.apiKey;
         const model  = browserValues?.gemini?.model;
@@ -900,6 +988,12 @@
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * @param {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement} input
+     * @param {unknown} value
+     * @param {string} type
+     * @returns {void}
+     */
     function setInputValue(input, value, type) {
         if (type === 'bool') {
             input.checked = !!value;
@@ -920,6 +1014,11 @@
         }
     }
 
+    /**
+     * @param {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement} input
+     * @param {string} type
+     * @returns {string | number | boolean | null}
+     */
     function getInputValue(input, type) {
         if (type === 'bool')  return input.checked;
         if (type === 'int')   return input.value === '' ? null : parseInt(input.value, 10);
@@ -928,19 +1027,35 @@
         return v === '' ? null : v;
     }
 
+    /**
+     * @param {string} sectionKey
+     * @param {string} fieldKey
+     * @returns {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null}
+     */
     function findInput(sectionKey, fieldKey) {
         return document.querySelector(
-            `input[data-section="${sectionKey}"][data-field="${fieldKey}"],` +
+            `input[data-section="${sectionKey}"][data-field="${fieldKey}"],`
             `select[data-section="${sectionKey}"][data-field="${fieldKey}"],` +
             `textarea[data-section="${sectionKey}"][data-field="${fieldKey}"]`
         );
     }
 
+    /**
+     * @param {string} sectionKey
+     * @param {string} fieldKey
+     * @returns {ConfigField | undefined}
+     */
     function findFieldMeta(sectionKey, fieldKey) {
         const section = serverDefaults.find(s => s.key === sectionKey);
         return section?.fields.find(f => f.key === fieldKey);
     }
 
+    /**
+     * @param {string} sectionKey
+     * @param {string} fieldKey
+     * @param {boolean} on
+     * @returns {void}
+     */
     function markBrowserOverride(sectionKey, fieldKey, on) {
         const row = document.querySelector(
             `.field-row[data-section="${sectionKey}"][data-field="${fieldKey}"]`
@@ -950,20 +1065,37 @@
         if (badge) badge.style.display = on ? 'inline' : 'none';
     }
 
+    /**
+     * @returns {SectionValueMap}
+     */
     function loadFromStorage() {
         try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
         catch { return {}; }
     }
 
+    /**
+     * @param {SectionValueMap} data
+     * @returns {void}
+     */
     function persistToStorage(data) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }
 
+    /**
+     * @param {string} msg
+     * @returns {void}
+     */
     function setStatus(msg) {
         document.getElementById('save-status').textContent = msg;
     }
 
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
     let toastTimer;
+    /**
+     * @param {string} msg
+     * @param {boolean} [isError]
+     * @returns {void}
+     */
     function showToast(msg, isError = false) {
         const t = document.getElementById('toast');
         t.textContent = msg;
@@ -973,6 +1105,10 @@
         toastTimer = setTimeout(() => t.classList.remove('show'), isError ? 3500 : 2000);
     }
 
+    /**
+     * @param {string} str
+     * @returns {string}
+     */
     function escHtml(str) {
         const d = document.createElement('div');
         d.textContent = str;
