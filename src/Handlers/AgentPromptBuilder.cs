@@ -127,7 +127,6 @@ public static class AgentPromptBuilder
         14. Queued actions should be used if the user interface is not expected to change from the actions. 
             For example but not limited to: Checking multiple boxes in the same window (but NOT to close a menu then click something behind it), drawing, selecting multiple items. If able, you SHOULD use queued actions as much as possible when possible.
             Tip: Test an action once by itself before queuing up the rest of the sequence the queue.
-            Tip: The user sets the max action queue. You can feel confident using up to the max queue size.
 
         ═══════════════════════════════════
         YOUR GOAL

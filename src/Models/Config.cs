@@ -38,22 +38,22 @@ public class GeneralConfig
     public int QueueSettleDelayMs { get; set; } = 50;
 
     [ConfigField("Enable Context Reset", Description = "Periodically trim conversation history to keep token usage in check")]
-    public bool EnableContextReset { get; set; } = false;
+    public bool EnableContextReset { get; set; } = true;
 
     [ConfigField("Strip History Images", Description = "Remove screenshots from older messages to reduce token usage")]
     public bool StripHistoryImages { get; set; } = true;
 
-    [ConfigField("Enable Debug Mode", Description = "Capture verbose debug entries and annotated screenshots; disable to reduce per-step overhead")]
+    [ConfigField("Enable Debug Mode", Description = "Capture verbose debug entries and annotated screenshots; adds significant delay between actions, so disable to reduce per-step overhead")]
     public bool EnableDebugMode { get; set; } = false;
 
     [ConfigField("Max Queue Size", Description = "Maximum number of actions the AI may queue in a single QUEUE")]
-    public int MaxQueueSize { get; set; } = 5;
+    public int MaxQueueSize { get; set; } = 10;
 
     [ConfigField("Max Steps", Description = "Maximum number of observe-think-act steps the agent may take before the session is cancelled")]
-    public int MaxSteps { get; set; } = 50;
+    public int MaxSteps { get; set; } = 100;
 
     [ConfigField("Context Reset Interval", Description = "Trim conversation history every N steps when context reset is enabled")]
-    public int ContextResetInterval { get; set; } = 8;
+    public int ContextResetInterval { get; set; } = 20;
 
     [ConfigField("Max Parse Retries", Description = "Number of times the agent may ask the AI to correct a malformed response before giving up")]
     public int MaxParseRetries { get; set; } = 2;

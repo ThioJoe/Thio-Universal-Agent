@@ -30,7 +30,7 @@ public class GeminiConfig : IAiProviderConfig
     [ConfigField("Max Output Tokens", Description = "Maximum token count for the main model response")]
     public int? MaxOutputTokens { get; set; }
 
-    [ConfigField("Coordinate Max Tokens", Description = "Token limit for coordinate-finding requests (much smaller saves cost)")]
+    [ConfigField("Coordinate Max Tokens", Description = "Token limit for coordinate-finding requests (much smaller saves cost). Leave blank to use the API default, which varies by model.")]
     public int? CoordinateMaxOutputTokens { get; set; }
 
     [ConfigField("Thinking Budget", Description = "Extended-thinking token budget (Gemini 2.x flash models only)")]
