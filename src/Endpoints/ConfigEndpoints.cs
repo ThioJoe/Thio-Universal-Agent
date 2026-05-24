@@ -94,7 +94,7 @@ internal static class ConfigEndpoints
             string fieldType;
             string[]? options = null;
 
-            if (underlying == typeof(string))       fieldType = attr.IsPassword ? "password" : "string";
+            if (underlying == typeof(string))       fieldType = attr.IsPassword ? "password" : attr.IsPromptTemplate ? "prompt-template" : "string";
             else if (underlying == typeof(int))     fieldType = "int";
             else if (underlying == typeof(float))   fieldType = "float";
             else if (underlying == typeof(double))  fieldType = "float";
@@ -109,6 +109,10 @@ internal static class ConfigEndpoints
             var raw   = prop.GetValue(obj);
             object? value = raw is Enum e ? e.ToString() : raw;
 
+            string? defaultTemplate = fieldType == "prompt-template"
+                ? Handlers.AgentPromptBuilder.DefaultSystemPromptTemplate
+                : null;
+
             fields.Add(new
             {
                 key         = CamelCase.ConvertName(prop.Name),
@@ -118,6 +122,7 @@ internal static class ConfigEndpoints
                 nullable,
                 value,
                 options,
+                defaultTemplate,
             });
         }
 

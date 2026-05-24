@@ -42,7 +42,7 @@ public sealed partial class AgentLoop(
             //TODO: Add a config for whether to add grid overlay to regular conversation screenshots. For now default to true
             screenshot.Processed = CoordinatePrompter.CreateFullGridOverlayImage(screenshot.Original);
 
-            string systemPrompt = AgentPromptBuilder.BuildSystemPrompt(session.Goal, appConfig.General.MaxQueueSize);
+            string systemPrompt = AgentPromptBuilder.BuildSystemPrompt(session.Goal, appConfig.General.MaxQueueSize, appConfig.General.SystemPromptTemplate);
             var conversation = new AiConversation();
 
             LogSessionStarted(logger, session.SessionId, session.Goal);
@@ -394,7 +394,7 @@ public sealed partial class AgentLoop(
 
         // Start a fresh conversation with the summary baked in
         var newConversation = new AiConversation();
-        string resetPrompt = AgentPromptBuilder.BuildContextResetPrompt(goal, summary, appConfig.General.MaxQueueSize);
+        string resetPrompt = AgentPromptBuilder.BuildContextResetPrompt(goal, summary, appConfig.General.MaxQueueSize, appConfig.General.SystemPromptTemplate);
         debugLog?.Add(new AgentDebugEntry("Context Reset — New System Prompt", Text: resetPrompt));
 
         AiResponse resetResponse = await aiProvider

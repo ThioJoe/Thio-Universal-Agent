@@ -251,6 +251,113 @@
         #modal-box p  { font-size: 13px; color: #aaa; line-height: 1.5; margin-bottom: 22px; }
 
         .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+        /* ── prompt-template editor ── */
+        .prompt-editor-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .prompt-editor-notice {
+            font-size: 11px;
+            color: #888;
+            background: #161a1d;
+            border: 1px solid #2a3540;
+            border-radius: 4px;
+            padding: 6px 10px;
+            line-height: 1.5;
+        }
+
+        .prompt-editor-notice .ph {
+            color: #f0c060;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 11px;
+            background: #2a2010;
+            border-radius: 2px;
+            padding: 0 3px;
+        }
+
+        .prompt-editor-scroller {
+            position: relative;
+            border: 1px solid #333;
+            border-radius: 5px;
+            overflow: hidden;
+            background: #141414;
+        }
+
+        .prompt-editor-scroller:focus-within {
+            border-color: #4a9eff;
+        }
+
+        .prompt-editor-scroller.changed {
+            border-color: #ccaa33;
+        }
+
+        /* Shared layout for backdrop and textarea */
+        .prompt-backdrop,
+        .prompt-textarea {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.55;
+            padding: 10px;
+            margin: 0;
+            border: none;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            tab-size: 4;
+            min-height: 260px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* Visible highlight layer behind the textarea */
+        .prompt-backdrop {
+            position: absolute;
+            inset: 0;
+            color: #d4d4d4;
+            background: transparent;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .prompt-backdrop mark {
+            background: transparent;
+            color: #f0c060;
+            border-bottom: 1px solid #c08820;
+            border-radius: 2px;
+        }
+
+        /* The actual editable textarea sits on top */
+        .prompt-textarea {
+            position: relative;
+            display: block;
+            resize: vertical;
+            background: transparent;
+            color: transparent;
+            outline: none;
+            caret-color: #fff;
+            overflow: auto;
+        }
+
+        .prompt-editor-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .btn-xs {
+            padding: 4px 12px;
+            font-size: 11px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #1a1a1a;
+            color: #aaa;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .btn-xs:hover { background: #222; border-color: #4a9eff; color: #4a9eff; }
     </style>
 </head>
 <body>
@@ -353,7 +460,7 @@
 
     function buildFieldRow(sectionKey, field) {
         const row = document.createElement('div');
-        row.className = 'field-row' + (field.type === 'string' || field.type === 'password' ? ' full-width' : '');
+        row.className = 'field-row' + (field.type === 'string' || field.type === 'password' || field.type === 'prompt-template' ? ' full-width' : '');
         row.dataset.section = sectionKey;
         row.dataset.field   = field.key;
 
@@ -437,6 +544,87 @@
         }
 
         row.appendChild(inputWrap);
+
+        // ── prompt-template special editor (replaces generic inputWrap for this type) ── //
+        if (field.type === 'prompt-template') {
+            // Remove the generic inputWrap already appended above
+            row.removeChild(inputWrap);
+
+            const editorWrap = document.createElement('div');
+            editorWrap.className = 'prompt-editor-wrap';
+
+            // Notice banner
+            const notice = document.createElement('div');
+            notice.className = 'prompt-editor-notice';
+            notice.innerHTML =
+                'Required placeholders — do not rename or remove: ' +
+                ['systemInfo','goal','maxQueueSize','normalizeSize']
+                    .map(p => `<span class="ph">{${p}}</span>`).join(' ');
+            editorWrap.appendChild(notice);
+
+            // Scroller container (backdrop + textarea)
+            const scroller = document.createElement('div');
+            scroller.className = 'prompt-editor-scroller';
+            scroller.dataset.section = sectionKey;
+            scroller.dataset.field   = field.key;
+
+            const backdrop = document.createElement('div');
+            backdrop.className = 'prompt-backdrop';
+            backdrop.setAttribute('aria-hidden', 'true');
+
+            const textarea = document.createElement('textarea');
+            textarea.className = 'prompt-textarea';
+            textarea.dataset.section = sectionKey;
+            textarea.dataset.field   = field.key;
+            textarea.spellcheck      = false;
+            textarea.autocomplete    = 'off';
+
+            function syncBackdrop() {
+                const raw = escHtml(textarea.value);
+                backdrop.innerHTML = raw.replace(/\{(\w+)\}/g, '<mark>{$1}</mark>');
+                // Keep backdrop scroll in sync
+                backdrop.scrollTop  = textarea.scrollTop;
+                backdrop.scrollLeft = textarea.scrollLeft;
+            }
+
+            const initialVal = field.value ?? field.defaultTemplate ?? '';
+            textarea.value = initialVal;
+            syncBackdrop();
+
+            textarea.addEventListener('input',  () => { syncBackdrop(); onFieldChange({ target: textarea }); });
+            textarea.addEventListener('scroll', () => { backdrop.scrollTop = textarea.scrollTop; });
+
+            scroller.appendChild(backdrop);
+            scroller.appendChild(textarea);
+            editorWrap.appendChild(scroller);
+
+            // Action row
+            const actionRow = document.createElement('div');
+            actionRow.className = 'prompt-editor-actions';
+
+            const resetBtn = document.createElement('button');
+            resetBtn.className = 'btn-xs';
+            resetBtn.type = 'button';
+            resetBtn.textContent = 'Reset to default';
+            resetBtn.title = 'Restore the built-in default system prompt';
+            resetBtn.addEventListener('click', () => {
+                textarea.value = field.defaultTemplate ?? '';
+                syncBackdrop();
+                scroller.classList.remove('changed');
+                // Mark as null (use default) in pending changes
+                const section = textarea.dataset.section;
+                const key     = textarea.dataset.field;
+                pendingChanges[section] ??= {};
+                pendingChanges[section][key] = null;
+                setStatus('Unsaved changes');
+            });
+            actionRow.appendChild(resetBtn);
+            editorWrap.appendChild(actionRow);
+
+            row.appendChild(editorWrap);
+            return row;
+        }
+
         return row;
     }
 
@@ -466,7 +654,12 @@
 
         pendingChanges[section] ??= {};
         pendingChanges[section][key] = value;
-        input.classList.add('changed');
+        // For textarea (prompt-template), mark the scroller wrapper; for others, mark the input itself
+        if (input.tagName === 'TEXTAREA') {
+            input.closest('.prompt-editor-scroller')?.classList.add('changed');
+        } else {
+            input.classList.add('changed');
+        }
         setStatus('Unsaved changes');
     }
 
@@ -502,7 +695,12 @@
                 const v = browserValues[s]?.[k];
                 const overridden = (v !== null && v !== undefined && v !== '');
                 markBrowserOverride(s, k, overridden);
-                findInput(s, k)?.classList.remove('changed');
+                const inp = findInput(s, k);
+                if (inp?.tagName === 'TEXTAREA') {
+                    inp.closest('.prompt-editor-scroller')?.classList.remove('changed');
+                } else {
+                    inp?.classList.remove('changed');
+                }
             }
         }
 
@@ -607,6 +805,13 @@
         } else if (type === 'password') {
             input.value = '';
             input.placeholder = value ? '(set — enter to change)' : '(not set)';
+        } else if (type === 'prompt-template') {
+            // textarea — sync backdrop too
+            input.value = (value !== null && value !== undefined) ? String(value) : '';
+            const backdrop = input.previousElementSibling;
+            if (backdrop?.classList.contains('prompt-backdrop')) {
+                backdrop.innerHTML = escHtml(input.value).replace(/\{(\w+)\}/g, '<mark>{$1}</mark>');
+            }
         } else {
             input.value = (value !== null && value !== undefined) ? String(value) : '';
         }
@@ -623,7 +828,8 @@
     function findInput(sectionKey, fieldKey) {
         return document.querySelector(
             `input[data-section="${sectionKey}"][data-field="${fieldKey}"],` +
-            `select[data-section="${sectionKey}"][data-field="${fieldKey}"]`
+            `select[data-section="${sectionKey}"][data-field="${fieldKey}"],` +
+            `textarea[data-section="${sectionKey}"][data-field="${fieldKey}"]`
         );
     }
 

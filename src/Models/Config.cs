@@ -21,6 +21,9 @@ public sealed class ConfigFieldAttribute(string label) : Attribute
 
     /// <summary>When true the input is rendered as a password field with a show/hide toggle.</summary>
     public bool IsPassword { get; init; }
+
+    /// <summary>When true the field is rendered as a full-width prompt-template editor in the UI.</summary>
+    public bool IsPromptTemplate { get; init; }
 }
 
 // ── General ───────────────────────────────────────────────────────────────────
@@ -58,6 +61,11 @@ public class GeneralConfig
     [ConfigField("Double-Click Delay (ms)", Description = "Milliseconds between the two clicks of a double-click action")]
     public int DoubleClickDelayMs { get; set; } = 60;
 
+    [ConfigField("System Prompt Template",
+        Description = "The full instruction prompt sent to the AI at the start of every session. Use {systemInfo}, {goal}, {maxQueueSize}, and {normalizeSize} as placeholders (including the brackets) — do not rename or remove them.",
+        IsPromptTemplate = true)]
+    public string? SystemPromptTemplate { get; set; }
+
     // ── Constructors ──────────────────────────────────────────────────────────
 
     /// <summary>Creates a <see cref="GeneralConfig"/> with all default values.</summary>
@@ -80,6 +88,8 @@ public class GeneralConfig
         if (int.TryParse(section["ContextResetInterval"], out var cri) && cri >= 1) ContextResetInterval = cri;
         if (int.TryParse(section["MaxParseRetries"], out var mpr) && mpr >= 0) MaxParseRetries = mpr;
         if (int.TryParse(section["DoubleClickDelayMs"], out var dcd) && dcd >= 0) DoubleClickDelayMs = dcd;
+        var spt = section["SystemPromptTemplate"];
+        if (!string.IsNullOrEmpty(spt)) SystemPromptTemplate = spt;
     }
 }
 
