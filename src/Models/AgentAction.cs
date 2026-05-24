@@ -183,6 +183,7 @@ public sealed record QueuedSubStep(
 /// <param name="DurationMs">Wall-clock milliseconds from parse-start to execution-end for this step.</param>
 /// <param name="DebugLog">Verbose debug entries for this step (only when testing is enabled).</param>
 /// <param name="Timings">Per-phase timing breakdown for this step.</param>
+/// <param name="ParseRejections">Error messages from parse attempts that were rejected before a valid response was accepted (always shown in the UI).</param>
 public sealed record AgentStep(
     int StepNumber,
     string Thought,
@@ -192,4 +193,5 @@ public sealed record AgentStep(
     long DurationMs,
     IReadOnlyList<AgentDebugEntry>? DebugLog = null,
     StepTimings? Timings = null,
-    IReadOnlyList<QueuedSubStep>? QueuedSubSteps = null);
+    IReadOnlyList<QueuedSubStep>? QueuedSubSteps = null,
+    IReadOnlyList<string>? ParseRejections = null);

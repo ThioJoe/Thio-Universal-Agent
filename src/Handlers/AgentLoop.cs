@@ -95,7 +95,7 @@ public sealed partial class AgentLoop(
                 // Parse the AI's response (with retries on malformed output)
                 var stepStopwatch = Stopwatch.StartNew();
                 var parseSw = Stopwatch.StartNew();
-                AgentParsedResponse? parsed = await TryParseWithRetriesAsync(
+                var (parsed, parseRejections) = await TryParseWithRetriesAsync(
                     conversation, response.Text, ct, debugLog).ConfigureAwait(false);
                 parseSw.Stop();
 
@@ -105,15 +105,13 @@ public sealed partial class AgentLoop(
                     session.FinalResult = "Agent produced unparseable responses after retries.";
                     LogParseFailures(logger, session.SessionId);
 
-                    // Record a debug-only step so the UI shows what happened
-                    if (debugLog is { Count: > 0 })
-                    {
-                        var failAction = new AgentAction(AgentActionKind.Fail, Reason: "Unparseable AI response");
-                        var failResult = new ActionExecutionResult(false, "Parse failed after retries.", IsTerminal: true, GoalAchieved: false);
-                        var failStep = new AgentStep(step, "(parse failure)", failAction, failResult, DateTimeOffset.UtcNow, stepStopwatch.ElapsedMilliseconds, debugLog);
-                        session.Steps.Add(failStep);
-                        await session.RaiseStepCompletedAsync(failStep).ConfigureAwait(false);
-                    }
+                    // Always commit a step so the UI shows what happened
+                    var failAction = new AgentAction(AgentActionKind.Fail, Reason: "Unparseable AI response");
+                    var failResult = new ActionExecutionResult(false, "Parse failed after retries.", IsTerminal: true, GoalAchieved: false);
+                    var failStep = new AgentStep(step, "(parse failure)", failAction, failResult, DateTimeOffset.UtcNow, stepStopwatch.ElapsedMilliseconds,
+                        debugLog is { Count: > 0 } ? debugLog : null, ParseRejections: parseRejections);
+                    session.Steps.Add(failStep);
+                    await session.RaiseStepCompletedAsync(failStep).ConfigureAwait(false);
                     return;
                 }
 
@@ -148,7 +146,7 @@ public sealed partial class AgentLoop(
                     var cancelTimings = new StepTimings(lastAiResponseMs, parseSw.ElapsedMilliseconds, 0, null);
                     var cancelledStep = new AgentStep(step, parsed.Thought, actionsToRun[0], cancelledResult,
                         DateTimeOffset.UtcNow, parseSw.ElapsedMilliseconds,
-                        debugLog is { Count: > 0 } ? debugLog : null, cancelTimings, null);
+                        debugLog is { Count: > 0 } ? debugLog : null, cancelTimings, null, parseRejections);
                     session.Steps.Add(cancelledStep);
                     await session.RaiseStepCompletedAsync(cancelledStep).ConfigureAwait(false);
 
@@ -255,7 +253,8 @@ public sealed partial class AgentLoop(
                     DateTimeOffset.UtcNow, stepStopwatch.ElapsedMilliseconds,
                     debugLog is { Count: > 0 } ? debugLog : null,
                     stepTimings,
-                    subSteps);
+                    subSteps,
+                    parseRejections);
                 session.Steps.Add(agentStep);
                 await session.RaiseStepCompletedAsync(agentStep).ConfigureAwait(false);
 
@@ -346,14 +345,19 @@ public sealed partial class AgentLoop(
     /// <summary>
     /// Attempts to parse the AI response, sending correction prompts on failure up to <see cref="MaxParseRetries"/> times.
     /// </summary>
-    private async Task<AgentParsedResponse?> TryParseWithRetriesAsync(
+    private async Task<(AgentParsedResponse? Parsed, List<string>? ParseRejections)> TryParseWithRetriesAsync(
         AiConversation conversation, string responseText, CancellationToken ct,
         List<AgentDebugEntry>? debugLog = null)
     {
+        List<string>? parseRejections = null;
+
         for (int attempt = 0; attempt <= _maxParseRetries; attempt++)
         {
             if (AgentActionParser.TryParse(responseText, appConfig.General.MaxQueueSize, out AgentParsedResponse? parsed, out string? error))
-                return parsed;
+                return (parsed, parseRejections);
+
+            parseRejections ??= [];
+            parseRejections.Add(error);
 
             LogParseAttemptFailed(logger, attempt + 1, error);
             debugLog?.Add(new AgentDebugEntry($"Parse Attempt {attempt + 1} Failed", Text: error));
@@ -380,7 +384,7 @@ public sealed partial class AgentLoop(
             responseText = retryResponse.Text;
         }
 
-        return null;
+        return (null, parseRejections);
     }
 
     /// <summary>

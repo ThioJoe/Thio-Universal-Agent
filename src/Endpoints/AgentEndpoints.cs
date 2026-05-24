@@ -318,6 +318,7 @@ internal static class AgentEndpoints
                 coordResolutionMs = step.Timings.CoordResolutionMs,
             },
             debugLog = step.DebugLog?.Select(e => new { e.Label, e.Text, e.ImageBase64 }),
+            parseRejections = step.ParseRejections,
             queuedSubSteps = step.QueuedSubSteps?.Select(s => new
             {
                 s.QueueIndex,
