@@ -96,13 +96,14 @@ let elapsedIntervalId;
         ]);
 
         if (cfgRes.ok) {
-            const cfg = await cfgRes.json();
+        const cfg = await cfgRes.json();
             const storedCfg = getStoredConfig();
-            const activeProv = storedCfg?.general?.activeProvider || cfg.general?.activeProvider || 'Gemini';
+            // Do not assume a default provider — only use the configured activeProvider when present
+            const activeProv = storedCfg?.general?.activeProvider || cfg.general?.activeProvider || null;
             let model = null;
             if (activeProv === 'ChatGPT') model = storedCfg?.openai?.model || cfg.openAI?.model || cfg.openai?.model;
             else if (activeProv === 'Claude') model = storedCfg?.anthropic?.model || cfg.anthropic?.model;
-            else model = storedCfg?.gemini?.model || cfg.gemini?.model;
+            else if (activeProv === 'Gemini') model = storedCfg?.gemini?.model || cfg.gemini?.model;
 
             if (model) modelBadge.textContent = model;
         }
@@ -211,10 +212,14 @@ async function ensureVaultUnlocked() {
         if (!hash) return; // Cannot auto-unlock
 
         const cfg = getStoredConfig();
-        const activeProv = cfg?.general?.activeProvider || 'Gemini';
-        let sectionKey = 'gemini';
+        // Don't assume a provider when none is configured; abort auto-unlock if not present
+        const activeProv = cfg?.general?.activeProvider || null;
+        if (!activeProv) return;
+        let sectionKey = null;
         if (activeProv === 'ChatGPT') sectionKey = 'openai';
         else if (activeProv === 'Claude') sectionKey = 'anthropic';
+        else if (activeProv === 'Gemini') sectionKey = 'gemini';
+        if (!sectionKey) return;
 
         const res = await fetch('/api/secrets/load', {
             method: 'POST',
@@ -242,7 +247,7 @@ async function startAgent() {
     await pushConfigToServer();
 
     const cfg = getStoredConfig();
-    const activeProvider = cfg?.general?.activeProvider || 'Gemini';
+    const activeProvider = cfg?.general?.activeProvider || null;
 
     let apiKey = null;
     let model = null;
@@ -253,7 +258,7 @@ async function startAgent() {
     } else if (activeProvider === 'Claude') {
         apiKey = cfg?.anthropic?.apiKey || null;
         model  = cfg?.anthropic?.model || null;
-    } else {
+    } else if (activeProvider === 'Gemini') {
         apiKey = cfg?.gemini?.apiKey || null;
         model  = cfg?.gemini?.model || null;
     }
