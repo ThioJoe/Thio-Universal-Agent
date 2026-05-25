@@ -10,11 +10,25 @@ It controls Windows purely through visual perception and GUI interaction. By int
 
 It does **not** require UI Automation APIs, screen reader support, or application-specific hooks. 
 
+# Demonstration
+
+<p align="center">
+Example of it queuing multiple actions at once, while accurately identifying exact coordinates.
+<br/><br/>
+<img width="1000" alt="Demo Gif" src="https://github.com/user-attachments/assets/c3109876-93b3-4ebe-84a5-1598f3b7874d" />
+</p>
+<p align="center">
+<b>Prompt:</b> <i>In MS Paint draw a self portrait with multiple colors with the brush tool. Use the full action queue when possible.</i><br/>
+<b>Model:</b> Gemini 3.5 Flash
+</p>
+  
+--------
+
 ## How It's _Built Different_
 
 * **Single Portable `Exe` - NO Installation Required** - Releases are compiled with single-exe mode, it's just one file.
    * _No_ bloated 🤡Python🤡 or 🤡NodeJS🤡 or other environment installation.
-   * _ZERO_ Third-Party Dependencies 😤 (Uses core .NET Libraries and official Microsoft packages ONLY) _#AllMyHomiesHateDependencies_
+   * _ZERO_ Third-Party Dependencies 😤 (Uses core .NET Libraries and official Microsoft packages only) _#AllMyHomiesHateDependencies_
    * Ideal for running in VMs and Sandboxes. Spin up a fresh sandbox instance and it's ready to go, just set the API key.
 * **Visual-Only Operation**: Works on any app, regardless of underlying framework, because it relies strictly on screen pixels.
 * **Multiple AI Providers**: Supports Google Gemini (default), OpenAI (ChatGPT), and Anthropic (Claude).
@@ -25,21 +39,81 @@ It does **not** require UI Automation APIs, screen reader support, or applicatio
 * **Config Import/Export**: Export your config options to a file and import it. Settings are also stored in the browser to survive between sessions.
 * **.NET Based - Theoretically Cross Platform** - Currently the only input providers are set up for Windows, but it could work with MacOS or even Linux if someone implemented the interfaces for their APIs.
 
-## Demonstration
+--------
 
-<p align="center">
-An example of how it can queue multiple actions at once, while accurately identifying exact coordinates.
-<br/><br/>
-<img width="1000" alt="Demo Gif" src="https://github.com/user-attachments/assets/c3109876-93b3-4ebe-84a5-1598f3b7874d" />
+# Comparison To Similar Tools
+
+<table>
+  <thead>
+    <tr>
+      <th align="left">Feature</th>
+      <th align="center">Thio's Universal Agent</th>
+      <th align="center">OpenAI Operator</th>
+      <th align="center">Google Gemini Computer Use</th>
+      <th align="center">Anthropic Computer Use</th>
+      <th align="center">Microsoft Research UFO (UFO³)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="left"><strong>Ready-to-Run App</strong></td>
+      <td align="center">✔️ <strong>Ready Out of the Box</strong></td>
+      <td align="center">✔️ <strong>N/A<br/><sub>(Web Hosted)</sub></strong></td>
+      <td align="center">❌ <strong>Dev API,<br/>Not an app<sup>4</sup></strong></td>
+      <td align="center">❌ <strong>Dev API,<br/>Not an app<sup>5</sup></strong></td>
+      <td align="center">❌ <strong>Research Framework Only</strong></td>
+    </tr>
+    <tr>
+      <td align="left"><strong>Setup Difficulty</strong></td>
+      <td align="center">✔️ <strong>Easy</strong><br><sub>(Just launch the portable <code>.exe</code>)</sub></td>
+      <td align="center">✔️ <strong>Easy</strong><br><sub>(Log into web service)</sub></td>
+      <td align="center">❌ <strong>Hard</strong><br><sub>(Requires Python, Playwright)</sub><sup>7</sup></td>
+      <td align="center">❌ <strong>Hard</strong><br><sub>(Requires custom tooling)</sub><sup>8</sup></td>
+      <td align="center">❌ <strong>Hard</strong><br><sub>(Conda, pip installs, YAML configuration)</sub><sup>9</sup></td>
+    </tr>
+    <tr>
+      <td align="left"><strong>Computer-Wide Control</strong></td>
+      <td align="center">✔️ <strong>Yes</strong></td>
+      <td align="center">❌ <strong>No</strong><br><sub>(Web-Only)</sub><sup>10</sup></td>
+      <td align="center">❌ <strong>No</strong><br><sub>(Web-Only)</sub><sup>1</sup></td>
+      <td align="center">⚠️ <strong>Not out of the box</strong><br><sub>(Assumes external app to handle input)</sub></td>
+      <td align="center">✔️ <strong>Yes</strong></td>
+    </tr>
+    <tr>
+      <td align="left"><strong>Recommended / Max Resolution</strong></td>
+      <td align="center">✔️<strong>4K+</strong><br><sub>(Depends on chosen model)</sub></td>
+      <td align="center">⚠️<br/><strong>1600x900</strong><br><sub>(Recommended Resolution)</sub><sup>6</sup></td>
+      <td align="center">⚠️<br/><strong>1440x900</strong><br><sub>(Recommended Resolution)</sub><sup>2</sup></td>
+      <td align="center">⚠️<br/><strong>~2560x1440</strong><br><sub>(Max For Opus 4.7)</sub><sup>3</sup></td>
+      <td align="center">✔️<strong>Theoretically Any Resolution</strong><br><sub>(Hybrid UI Automation + Vision)</sub></td>
+    </tr>
+    <tr>
+      <td align="left"><strong>Supported Models</strong></td>
+      <td align="center">✔️<strong>Multiple</strong><br><sub>(Gemini, OpenAI, Claude)</sub></td>
+      <td align="center">❌<strong>OpenAI Only</strong></td>
+      <td align="center">❌<strong>Gemini Only</strong></td>
+      <td align="center">❌<strong>Claude Only</strong></td>
+      <td align="center">✔️<strong>Multiple</strong><br><sub>(Gemini, OpenAI, Claude)</sub></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+<sub>1. Gemini computer use announcement post states "<a href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/gemini-computer-use-model/">It is not yet optimized for desktop OS-level control.</a>"</sub>"<br/>
+<sub>2. Gemini docs state "<a href="https://ai.google.dev/gemini-api/docs/computer-use#execute-actions">The recommended screen size ... is (1440, 900).</a>" and performance "may be impacted" with other resolutions.</sub>"<br/>
+<sub>3. For Opus 4.7 -  <a href="https://claude.com/blog/best-practices-for-computer-and-browser-use-with-claude#:~:text=Max%20long%20edge%3A%202576%20pixels">Max long edge: 2576 pixels & Max total pixels: 3.75 megapixels</a></sub>"<br/>
+<sub>4. Gemini docs state: "<a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/computer-use#:~:text=you%20need%20to%20write%20the%20client%2Dside%20application%20code%20to%20receive%20the%20Computer%20Use%20model%20and%20tool%20function%20call%20and%20execute%20the%20corresponding%20actions">you need to write the client-side application code to ... execute the corresponding actions</a>"</sub>"<br/>
+<sub>5. Anthropic Computer Use has a <a href="https://github.com/anthropics/claude-quickstarts/tree/main/computer-use-demo">demo app implementation</a>, but requires MacOS with Python, or setup in Docker</sub>"<br/>
+<sub>6. OpenAI recommends 1440x900 or 1600x900 for optimal click accuracy (see <a href="https://learn.microsoft.com/en-us/azure/foundry-classic/openai/how-to/computer-use">Azure OpenAI Computer Use Guide</a>).</sub>"<br/>
+<sub>7. Gemini Computer Use requires <a href="https://github.com/google-gemini/computer-use-preview#1-installation">Python + dependencies, and downloading browser binaries via Playwright.</a></sub>"<br/>
+<sub>8. Anthropic's Computer Use API only outputs proposed tool calls; <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool#:~:text=When%20you%20use%20computer%20use%2C%20Claude%20doesn%27t%20directly%20connect%20to%20this%20environment">developers must implement their own OS-level execution harness</a>.</sub>"<br/>
+<sub>9. UFO³ setup involves <a href="https://github.com/microsoft/UFO/blob/main/galaxy/README.md#%EF%B8%8F-step-1-installation">installing Conda/Python</a>, and <a href="https://github.com/microsoft/UFO/blob/main/galaxy/README.md#%EF%B8%8F-step-3-configure-device-agents">YAML configurations</a>.</sub>"<br/>
+<sub>10. <a href="https://openai.com/index/introducing-operator/">OpenAI Operator</a> (now called ChatGPT agent mode) runs within a virtual web browser hosted by OpenAI.</sub><br/>
 </p>
-  
-<b>Prompt:</b> <i>In MS Paint draw a self portrait with multiple colors with the brush tool. Use the full action queue when possible.</i><br/>
-<b>Model:</b> Gemini 3.5 Flash
-
 
 ----------
 
-## How it Works
+# How it Works
 
 ### The Observe-Think-Act Loop:
 1. **Observe:** Captures the current desktop state as an image.
@@ -65,7 +139,7 @@ This application executes real, unauthenticated OS-level input events. Do not ex
 5. Select a target monitor, enter your task directive in the **Goal** field, and click **Start**.
 6. **Interrupting Execution:** Use the Pause/Stop buttons in the UI, or the default global hotkeys (`Ctrl+Shift+Alt+P` to pause, `Ctrl+Shift+Alt+S` to stop).
 
-## Screenshots
+# Screenshots
 <p align="center">
   <img width="800" alt="image" src="https://github.com/user-attachments/assets/66264587-6392-4ef9-a61a-845d0f51e045" />
 </p>
@@ -85,13 +159,14 @@ This application executes real, unauthenticated OS-level input events. Do not ex
 2. Select your desired build configuration (`Debug` or `Release`).
 3. Compile and run the solution.
 
-## Licensing - Personal Use Only
+# Licensing - Personal Use Only
 
 This app is source-available. Free for PERSONAL use only. You may not use it for commercial purposes (it's not ready for production anyway).
 
-Are you a big tech company who wants to buy it and build it out properly? I could be convinced. 
+**Are you a big tech company who wants to buy it and/or bring me on to build it out properly? I could be convinced.**
 
 <p align="center">
-<img width="550" alt="image" src="https://github.com/user-attachments/assets/32c97850-4507-4e11-a899-0a9fba678b62" />
+<img width="450" src="https://github.com/user-attachments/assets/c6a61205-ba4e-4a7a-b85a-1328a1dec761" />
 </p>
-I also have a lot of experience with the Windows API to help with development, as evidenced by my other projects here on GitHub.
+
+
