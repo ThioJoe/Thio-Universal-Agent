@@ -10,7 +10,7 @@ It controls Windows purely through visual perception and GUI interaction. By int
 
 It does **not** require UI Automation APIs, screen reader support, or application-specific hooks. 
 
-## Key Features
+## How It's _Built Different_
 
 * **Single Portable `Exe` - NO Installation Required** - Releases are compiled with single-exe mode, it's just one file.
    * _No_ bloated 🤡Python🤡 or 🤡NodeJS🤡 or other environment installation.
@@ -20,16 +20,22 @@ It does **not** require UI Automation APIs, screen reader support, or applicatio
 * **Multiple AI Providers**: Supports Google Gemini (default), OpenAI (ChatGPT), and Anthropic (Claude).
 
 ### Additional Features:
-* **Web-Based Dashboard**: Built-in minimal web UI for configuring settings, starting sessions, and viewing live execution logs via Server-Sent Events (SSE).
 * **Global Hotkey Support**: Pause, resume, or terminate the agent instantly even when the web UI is minimized.
 * **Live Agent Redirection**: Issue mid-flight text instructions to the agent to override or adjust its current execution plan.
 * **Config Import/Export**: Export your config options to a file and import it. Settings are also stored in the browser to survive between sessions.
 * **.NET Based - Theoretically Cross Platform** - Currently the only input providers are set up for Windows, but it could work with MacOS or even Linux if someone implemented the interfaces for their APIs.
 
-### ⚠️ Security Warning
+## Demonstration
 
-**Prototype software — not intended for production use.**
-This application executes real, unauthenticated OS-level input events. Do not expose the web server port to the internet or untrusted networks. Operate only in a supervised, isolated local environment.
+<p align="center">
+An example of how it can queue multiple actions at once, while accurately identifying exact coordinates.
+<br/><br/>
+<img width="1000" alt="Demo Gif" src="https://github.com/user-attachments/assets/c3109876-93b3-4ebe-84a5-1598f3b7874d" />
+</p>
+  
+<b>Prompt:</b> <i>In MS Paint draw a self portrait with multiple colors with the brush tool. Use the full action queue when possible.</i><br/>
+<b>Model:</b> Gemini 3.5 Flash
+
 
 ----------
 
@@ -42,8 +48,13 @@ This application executes real, unauthenticated OS-level input events. Do not ex
 4. **Act:** Simulates physical hardware inputs via native OS APIs (`user32.dll` / `gdi32.dll`).
 
 ### Special Sauce
-- **Queued actions** - The AI can queue multiple actions where appropriate to quickly send inputs to the same window, such as drawing quickly.
+- **Queued actions** - The AI can queue multiple actions where appropriate to speed through multiple similar actions, such as drawing quickly.
 - **Accurate Clicking** - Prompts optimized so even on a 4K screen, the latest models can be spot-on with coordinates even for small UI elements.
+
+### Usage / Security Notice
+
+**⚠️ <ins>Prototype software - Not intended for production use.</ins>**<br/>
+This application executes real, unauthenticated OS-level input events. Do not expose the web server port to the internet or untrusted networks. Operate only in a supervised, isolated local environment.
 
 ## Usage Instructions
 
@@ -53,6 +64,14 @@ This application executes real, unauthenticated OS-level input events. Do not ex
 4. Navigate to the **Agent Control** panel.
 5. Select a target monitor, enter your task directive in the **Goal** field, and click **Start**.
 6. **Interrupting Execution:** Use the Pause/Stop buttons in the UI, or the default global hotkeys (`Ctrl+Shift+Alt+P` to pause, `Ctrl+Shift+Alt+S` to stop).
+
+## Screenshots
+<p align="center">
+  <img width="800" alt="image" src="https://github.com/user-attachments/assets/66264587-6392-4ef9-a61a-845d0f51e045" />
+</p>
+<p align="center">
+  <img width="800" alt="image" src="https://github.com/user-attachments/assets/4f3d90ef-6e24-439f-965b-f0cc8acb5283" />
+</p>
 
 ## Development & Compilation
 
