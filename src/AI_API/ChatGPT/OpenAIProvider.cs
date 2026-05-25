@@ -26,7 +26,24 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
     public Task<AiResponse> SendPromptAsync(string prompt, CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
-        var request = new OpenAIRequest(_model, [new OpenAIMessage("user", [new OpenAIContentPart("text", prompt, null)])], appConfig.OpenAI.Temperature, options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens);
+
+        OpenAIRequest request = new OpenAIRequest(
+            Model: _model,
+            Messages: [
+                new OpenAIMessage(
+                    "user",
+                    Content: [
+                        new OpenAIContentPart(
+                            Type: "text",
+                            Text: prompt,
+                            ImageUrl: null
+                        )
+                    ]
+                )
+            ],
+            Temperature: appConfig.OpenAI.Temperature,
+            MaxTokens: options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens
+            );
         return SendRequestAsync(request, cancellationToken);
     }
 
@@ -35,10 +52,29 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
         ArgumentNullException.ThrowIfNull(imageBytes);
 
-        var request = new OpenAIRequest(_model, [new OpenAIMessage("user", [
-            new OpenAIContentPart("text", prompt, null),
-            new OpenAIContentPart("image_url", null, new OpenAIImageUrl($"data:{mimeType};base64,{Convert.ToBase64String(imageBytes)}"))
-        ])], appConfig.OpenAI.Temperature, options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens);
+        var request = new OpenAIRequest(
+            _model,
+            Messages: [
+                new OpenAIMessage(
+                    Role: "user", 
+                    Content: [
+                        new OpenAIContentPart(
+                            Type: "text",
+                            Text: prompt,
+                            ImageUrl: null
+                        ),
+                        new OpenAIContentPart(
+                            Type: "image_url",
+                            Text: null,
+                            ImageUrl: new OpenAIImageUrl($"data:{mimeType};base64,{Convert.ToBase64String(imageBytes)}"
+                            )
+                        )
+                    ]
+                )
+            ], 
+            Temperature: appConfig.OpenAI.Temperature, 
+            MaxTokens: options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens
+        );
 
         return SendRequestAsync(request, cancellationToken);
     }
@@ -50,13 +86,18 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         AiConversation conversation = new AiConversation();
         AiChatMessage userMessage = new AiChatMessage { Role = AiChatRole.User, Text = prompt };
 
-        OpenAIRequest request = BuildRequest(conversation, userMessage, options);
+        OpenAIRequest request = BuildRequest(
+            conversation: conversation,
+            additionalMessage: userMessage,
+            options: options
+        );
+
         AiResponse response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (response.Success)
         {
-            conversation.AddMessage(userMessage);
-            conversation.AddMessage(new AiChatMessage { Role = AiChatRole.Model, Text = response.Text });
+            conversation.AddMessage(message: userMessage);
+            conversation.AddMessage(message: new AiChatMessage { Role = AiChatRole.Model, Text = response.Text });
         }
 
         return (conversation, response);
@@ -65,19 +106,37 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
     public Task<AiResponse> ContinueConversationAsync(AiConversation conversation, string prompt, CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         AiChatMessage userMessage = new AiChatMessage { Role = AiChatRole.User, Text = prompt };
-        return ContinueConversationCoreAsync(conversation, userMessage, cancellationToken, options);
+
+        return ContinueConversationCoreAsync(
+            conversation: conversation, 
+            userMessage: userMessage, 
+            cancellationToken: cancellationToken, 
+            options: options
+        );
     }
 
     public Task<AiResponse> ContinueConversationAsync(AiConversation conversation, byte[] imageBytes, string mimeType = "image/jpeg", CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         AiChatMessage userMessage = new AiChatMessage { Role = AiChatRole.User, ImageBytes = imageBytes, MimeType = mimeType };
-        return ContinueConversationCoreAsync(conversation, userMessage, cancellationToken, options);
+
+        return ContinueConversationCoreAsync(
+            conversation: conversation,
+            userMessage: userMessage,
+            cancellationToken: cancellationToken,
+            options: options
+        );
     }
 
     public Task<AiResponse> ContinueConversationAsync(AiConversation conversation, string prompt, byte[] imageBytes, string mimeType = "image/jpeg", CancellationToken cancellationToken = default, AiRequestOptions? options = null)
     {
         AiChatMessage userMessage = new AiChatMessage { Role = AiChatRole.User, Text = prompt, ImageBytes = imageBytes, MimeType = mimeType };
-        return ContinueConversationCoreAsync(conversation, userMessage, cancellationToken, options);
+
+        return ContinueConversationCoreAsync(
+            conversation: conversation,
+            userMessage: userMessage,
+            cancellationToken: cancellationToken,
+            options: options
+        );
     }
 
     private async Task<AiResponse> ContinueConversationCoreAsync(AiConversation conversation, AiChatMessage userMessage, CancellationToken cancellationToken, AiRequestOptions? options)
@@ -87,8 +146,8 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
 
         if (response.Success)
         {
-            conversation.AddMessage(userMessage);
-            conversation.AddMessage(new AiChatMessage { Role = AiChatRole.Model, Text = response.Text });
+            conversation.AddMessage(message: userMessage);
+            conversation.AddMessage(message: new AiChatMessage { Role = AiChatRole.Model, Text = response.Text });
         }
 
         return response;
@@ -97,6 +156,7 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
     private async Task<AiResponse> SendRequestAsync(OpenAIRequest request, CancellationToken cancellationToken)
     {
         var apiKey = _apiKey ?? appConfig.OpenAI.ApiKey;
+
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("OpenAI:ApiKey is not configured. Provide an API key via the web UI.");
 
@@ -113,6 +173,7 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         {
             string errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             logger.LogError("OpenAI API returned {StatusCode}. Body: {ErrorBody}", (int)response.StatusCode, errorBody);
+
             return new AiResponse(false, string.Empty, $"HTTP {(int)response.StatusCode}: {errorBody}");
         }
 
@@ -131,11 +192,16 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         var messages = new List<OpenAIMessage>(conversation.Messages.Count + 1);
 
         foreach (AiChatMessage message in conversation.Messages)
-            messages.Add(ToOpenAIMessage(message, stripImages: stripHistoryImages));
+            messages.Add(ToOpenAIMessage(message: message, stripImages: stripHistoryImages));
 
-        messages.Add(ToOpenAIMessage(additionalMessage, stripImages: false));
+        messages.Add(ToOpenAIMessage(message: additionalMessage, stripImages: false));
 
-        return new OpenAIRequest(_model, messages, appConfig.OpenAI.Temperature, options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens);
+        return new OpenAIRequest(
+            Model: _model, 
+            Messages: messages, 
+            Temperature: appConfig.OpenAI.Temperature, 
+            MaxTokens: options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens
+        );
     }
 
     private static OpenAIMessage ToOpenAIMessage(AiChatMessage message, bool stripImages)
@@ -144,10 +210,22 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         var content = new List<OpenAIContentPart>();
 
         if (message.Text is not null)
-            content.Add(new OpenAIContentPart("text", message.Text, null));
+        {
+            content.Add(new OpenAIContentPart(
+                Type: "text",
+                Text: message.Text,
+                ImageUrl: null
+            )); 
+        }
 
         if (!stripImages && message.ImageBytes is not null)
-            content.Add(new OpenAIContentPart("image_url", null, new OpenAIImageUrl($"data:{message.MimeType ?? "image/jpeg"};base64,{Convert.ToBase64String(message.ImageBytes)}")));
+        { 
+            content.Add(new OpenAIContentPart(
+                Type: "image_url",
+                Text: null,
+                ImageUrl: new OpenAIImageUrl($"data:{message.MimeType ?? "image/jpeg"};base64,{Convert.ToBase64String(message.ImageBytes)}")
+            )); 
+        }
 
         return new OpenAIMessage(role, content);
     }
