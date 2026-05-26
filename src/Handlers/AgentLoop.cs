@@ -12,6 +12,7 @@ namespace Thio_Universal_Agent;
 public sealed partial class AgentLoop(
     IAiProvider aiProvider,
     IScreenProvider screenProvider,
+    ISystemProvider systemProvider,
     AgentActionExecutor executor,
     AppConfig appConfig,
     ILogger<AgentLoop> logger)
@@ -282,6 +283,7 @@ public sealed partial class AgentLoop(
                     session.Status = lastResult.GoalAchieved ? AgentSessionStatus.Completed : AgentSessionStatus.Failed;
                     session.FinalResult = lastResult.Summary;
                     LogSessionTerminated(logger, session.SessionId, step, lastResult.Summary);
+                    systemProvider.TaskFinishedNotifier($"Agent {(session.Status == AgentSessionStatus.Completed ? "Success" : "Fail")}: {lastResult.Summary}", $"Session {session.Status}");
                     return;
                 }
 
@@ -341,6 +343,7 @@ public sealed partial class AgentLoop(
             session.Status = AgentSessionStatus.Failed;
             session.FinalResult = $"Exceeded maximum of {_maxSteps} steps without completing the goal.";
             LogMaxStepsExceeded(logger, session.SessionId, _maxSteps);
+            systemProvider.TaskFinishedNotifier($"Agent Fail: Session exceeded max steps without completion.", "Session Failed");
         }
         catch (OperationCanceledException)
         {

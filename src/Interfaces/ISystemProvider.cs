@@ -22,4 +22,6 @@ public interface ISystemProvider
     /// </summary>
     string GetArchitecture() =>
         System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString();
+
+    bool TaskFinishedNotifier(string notificationText, string notificationTitle = "");
 }
