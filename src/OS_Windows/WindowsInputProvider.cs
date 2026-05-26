@@ -725,10 +725,8 @@ namespace Thio_Universal_Agent.OS_Windows
             // Determine mode to use
             if (mode != null)
                 scrollMode = (ScrollMode)mode;
-            else if (multiple == 1)
-                scrollMode = ScrollMode.SendInput; // For single notches, SendInput is more reliable across apps
             else
-                scrollMode = ScrollMode.WindowMessage; // For multiple notches, WindowMessage can be more reliable
+                scrollMode = ScrollMode.SendInput; // SendInput is more reliable across apps
 
             // Send the input
             if (scrollMode == ScrollMode.SendInput)
@@ -824,8 +822,8 @@ namespace Thio_Universal_Agent.OS_Windows
 
             // 120 is the standard delta for one scroll notch, regardless of the system scroll lines setting
             int delta = (int)Math.Round(120.0 * multiplier);
-            IntPtr wParam = new IntPtr(delta << 16);                                              // delta in high word, key flags (0) in low word
-            IntPtr lParam = new IntPtr((mousePosY.Value << 16) | (mousePosX.Value & 0xFFFF));    // y in high word, x in low word
+            IntPtr wParam = (IntPtr)((delta & 0xFFFF) << 16);                                                          // delta in high word, key flags (0) in low word
+            IntPtr lParam = (IntPtr)(((mousePosY.Value & 0xFFFF) << 16) | (mousePosX.Value & 0xFFFF));                 // y in high word, x in low word
 
             if (useSendMessage)
             {
