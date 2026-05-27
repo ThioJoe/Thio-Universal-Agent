@@ -108,6 +108,12 @@ app.Lifetime.ApplicationStarted.Register(() =>
 {
     string url = app.Urls.FirstOrDefault() ?? $"http://localhost:{availablePort}";
     Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+
+    // Grab the root logger and print a prominent banner
+    Console.WriteLine(new string('=', 55));
+    Console.WriteLine("THIO UNIVERSAL AGENT READY");
+    Console.WriteLine($"Web Interface: {url}");
+    Console.WriteLine(new string('=', 55));
 });
 
 app.MapTestEndpoints();
