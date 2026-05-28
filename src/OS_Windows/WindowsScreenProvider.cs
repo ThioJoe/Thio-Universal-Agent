@@ -1,4 +1,5 @@
 ﻿// WindowsScreenProvider.cs
+using System.Collections.Concurrent;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -149,39 +150,154 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         }
     }
 
-
-    private readonly MarkerWindow _markerWindow = new MarkerWindow();
-    private int _currentDrawId;
-
-    public bool DrawClickPoint(int x, int y, int durationMs, int markerOpacity = 255)
+    private enum MarkerType
     {
-        // Increment ID to track the latest draw request
-        int drawId = Interlocked.Increment(ref _currentDrawId);
+        ClickPoint,
+        ClickDrag,
+        BoundingBox
+    }
 
-        // Tell the window thread to move and show itself
-        _markerWindow.Show(x, y, markerOpacity);
+    private readonly MarkerPool _markerPool = new();
 
-        // Auto-hide after the duration expires, unless a new draw request was made
+    /// <summary>
+    /// Manages the lifecycle of <see cref="MarkerWindow"/> instances: idle pool, active-marker tracking,
+    /// latest-marker reference, and ID generation — all in one place.
+    /// </summary>
+    private sealed class MarkerPool
+    {
+        private readonly ConcurrentBag<MarkerWindow> _idle = [];
+        private readonly ConcurrentDictionary<int, MarkerWindow> _active = new();
+        private volatile MarkerWindow? _latest;
+        private int _idCounter;
+
+        /// <summary>The most recently activated marker, or <c>null</c> if none has been drawn yet.</summary>
+        public MarkerWindow? Latest => _latest;
+
+        /// <summary>Returns a hidden window to the idle pool for reuse by the next draw call.</summary>
+        public void MakeIdle(MarkerWindow window) => _idle.Add(window);
+
+        /// <summary>Removes the marker with <paramref name="id"/> from the active set. Returns <c>true</c> and populates <paramref name="window"/> if found.</summary>
+        public bool TryDeactivate(int id, out MarkerWindow window) => _active.TryRemove(id, out window!);
+
+        /// <summary>A snapshot of all currently active marker IDs, suitable for iterating a clear-all operation.</summary>
+        public ICollection<int> ActiveIds => _active.Keys;
+
+        /// <summary>Hides all currently visible markers, cancels their auto-hide timers, and returns the windows to the idle pool.</summary>
+        public void ClearAll(MarkerType? onlyType = null)
+        {
+            foreach (var (_, window) in _active.ToArray())
+            {
+                if (onlyType == null || window.Type == onlyType)
+                    window.Clear(this);
+            }
+        }
+
+        /// <summary>Hides only the most recently drawn marker and cancels its auto-hide timer. Has no effect if no markers are currently active.</summary>
+        /// <param name="onlyType">If specified, only clears the latest marker of this type; otherwise, clears the latest marker of any type.</param>
+        public void ClearLatest(MarkerType? onlyType = null)
+        {
+            if (onlyType != null)
+            {
+                GetLatestOfType(onlyType)?.Clear(this);
+            }
+            else
+            {
+                _latest?.Clear(this);
+            }
+        } 
+
+        /// <summary>
+        /// Rents an idle window of the given <paramref name="type"/> (or creates a new one), assigns it a
+        /// fresh unique ID, registers it as active, and records it as the latest marker.
+        /// </summary>
+        /// <returns>The activated window, with <see cref="MarkerWindow.Id"/> set to its assigned ID.</returns>
+        public MarkerWindow Rent(MarkerType type, CancellationTokenSource cts)
+        {
+            MarkerWindow window = _idle.TryTake(out MarkerWindow? w) ? w : new MarkerWindow(type);
+            window.Type = type;
+            window.Cts = cts;
+            int id = Interlocked.Increment(ref _idCounter);
+            window.Id = id;
+            _active[id] = window;
+            _latest = window;
+            return window;
+        }
+
+        /// <summary>
+        /// Retrieves the most recent marker window, optionally filtered by type.
+        /// </summary>
+        /// <param name="type">The marker type to filter by, or <see langword="null"/> to return the overall latest window.</param>
+        /// <returns>The most recent marker window of the specified type, or the overall latest if <paramref name="type"/> is <see langword="null"/>;.
+        ///     <see langword="null"/> if no matching window is found.</returns>
+        private MarkerWindow? GetLatestOfType(MarkerType? type)
+        {
+            MarkerWindow? latest = _latest;
+            if (type == null)
+            {
+                return latest;
+            }
+            else
+            {
+                // Loop through the active marker windows and find the most recent one of the specified type
+                foreach (var (_, window) in _active.OrderByDescending(kv => kv.Key))
+                {
+                    if (window.Type == type)
+                        return window;
+                }
+                // If none found
+                return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Displays a crosshair marker at the given screen coordinates.
+    /// Each call shows an independent marker, so multiple markers can be visible simultaneously.
+    /// </summary>
+    /// <param name="x">Absolute screen X coordinate (physical pixels) for the marker centre.</param>
+    /// <param name="y">Absolute screen Y coordinate (physical pixels) for the marker centre.</param>
+    /// <param name="durationMs">How long the marker stays visible in milliseconds. Pass <c>0</c> to keep it visible until <see cref="ClearAllMarkers"/> is called.</param>
+    /// <param name="markerOpacity">Opacity of the marker from 0 (invisible) to 255 (fully opaque).</param>
+    /// <returns><c>true</c> on success.</returns>
+    public void DrawClickPoint(int x, int y, int durationMs, int markerOpacity = 255)
+    {
+        MarkerWindow window = _markerPool.Rent(MarkerType.ClickPoint, new());
+
+        window.Show(x, y, markerOpacity);
+
+        // Auto-hide after the duration expires.
+        // If durationMs == 0, the marker must be cleared manually via ClearClickPoints().
         if (durationMs > 0)
         {
             Task.Run(async () =>
             {
-                await Task.Delay(durationMs);
-                if (_currentDrawId == drawId)
-                    _markerWindow.Hide();
+                try
+                {
+                    await Task.Delay(durationMs, window.Cts!.Token);
+
+                    window.Clear(_markerPool);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cleared externally by ClearClickPoints(); window is already handled there
+                }
             });
         }
-        return true;
     }
 
-    public bool ClearClickPoints()
-    {
-        Interlocked.Increment(ref _currentDrawId); // Cancel any pending auto-hides
-        _markerWindow.Hide();
-        return true;
-    }
+    /// <summary>
+    /// Hides all currently visible markers and cancels any pending auto-hide timers.
+    /// Released marker windows are returned to the pool for reuse.
+    /// </summary>
+    public void ClearClickPoints() => _markerPool.ClearAll();
 
-    private class MarkerWindow : IDisposable
+    /// <summary>
+    /// Hides only the most recently drawn marker and cancels its auto-hide timer.
+    /// Has no effect if no markers are currently active.
+    /// </summary>
+    public void ClearLatestMarker() => _markerPool.ClearLatest();
+
+    private class MarkerWindow
     {
         private IntPtr _hwnd;
         private IntPtr _magentaBrush;
@@ -192,8 +308,16 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private readonly object _stateLock = new();
         private int _x, _y, _opacity;
 
-        public MarkerWindow()
+        /// <summary>The unique ID assigned to this window by the provider for the current draw call. Reset on each reuse.</summary>
+        public int Id { get; set; }
+        /// <summary>The type of the marker.</summary>
+        public MarkerType Type { get; set; }
+        /// <summary>The cancellation source for this window's active auto-hide timer. Set on activation, disposed and nulled on clear.</summary>
+        public CancellationTokenSource? Cts { get; set; }
+
+        public MarkerWindow(MarkerType type)
         {
+            Type = type;
             _wndProcDelegate = WndProc;
             _messageThread = new Thread(MessagePump) { IsBackground = true, Name = "MarkerWindowPump" };
             _messageThread.SetApartmentState(ApartmentState.STA);
@@ -210,9 +334,25 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             NativeMethods.PostMessage(_hwnd, NativeMethods.WM_APP_SHOW, IntPtr.Zero, IntPtr.Zero);
         }
 
-        public void Hide()
+        private void Hide()
         {
             NativeMethods.PostMessage(_hwnd, NativeMethods.WM_APP_HIDE, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        /// <summary>
+        /// Removes this window from the pool's active set, cancels its auto-hide timer, hides it,
+        /// and returns it to the idle pool. Safe to call concurrently; does nothing if already deactivated.
+        /// </summary>
+        public void Clear(MarkerPool pool)
+        {
+            if (pool.TryDeactivate(Id, out _))
+            {
+                Cts?.Cancel();
+                Cts?.Dispose();
+                Cts = null;
+                Hide();
+                pool.MakeIdle(this);
+            }
         }
 
         private void MessagePump()
