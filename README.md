@@ -14,9 +14,11 @@ An AI desktop assistant app capable of interacting with your entire computer (an
 
 ## What It Does (And Why "Universal"?)
 
-**Simply put, it works across the whole computer.** Unlike most AI "computer use" tools which only work in a browser or via command line, this uses the computer like you do.
+**Simply put, it lets your AI works across the whole computer.** Unlike most AI "computer use" tools which only work in a browser or via command line, this uses the computer like you do.
 
 It controls Windows purely through visual perception and GUI interaction. By interpreting raw pixels and sending hardware-level input (mouse movements, clicks, keystrokes), it operates exactly like a human would. This makes it **universally compatible** with any graphical application on your machine.
+
+Also See: [Planned Features Page](https://github.com/ThioJoe/Thio-Universal-Agent/wiki/Planned-Features)
 
 ## Demonstration
 
