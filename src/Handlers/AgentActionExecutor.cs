@@ -9,6 +9,7 @@ namespace Thio_Universal_Agent;
 /// </summary>
 public sealed partial class AgentActionExecutor(
     IInputProvider inputProvider,
+    IScreenProvider screenProvider,
     CoordinatePrompter coordinatePrompter,
     AppConfig appConfig,
     ILogger<AgentActionExecutor> logger)
@@ -45,7 +46,7 @@ public sealed partial class AgentActionExecutor(
                     => await ExecuteClickDragAsync(action, screenshot, debugLog, cancellationToken, onProgress).ConfigureAwait(false),
 
                 AgentActionKind.TypeText
-                    => await ExecuteTypeTextAsync(action, debugLog, onProgress).ConfigureAwait(false),
+                    => await ExecuteTypeTextAsync(action, screenshot, debugLog, onProgress).ConfigureAwait(false),
 
                 AgentActionKind.KeyCombo
                     => await ExecuteKeyComboAsync(action, debugLog, onProgress).ConfigureAwait(false),
@@ -467,9 +468,24 @@ public sealed partial class AgentActionExecutor(
         return (coord, coordSw.ElapsedMilliseconds, usage);
     }
 
-    private async Task<ActionExecutionResult> ExecuteTypeTextAsync(AgentAction action, List<AgentDebugEntry>? debugLog, Func<AgentDebugEntry, Task>? onProgress = null)
+    private async Task<ActionExecutionResult> ExecuteTypeTextAsync(AgentAction action, Screenshot screenshot, List<AgentDebugEntry>? debugLog, Func<AgentDebugEntry, Task>? onProgress = null)
     {
         string text = action.Text ?? throw new InvalidOperationException("TypeText requires Text.");
+
+        // In human-control mode the AI may supply a bounding box; draw it so the operator knows where to click.
+        if (action.BoundingBox is not null)
+        {
+            string[] parts = action.BoundingBox.Split(',');
+            if (parts.Length == 4
+                && int.TryParse(parts[0], out int nx1) && int.TryParse(parts[1], out int ny1)
+                && int.TryParse(parts[2], out int nx2) && int.TryParse(parts[3], out int ny2))
+            {
+                ScreenCoordinate corner1 = ScreenCoordinate.FromNormalized(nx1, ny1, Screenshot.DefaultNormalized, Screenshot.DefaultNormalized, screenshot);
+                ScreenCoordinate corner2 = ScreenCoordinate.FromNormalized(nx2, ny2, Screenshot.DefaultNormalized, Screenshot.DefaultNormalized, screenshot);
+                screenProvider.DrawBoundingBox(corner1.AbsoluteX, corner1.AbsoluteY, corner2.AbsoluteX, corner2.AbsoluteY, int.MaxValue, label: text);
+                await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("Bounding Box", Text: $"({nx1},{ny1}) → ({nx2},{ny2}) → Abs: ({corner1.AbsoluteX},{corner1.AbsoluteY}) → ({corner2.AbsoluteX},{corner2.AbsoluteY})")).ConfigureAwait(false);
+            }
+        }
 
         LogTypingText(logger, text);
         await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: $"TypeTextAsync(\"{text}\")")).ConfigureAwait(false);

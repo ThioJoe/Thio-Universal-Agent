@@ -85,7 +85,7 @@ public static class AgentPromptBuilder
                 """
                 TYPE_TEXT "text to type" COORDS X1,Y1,X2,Y2
                   Types the given text using the keyboard. A text field must already have focus from a prior click.
-                  COORDS X1,Y1,X2,Y2 — provide an estimated bounding box of the text field the user should type into,
+                  COORDS X1,Y1,X2,Y2 — (Required) Provide an estimated bounding box of the text field the user should type into,
                   normalized within {normalizeSize}x{normalizeSize}. A bounding-box overlay will be displayed to guide the user.
                 """;
             internal const string Autonomous =
