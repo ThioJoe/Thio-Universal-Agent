@@ -165,7 +165,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     /// </summary>
     private sealed class MarkerPool
     {
-        private readonly ConcurrentDictionary<MarkerType, ConcurrentBag<MarkerWindow>> _idle = new();
+        private readonly ConcurrentDictionary<Type, ConcurrentBag<MarkerWindow>> _idle = new();
         private readonly ConcurrentDictionary<int, MarkerWindow> _active = new();
         private volatile MarkerWindow? _latest;
         private int _idCounter;
@@ -173,8 +173,9 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         /// <summary>The most recently activated marker, or <c>null</c> if none has been drawn yet.</summary>
         public MarkerWindow? Latest => _latest;
 
+        //TODO: Remove and TryDeactivate seem they could be consolidated, their descriptions suggest they do something similar
         /// <summary>Returns a hidden window to the idle pool for reuse by the next draw call.</summary>
-        public void MakeIdle(MarkerWindow window) => _idle.GetOrAdd(window.Type, _ => new ConcurrentBag<MarkerWindow>()).Add(window);
+        public void Remove(MarkerWindow window) => _idle.GetOrAdd(window.GetType(), _ => new ConcurrentBag<MarkerWindow>()).Add(window);
 
         /// <summary>Removes the marker with <paramref name="id"/> from the active set. Returns <c>true</c> and populates <paramref name="window"/> if found.</summary>
         public bool TryDeactivate(int id, out MarkerWindow window) => _active.TryRemove(id, out window!);
@@ -207,14 +208,14 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         } 
 
         /// <summary>
-        /// Rents an idle window of the given <paramref name="type"/> (or creates a new one), assigns it a
+        /// Rents an idle window of type <typeparamref name="T"/> (or creates a new one), assigns it a
         /// fresh unique ID, registers it as active, and records it as the latest marker.
         /// </summary>
         /// <returns>The activated window, with <see cref="MarkerWindow.Id"/> set to its assigned ID.</returns>
-        public MarkerWindow Rent(MarkerType type, CancellationTokenSource cts)
+        public T Rent<T>(CancellationTokenSource cts) where T : MarkerWindow, new()
         {
-            ConcurrentBag<MarkerWindow> bucket = _idle.GetOrAdd(type, _ => new ConcurrentBag<MarkerWindow>());
-            MarkerWindow window = bucket.TryTake(out MarkerWindow? w) ? w : CreateMarkerWindow(type);
+            ConcurrentBag<MarkerWindow> bucket = _idle.GetOrAdd(typeof(T), _ => new ConcurrentBag<MarkerWindow>());
+            T window = bucket.TryTake(out MarkerWindow? w) ? (T)w : new T();
             window.Cts = cts;
             int id = Interlocked.Increment(ref _idCounter);
             window.Id = id;
@@ -222,14 +223,6 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             _latest = window;
             return window;
         }
-
-        private static MarkerWindow CreateMarkerWindow(MarkerType type) => type switch
-        {
-            MarkerType.ClickPoint  => new ClickPoint(),
-            MarkerType.BoundingBox => new BoundingBox(),
-            MarkerType.ClickDrag   => new ClickDrag(),
-            _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
-        };
 
         /// <summary>
         /// Retrieves the most recent marker window, optionally filtered by type.
@@ -261,6 +254,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     /// <summary>
     /// Displays a crosshair marker at the given screen coordinates.
     /// Each call shows an independent marker, so multiple markers can be visible simultaneously.
+    /// The design of the marker is auto-created upon renting. 
     /// </summary>
     /// <param name="x">Absolute screen X coordinate (physical pixels) for the marker centre.</param>
     /// <param name="y">Absolute screen Y coordinate (physical pixels) for the marker centre.</param>
@@ -269,39 +263,20 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     /// <returns><c>true</c> on success.</returns>
     public void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity = 255)
     {
-        MarkerWindow window = _markerPool.Rent(MarkerType.ClickPoint, new());
-
-        window.Show(x, y, markerOpacity);
-
-        // Auto-hide after the duration expires.
-        // If durationMs == 0, the marker must be cleared manually via ClearClickPoints().
-        if (durationMs > 0)
-        {
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(durationMs, window.Cts!.Token);
-
-                    window.Clear(_markerPool);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Cleared externally by ClearClickPoints(); window is already handled there
-                }
-            });
-        }
+        ClickPointMarker window = _markerPool.Rent<ClickPointMarker>(new CancellationTokenSource());
+        window.Show(x, y, markerOpacity, durationMs, _markerPool);
     }
 
     public void DrawBoundingBox(int x1, int y1, int x2, int y2, int durationMs, int borderOpacity = 255, int fillOpacity = 0)
     {
-        MarkerWindow window = _markerPool.Rent(MarkerType.BoundingBox, new());
-
+        BoundingBoxMarker window = _markerPool.Rent<BoundingBoxMarker>(new CancellationTokenSource());
+        window.Show(x1, y1, x2, y2, borderOpacity, fillOpacity, durationMs, _markerPool);
     }
 
     public void DrawClickDragMarker(int x_start, int y_start, int x_end, int y_end, int durationMs, int markerOpacity = 255)
     {
-        MarkerWindow window = _markerPool.Rent(MarkerType.ClickDrag, new());
+        ClickDragMarker window = _markerPool.Rent<ClickDragMarker>(new CancellationTokenSource());
+        window.Show(x_start, y_start, x_end, y_end, markerOpacity, durationMs, _markerPool);
     }
 
     /// <summary>
@@ -324,7 +299,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private readonly ManualResetEventSlim _ready = new(false);
         private readonly NativeMethods.WndProcDelegate _wndProcDelegate;
 
-        private readonly object _stateLock = new();
+        protected readonly object StateLock = new();
         private int _x, _y, _opacity;
 
         /// <summary>The unique ID assigned to this window by the provider for the current draw call. Reset on each reuse.</summary>
@@ -349,13 +324,42 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             _ready.Wait(); // Block until the HWND is created
         }
 
-        public void Show(int x, int y, int opacity)
+        /// <summary>Displays the marker at the specified position with the given opacity and optionally clears it after a duration. </summary>
+        /// <remarks>
+        ///     - The display operation is thread-safe. If <paramref name="durationMs"/> is greater than zero,
+        ///     the marker is automatically cleared asynchronously after the specified duration unless cancelled externally.
+        ///     - This method should be used if the marker has already been drawn but just isn't visible.
+        /// </remarks>
+        /// <param name="x">The horizontal coordinate for the marker position.</param>
+        /// <param name="y">The vertical coordinate for the marker position.</param>
+        /// <param name="opacity">The opacity level for the marker display.</param>
+        /// <param name="durationMs">The duration in milliseconds before automatically clearing the marker. If zero or negative, the marker
+        /// persists until manually cleared.</param>
+        /// <param name="pool">The marker pool to return this marker to when clearing after the duration expires.</param>
+        public void Show(int x, int y, int opacity, int durationMs, MarkerPool pool)
         {
-            lock (_stateLock)
+            lock (StateLock)
             {
                 _x = x; _y = y; _opacity = opacity;
             }
             NativeMethods.PostMessage(_hwnd, NativeMethods.WM_APP_SHOW, IntPtr.Zero, IntPtr.Zero);
+
+            if (durationMs > 0)
+            {
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(durationMs, Cts!.Token);
+                        Clear(pool);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Cleared externally; window is already handled there
+                        // TODO: Decide whether to put debug level trace here
+                    }
+                });
+            }
         }
 
         private void Hide()
@@ -375,7 +379,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 Cts?.Dispose();
                 Cts = null;
                 Hide();
-                pool.MakeIdle(this);
+                pool.Remove(this);
             }
         }
 
@@ -385,6 +389,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private void MessagePump()
         {
             // CRITICAL: Make this thread Per-Monitor DPI Aware V2 so SetWindowPos uses raw physical pixels
+            //TODO: Make enum, see: https://learn.microsoft.com/en-us/windows/win32/hidpi/dpi-awareness-context
             NativeMethods.SetThreadDpiAwarenessContext(new IntPtr(-4));
 
             // Use Magenta as the background brush so we can Color-Key it out to be perfectly transparent
@@ -430,7 +435,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             {
                 case NativeMethods.WM_APP_SHOW:
                     int x, y, op;
-                    lock (_stateLock) { x = _x; y = _y; op = _opacity; }
+                    lock (StateLock) { x = _x; y = _y; op = _opacity; }
 
                     // Make magenta fully transparent, and apply the master opacity to the drawings
                     NativeMethods.SetLayeredWindowAttributes(hWnd, 0x00FF00FF, (byte)op, NativeMethods.LWA_COLORKEY | NativeMethods.LWA_ALPHA);
@@ -475,35 +480,155 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         }
     }
 
-    private sealed class ClickPoint : MarkerWindow
+    /// <param name="g">Graphics context to draw onto.</param>
+    /// <param name="centerX">X coordinate of the crosshair centre within the drawing surface.</param>
+    /// <param name="centerY">Y coordinate of the crosshair centre within the drawing surface.</param>
+    /// <param name="circleRadius">Radius of the circle ring.</param>
+    /// <param name="lineRadius">Distance from the centre to each end of the crosshair lines. Should be greater than <paramref name="circleRadius"/>.</param>
+    /// <param name="thickness">Pen stroke width in pixels.</param>
+    /// <param name="color">Colour of the crosshair.</param>
+    /// <param name="g">Graphics context to draw onto.</param>
+    /// <param name="startX">X coordinate of the arrow tail within the drawing surface.</param>
+    /// <param name="startY">Y coordinate of the arrow tail within the drawing surface.</param>
+    /// <param name="endX">X coordinate of the arrow tip within the drawing surface.</param>
+    /// <param name="endY">Y coordinate of the arrow tip within the drawing surface.</param>
+    /// <param name="thickness">Pen stroke width in pixels.</param>
+    /// <param name="color">Colour of the arrow.</param>
+    /// <param name="arrowHeadLength">Length of each arrowhead barb in pixels.</param>
+    private static void AddArrow(Graphics g, int startX, int startY, int endX, int endY, float thickness, Color color, int arrowHeadLength = 16)
+    {
+        using Pen pen = new Pen(color, thickness);
+        g.DrawLine(pen, startX, startY, endX, endY);
+
+        // Skip arrowhead if the two points are coincident
+        double dx = endX - startX;
+        double dy = endY - startY;
+        if (dx == 0 && dy == 0) return;
+
+        double angle = Math.Atan2(dy, dx);
+        const double BarbAngle = Math.PI / 6; // 30°
+        g.DrawLine(pen, endX, endY,
+            (int)(endX - arrowHeadLength * Math.Cos(angle - BarbAngle)),
+            (int)(endY - arrowHeadLength * Math.Sin(angle - BarbAngle)));
+        g.DrawLine(pen, endX, endY,
+            (int)(endX - arrowHeadLength * Math.Cos(angle + BarbAngle)),
+            (int)(endY - arrowHeadLength * Math.Sin(angle + BarbAngle)));
+    }
+
+    private static void AddCrosshair(Graphics g, int centerX, int centerY, int circleRadius, int lineRadius, float thickness, Color color)
+    {
+        using Pen pen = new Pen(color, thickness);
+        g.DrawEllipse(pen, centerX - circleRadius, centerY - circleRadius, circleRadius * 2, circleRadius * 2);
+        g.DrawLine(pen, centerX - lineRadius, centerY, centerX + lineRadius, centerY); // Horizontal
+        g.DrawLine(pen, centerX, centerY - lineRadius, centerX, centerY + lineRadius); // Vertical
+    }
+
+    private sealed class ClickPointMarker : MarkerWindow
     {
         public override MarkerType Type => MarkerType.ClickPoint;
         public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (60, 60, 30, 30);
 
         protected override void Paint(Graphics g)
         {
-            using Pen pen = new Pen(Color.Red, 4);
-            // Draw at the centre of the 60x60 window (30, 30)
-            g.DrawEllipse(pen, 15, 15, 30, 30); // Radius 15
-            g.DrawLine(pen, 8, 30, 52, 30);     // Horizontal crosshair
-            g.DrawLine(pen, 30, 8, 30, 52);     // Vertical crosshair
+            (int w, int h, int cx, int cy) = Geometry;
+            AddCrosshair(g, centerX: cx, centerY: cy, circleRadius: 15, lineRadius: 22, thickness: 4, Color.Red);
         }
     }
 
-    private sealed class BoundingBox : MarkerWindow
+    private sealed class BoundingBoxMarker : MarkerWindow
     {
+        private const int BorderThickness = 3;
+        // Padding so the border stroke is never clipped at the window edge (half stroke width, rounded up).
+        private const int Padding = (BorderThickness + 1) / 2 + 1;
+
+        private int _localWidth, _localHeight, _fillOpacity;
+
         public override MarkerType Type => MarkerType.BoundingBox;
         public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (0, 0, 0, 0);
 
-        protected override void Paint(Graphics g) => throw new NotImplementedException();
+        /// <summary>
+        /// Computes window geometry from the bounding-box screen coordinates, stores fill opacity,
+        /// then shows the marker.
+        /// </summary>
+        public void Show(int x1, int y1, int x2, int y2, int borderOpacity, int fillOpacity, int durationMs, MarkerPool pool)
+        {
+            int left = Math.Min(x1, x2) - Padding;
+            int top  = Math.Min(y1, y2) - Padding;
+            int w    = Math.Abs(x2 - x1) + Padding * 2;
+            int h    = Math.Abs(y2 - y1) + Padding * 2;
+
+            lock (StateLock)
+            {
+                Geometry      = (w, h, offsetX: x1 - left, offsetY: y1 - top);
+                _localWidth   = Math.Abs(x2 - x1);
+                _localHeight  = Math.Abs(y2 - y1);
+                _fillOpacity  = fillOpacity;
+            }
+
+            Show(x1, y1, borderOpacity, durationMs, pool);
+        }
+
+        protected override void Paint(Graphics g)
+        {
+            int localW, localH, fillAlpha;
+            (_, _, int originX, int originY) = Geometry;
+            lock (StateLock) { localW = _localWidth; localH = _localHeight; fillAlpha = _fillOpacity; }
+
+            Rectangle rect = new Rectangle(originX, originY, localW, localH);
+
+            if (fillAlpha > 0)
+            {
+                using SolidBrush fill = new SolidBrush(Color.FromArgb(fillAlpha, Color.Red));
+                g.FillRectangle(fill, rect);
+            }
+
+            using Pen border = new Pen(Color.Red, BorderThickness);
+            g.DrawRectangle(border, rect);
+        }
     }
 
-    private sealed class ClickDrag : MarkerWindow
+    private sealed class ClickDragMarker : MarkerWindow
     {
+        // Extra padding around the two endpoints so crosshair arms are never clipped at the window edge.
+        // Should match or exceed the lineRadius used in Paint.
+        private const int Padding = 15;
+
+        private int _localEndX, _localEndY;
+
         public override MarkerType Type => MarkerType.ClickDrag;
         public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (0, 0, 0, 0);
 
-        protected override void Paint(Graphics g) => throw new NotImplementedException();
+        /// <summary>
+        /// Computes window geometry from the drag screen coordinates, stores the local-space endpoint,
+        /// then shows the marker.
+        /// </summary>
+        public void Show(int x1, int y1, int x2, int y2, int opacity, int durationMs, MarkerPool pool)
+        {
+            int left = Math.Min(x1, x2) - Padding;
+            int top  = Math.Min(y1, y2) - Padding;
+            int w    = Math.Abs(x2 - x1) + Padding * 2;
+            int h    = Math.Abs(y2 - y1) + Padding * 2;
+
+            lock (StateLock)
+            {
+                Geometry   = (w, h, offsetX: x1 - left, offsetY: y1 - top);
+                _localEndX = x2 - left;
+                _localEndY = y2 - top;
+            }
+
+            Show(x1, y1, opacity, durationMs, pool);
+        }
+
+        protected override void Paint(Graphics g)
+        {
+            int endX, endY;
+            (_, _, int startX, int startY) = Geometry;
+            lock (StateLock) { endX = _localEndX; endY = _localEndY; }
+
+            AddCrosshair(g, startX, startY, circleRadius: 10, lineRadius: Padding, thickness: 3, Color.Orange);
+            AddCrosshair(g, endX,   endY,   circleRadius: 10, lineRadius: Padding, thickness: 3, Color.Orange);
+            AddArrow(g, startX, startY, endX, endY, thickness: 3, Color.Orange);
+        }
     }
 }
 
