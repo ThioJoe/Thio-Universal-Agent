@@ -48,7 +48,8 @@ public interface IScreenProvider
     /// <param name="y">The y-coordinate of the click point.</param>
     /// <param name="durationMs">The duration in milliseconds for which the click point should be displayed. Default is 1000ms. 0 for until cleared manually.</param>
     /// <param name="markerOpacity">The opacity of the click marker, from 0 (fully transparent) to 255 (fully opaque). Default is 255.</param>
-    void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity=255);
+    /// <param name="label">Optional text label drawn near the marker. Pass <c>null</c> (default) to show no label.</param>
+    void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity = 255, string? label = null);
 
     /// <summary>
     /// Draws a visual marker representing a click-and-drag operation from a starting point to an ending point.
@@ -59,7 +60,8 @@ public interface IScreenProvider
     /// <param name="y_end">The vertical coordinate of the drag ending point.</param>
     /// <param name="durationMs">The duration for which the marker is displayed, in milliseconds.</param>
     /// <param name="markerOpacity">The opacity of the marker, ranging from 0 (transparent) to 255 (opaque).</param>
-    void DrawClickDragMarker(int x_start, int y_start, int x_end, int y_end, int durationMs, int markerOpacity = 255);
+    /// <param name="label">Optional text label drawn near the marker. Pass <c>null</c> (default) to show no label.</param>
+    void DrawClickDragMarker(int x_start, int y_start, int x_end, int y_end, int durationMs, int markerOpacity = 255, string? label = null);
 
     /// <summary>
     /// Draws a bounding box with the specified coordinates, duration, and opacity settings. Can be used to highlight text box element etc.
@@ -71,7 +73,20 @@ public interface IScreenProvider
     /// <param name="durationMs">The duration in milliseconds to display the bounding box.</param>
     /// <param name="borderOpacity">The opacity of the border (0-255). Default is 255 (fully opaque).</param>
     /// <param name="fillOpacity">The opacity of the fill (0-255). Default is 0 (transparent).</param>
-    void DrawBoundingBox(int x1, int y1, int x2, int y2, int durationMs, int borderOpacity = 255, int fillOpacity = 0);
+    /// <param name="label">Optional text label drawn near the marker. Pass <c>null</c> (default) to show no label.</param>
+    void DrawBoundingBox(int x1, int y1, int x2, int y2, int durationMs, int borderOpacity = 255, int fillOpacity = 0, string? label = null);
+
+    /// <summary>
+    /// Displays a single-point move marker (open crosshair, no arrow) at the given coordinates.
+    /// Intended for human-control mode where there is no meaningful start position.
+    /// </summary>
+    void DrawMouseMoveMarker(int x, int y, int durationMs, int markerOpacity = 255, string? label = null);
+
+    /// <summary>
+    /// Displays a single-point move arrow marker at the given coordinates.
+    /// Intended for autonomous mode to visualise where the cursor just moved.
+    /// </summary>
+    void DrawMouseMoveArrow(int x, int y, int durationMs, int markerOpacity = 255);
 
     /// <summary>
     /// Clears all drawn click points.

@@ -196,6 +196,8 @@ public partial class WindowsInputProvider : IInputProvider
     /// <inheritdoc/>
     public void HoldModifierKeys(ModifierKeys modifiers)
     {
+        if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
         List<INPUT> inputList = [];
         if (modifiers.HasFlag(ModifierKeys.Win))
             inputList.Add(CreateInput(vk: modifierKeyCodes["LWIN"].vk, scan: modifierKeyCodes["LWIN"].scan, isKeyUp: false, extended: modifierKeyCodes["LWIN"].extended));
@@ -212,6 +214,8 @@ public partial class WindowsInputProvider : IInputProvider
     /// <inheritdoc/>
     public void ReleaseModifierKeys(ModifierKeys modifiers)
     {
+        if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
         List<INPUT> inputList = [];
         if (modifiers.HasFlag(ModifierKeys.Alt))
             inputList.Add(CreateInput(vk: modifierKeyCodes["LALT"].vk, scan: modifierKeyCodes["LALT"].scan, isKeyUp: true, extended: false));
@@ -225,8 +229,10 @@ public partial class WindowsInputProvider : IInputProvider
             SendInput((uint)inputList.Count, [.. inputList], Marshal.SizeOf(typeof(INPUT)));
     }
 
-    private static void SendMouseEvent(uint flag)
+    private void SendMouseEvent(uint flag)
     {
+        if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
         INPUT[] inputs =
             [
                 new INPUT
@@ -252,6 +258,8 @@ public partial class WindowsInputProvider : IInputProvider
 
     private void Scroll(ScrollDirection direction, int multiple, ScrollMode mode = ScrollMode.SendInput)
     {
+        if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
         int scrollAmount = Math.Abs(multiple); // Ensure a sign hasn't been given to multiple already
 
         // Set sign based on direction
@@ -265,7 +273,7 @@ public partial class WindowsInputProvider : IInputProvider
             ScrollMouse_WithWM_Async(scrollAmount);
     }
 
-    private void ScrollMouse_WithSendInput_Async(int scrollAmount)
+    private static void ScrollMouse_WithSendInput_Async(int scrollAmount)
     {
         INPUT[] inputs = new INPUT[1];
 

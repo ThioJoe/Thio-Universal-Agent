@@ -154,7 +154,8 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     {
         ClickPoint,
         ClickDrag,
-        BoundingBox
+        BoundingBox,
+        MouseMove
     }
 
     private readonly MarkerPool _markerPool = new();
@@ -261,22 +262,46 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     /// <param name="durationMs">How long the marker stays visible in milliseconds. Pass <c>0</c> to keep it visible until <see cref="ClearAllMarkers"/> is called.</param>
     /// <param name="markerOpacity">Opacity of the marker from 0 (invisible) to 255 (fully opaque).</param>
     /// <returns><c>true</c> on success.</returns>
-    public void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity = 255)
+    public void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity = 255, string? label = null)
     {
         ClickPointMarker window = _markerPool.Rent<ClickPointMarker>(new CancellationTokenSource());
+        window.Label = label;
         window.Show(x, y, markerOpacity, durationMs, _markerPool);
     }
 
-    public void DrawBoundingBox(int x1, int y1, int x2, int y2, int durationMs, int borderOpacity = 255, int fillOpacity = 0)
+    public void DrawBoundingBox(int x1, int y1, int x2, int y2, int durationMs, int borderOpacity = 255, int fillOpacity = 0, string? label = null)
     {
         BoundingBoxMarker window = _markerPool.Rent<BoundingBoxMarker>(new CancellationTokenSource());
+        window.Label = label;
         window.Show(x1, y1, x2, y2, borderOpacity, fillOpacity, durationMs, _markerPool);
     }
 
-    public void DrawClickDragMarker(int x_start, int y_start, int x_end, int y_end, int durationMs, int markerOpacity = 255)
+    public void DrawClickDragMarker(int x_start, int y_start, int x_end, int y_end, int durationMs, int markerOpacity = 255, string? label = null)
     {
         ClickDragMarker window = _markerPool.Rent<ClickDragMarker>(new CancellationTokenSource());
+        window.Label = label;
         window.Show(x_start, y_start, x_end, y_end, markerOpacity, durationMs, _markerPool);
+    }
+
+    /// <summary>
+    /// Displays a single-point move marker (open crosshair, no arrow) at <paramref name="x"/>, <paramref name="y"/>.
+    /// Intended for human-control mode where there is no meaningful start position.
+    /// </summary>
+    public void DrawMouseMoveMarker(int x, int y, int durationMs, int markerOpacity = 255, string? label = null)
+    {
+        MouseMoveDestinationMarker window = _markerPool.Rent<MouseMoveDestinationMarker>(new CancellationTokenSource());
+        window.Label = label;
+        window.Show(x, y, x, y, markerOpacity, durationMs, _markerPool);
+    }
+
+    /// <summary>
+    /// Displays a single-point move arrow marker at <paramref name="x"/>, <paramref name="y"/>.
+    /// Intended for autonomous mode to visualise where the cursor just moved.
+    /// </summary>
+    public void DrawMouseMoveArrow(int x, int y, int durationMs, int markerOpacity = 255)
+    {
+        MouseMoveDestinationMarker window = _markerPool.Rent<MouseMoveDestinationMarker>(new CancellationTokenSource());
+        window.Show(x, y, x, y, markerOpacity, durationMs, _markerPool);
     }
 
     /// <summary>
@@ -312,6 +337,8 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         /// Can be overridden per-instance to customise the size of an individual marker.
         /// </summary>
         public abstract (int width, int height, int offsetX, int offsetY) Geometry { get; set; }
+        /// <summary>Optional text drawn near the marker's anchor point. Set before each call to <c>Show</c>; <c>null</c> suppresses the label.</summary>
+        internal string? Label;
         /// <summary>The cancellation source for this window's active auto-hide timer. Set on activation, disposed and nulled on clear.</summary>
         public CancellationTokenSource? Cts { get; set; }
 
@@ -523,6 +550,40 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         g.DrawLine(pen, centerX, centerY - lineRadius, centerX, centerY + lineRadius); // Vertical
     }
 
+    /// <summary>
+    /// Draws a circle with four outward spokes but no lines through the centre — an "open" crosshair.
+    /// </summary>
+    private static void AddOpenCrosshair(Graphics g, int centerX, int centerY, int circleRadius, int spokeLength, float thickness, Color color)
+    {
+        using Pen pen = new Pen(color, thickness);
+        g.DrawEllipse(pen, centerX - circleRadius, centerY - circleRadius, circleRadius * 2, circleRadius * 2);
+        int outer = circleRadius + spokeLength;
+        g.DrawLine(pen, centerX,         centerY - circleRadius, centerX,         centerY - outer); // Up
+        g.DrawLine(pen, centerX,         centerY + circleRadius, centerX,         centerY + outer); // Down
+        g.DrawLine(pen, centerX - outer, centerY,                centerX - circleRadius, centerY); // Left
+        g.DrawLine(pen, centerX + circleRadius, centerY,        centerX + outer, centerY);         // Right
+    }
+
+    /// <summary>
+    /// Draws <paramref name="text"/> near (<paramref name="anchorX"/>, <paramref name="anchorY"/>) with a
+    /// thin dark outline so it stays readable over any background colour.
+    /// </summary>
+    private static void AddLabel(Graphics g, int anchorX, int anchorY, string text, Color color)
+    {
+        using Font font = new Font("Segoe UI", 11f, FontStyle.Bold, GraphicsUnit.Point);
+        using SolidBrush outline = new SolidBrush(Color.FromArgb(200, Color.Black));
+        using SolidBrush fill    = new SolidBrush(color);
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+
+        // Draw outline by painting the text shifted one pixel in each of the 8 directions
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+                if (dx != 0 || dy != 0)
+                    g.DrawString(text, font, outline, anchorX + dx, anchorY + dy);
+
+        g.DrawString(text, font, fill, anchorX, anchorY);
+    }
+
     private sealed class ClickPointMarker : MarkerWindow
     {
         public override MarkerType Type => MarkerType.ClickPoint;
@@ -532,6 +593,11 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         {
             (int w, int h, int cx, int cy) = Geometry;
             AddCrosshair(g, centerX: cx, centerY: cy, circleRadius: 15, lineRadius: 22, thickness: 4, Color.Red);
+
+            if (Label != null) 
+            { 
+                AddLabel(g, cx + 26, cy + 26, Label, Color.Red); 
+            }
         }
     }
 
@@ -584,6 +650,58 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
             using Pen border = new Pen(Color.Red, BorderThickness);
             g.DrawRectangle(border, rect);
+
+            if (Label != null) 
+            { 
+                AddLabel(g, originX + 4, originY - 22, Label, Color.Red); 
+            }
+        }
+    }
+
+    private sealed class MouseMoveDestinationMarker : MarkerWindow
+    {
+        // Extra padding so the open-crosshair arms at the destination are never clipped.
+        // Should match or exceed circleRadius + spokeLength used in Paint.
+        private const int Padding = 26;
+
+        private int _localEndX, _localEndY;
+
+        public override MarkerType Type => MarkerType.MouseMove;
+        public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (0, 0, 0, 0);
+
+        /// <summary>
+        /// Computes window geometry from the move screen coordinates, stores the local-space endpoint,
+        /// then shows the marker.
+        /// </summary>
+        public void Show(int x1, int y1, int x2, int y2, int opacity, int durationMs, MarkerPool pool)
+        {
+            int left = Math.Min(x1, x2) - Padding;
+            int top  = Math.Min(y1, y2) - Padding;
+            int w    = Math.Abs(x2 - x1) + Padding * 2;
+            int h    = Math.Abs(y2 - y1) + Padding * 2;
+
+            lock (StateLock)
+            {
+                Geometry   = (w, h, offsetX: x1 - left, offsetY: y1 - top);
+                _localEndX = x2 - left;
+                _localEndY = y2 - top;
+            }
+
+            Show(x1, y1, opacity, durationMs, pool);
+        }
+
+        protected override void Paint(Graphics g)
+        {
+            int endX, endY;
+            (_, _, int startX, int startY) = Geometry;
+            lock (StateLock) { endX = _localEndX; endY = _localEndY; }
+            AddArrow(g, startX, startY, endX, endY, thickness: 3, Color.Blue);
+            AddOpenCrosshair(g, endX, endY, circleRadius: 14, spokeLength: 10, thickness: 3, Color.Blue);
+
+            if (Label != null) 
+            { 
+                AddLabel(g, endX + 26, endY + 26, Label, Color.Blue); 
+            }
         }
     }
 
@@ -628,6 +746,11 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             AddCrosshair(g, startX, startY, circleRadius: 10, lineRadius: Padding, thickness: 3, Color.Orange);
             AddCrosshair(g, endX,   endY,   circleRadius: 10, lineRadius: Padding, thickness: 3, Color.Orange);
             AddArrow(g, startX, startY, endX, endY, thickness: 3, Color.Orange);
+
+            if (Label != null)
+            {
+                AddLabel(g, endX + Padding + 4, endY + Padding + 4, Label, Color.Orange);
+            }
         }
     }
 }

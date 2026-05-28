@@ -20,6 +20,8 @@ namespace Thio_Universal_Agent.OS_Windows
 
         public async Task SendModKeyComboAsync(string? key, bool? ctrl = null, bool? shift = null, bool? alt = null, bool? win = null)
         {
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
             // Make all of them nullable in case there is no primary key, meaning only modifier keys are pressed
             ushort? vk = null;
             ushort? scan = null;
@@ -97,6 +99,8 @@ namespace Thio_Universal_Agent.OS_Windows
         /// </summary>
         public async Task TypeTextAsync(string text)
         {
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
             if (string.IsNullOrEmpty(text)) return;
 
             // Convert the string into a list of TextCharCode objects.
@@ -137,10 +141,16 @@ namespace Thio_Universal_Agent.OS_Windows
 
         public async Task LeftClick_MonitorCoords(int x, int y)
         {
-            if (_appConfig.General.ShowClickMarkersDuration > 0)
+            if (HumanControlOnlyMode == true)
+            {
+                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200);
+            }
+            else if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
                 _screenProvider.DrawClickPointMarker(x, y, _appConfig.General.ShowClickMarkersDuration);
             }
+
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseMove(x, y);
@@ -153,10 +163,16 @@ namespace Thio_Universal_Agent.OS_Windows
 
         public async Task DoubleClick_MonitorCoords(int x, int y)
         {
-            if (_appConfig.General.ShowClickMarkersDuration > 0)
+            if (HumanControlOnlyMode == true)
+            {
+                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200);
+            }
+            else if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
                 _screenProvider.DrawClickPointMarker(x, y, _appConfig.General.ShowClickMarkersDuration);
             }
+
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseMove(x, y);
@@ -169,10 +185,16 @@ namespace Thio_Universal_Agent.OS_Windows
 
         public async Task RightClick_MonitorCoords(int x, int y)
         {
-            if (_appConfig.General.ShowClickMarkersDuration > 0)
+            if (HumanControlOnlyMode == true)
+            {
+                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200);
+            }
+            else if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
                 _screenProvider.DrawClickPointMarker(x, y, _appConfig.General.ShowClickMarkersDuration);
             }
+
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseMove(x, y);
@@ -185,10 +207,16 @@ namespace Thio_Universal_Agent.OS_Windows
 
         public async Task MiddleMouse_MonitorCoords(int x, int y)
         {
-            if (_appConfig.General.ShowClickMarkersDuration > 0)
+            if (HumanControlOnlyMode == true)
+            {
+                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200);
+            }
+            else if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
                 _screenProvider.DrawClickPointMarker(x, y, _appConfig.General.ShowClickMarkersDuration);
             }
+
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseMove(x, y);
@@ -199,8 +227,10 @@ namespace Thio_Universal_Agent.OS_Windows
             SendMouseClick(MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP);
         }
 
-        private static void SendMouseClick(uint downFlag, uint upFlag, int count = 1)
+        private void SendMouseClick(uint downFlag, uint upFlag, int count = 1)
         {
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
             INPUT[] inputs = new INPUT[count * 2];
 
             for (int i = 0; i < count; i++)
@@ -220,7 +250,7 @@ namespace Thio_Universal_Agent.OS_Windows
         /// Unlike SetCursorPos, this pushes through the hardware input queue so applications
         /// that process WM_MOUSEMOVE from the queue (e.g. during a drag) receive the event.
         /// </summary>
-        private static void SendMouseMove(int screenX, int screenY)
+        private void SendMouseMove(int screenX, int screenY)
         {
             int vScreenLeft   = GetSystemMetrics(76); // SM_XVIRTUALSCREEN
             int vScreenTop    = GetSystemMetrics(77); // SM_YVIRTUALSCREEN
@@ -230,6 +260,19 @@ namespace Thio_Universal_Agent.OS_Windows
             // Normalize to [0, 65535]. Subtracting Left/Top is crucial to handle multi-monitor setups correctly.
             int normalizedX = ((screenX - vScreenLeft) * 65535) / (vScreenWidth - 1);
             int normalizedY = ((screenY - vScreenTop) * 65535) / (vScreenHeight - 1);
+
+            // Draw arrow
+            if (HumanControlOnlyMode == true)
+            {
+                _screenProvider.DrawMouseMoveMarker(screenX, screenY, int.MaxValue, 200);
+
+            }
+            else if (_appConfig.General.ShowClickMarkersDuration > 0)
+            {
+                _screenProvider.DrawMouseMoveArrow(screenX, screenY, _appConfig.General.ShowClickMarkersDuration);
+            }
+
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
             INPUT[] inputs =
             [
@@ -252,6 +295,10 @@ namespace Thio_Universal_Agent.OS_Windows
 
         public async Task ClickDrag_MonitorCoords(int x_start, int y_start, int x_end, int y_end)
         {
+
+
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
             SendMouseMove(x_start, y_start);
