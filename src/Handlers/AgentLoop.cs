@@ -152,14 +152,48 @@ public sealed partial class AgentLoop(
 
                 bool humanMode = appConfig.General.HumanControlOnlyMode;
 
+                // Single progress callback — all sub-steps are attributed to the parent step number.
+                async Task executorProgress(AgentDebugEntry entry)
+                {
+                    if (!debugging && entry.ImageBase64 is null) return;
+                    await session.RaiseSubStepUpdateAsync(new AgentSubStep(step, entry)).ConfigureAwait(false);
+                }
+
                 // Emit ONE preview for the whole batch — UI shows the first action and a queue badge.
                 // This is intentionally done BEFORE the pause gate so the user can see the AI's
                 // plan even while the session is paused.
                 AgentStepPreview preview = new AgentStepPreview(step, parsed.Thought, actionsToRun[0], actionsToRun.Count);
                 await session.RaiseStepStartingAsync(preview).ConfigureAwait(false);
 
-                // In human control mode, automatically pause after showing each step so the human
-                // can perform the action themselves before the loop continues.
+                // In human mode, execute all non-terminal actions before pausing so that markers are
+                // drawn on screen while the user reviews the step. Actual OS input is suppressed by
+                // the input provider's HumanControlOnlyMode guards. Results (and per-action debug logs
+                // for batches) are stored and replayed in the execution loop below so token usage and
+                // step data remain consistent.
+                List<(ActionExecutionResult Result, List<AgentDebugEntry>? DebugLog)>? humanPreResults = null;
+                if (humanMode)
+                {
+                    humanPreResults = new(actionsToRun.Count);
+                    for (int preQi = 0; preQi < actionsToRun.Count; preQi++)
+                    {
+                        AgentAction preAction = actionsToRun[preQi];
+                        // Terminal actions are not pre-executed; they are handled normally in the main loop.
+                        if (preAction.Kind is AgentActionKind.Done or AgentActionKind.Fail)
+                        {
+                            humanPreResults.Add((new ActionExecutionResult(true, "Action performed by user.", IsTerminal: false, GoalAchieved: false), null));
+                            continue;
+                        }
+                        // qi == 0 shares the outer debugLog directly; qi > 0 gets its own segment.
+                        List<AgentDebugEntry>? preDebugLog = preQi == 0 ? debugLog : (debugging ? [] : null);
+                        (ActionExecutionResult preResult, TokenUsage preUsage) = await ExecuteWithTargetRecoveryAsync(
+                            preAction, screenshot, conversation, ct, preDebugLog, executorProgress).ConfigureAwait(false);
+                        stepUsage += preUsage;
+                        humanPreResults.Add((preResult, preQi == 0 ? null : preDebugLog));
+                    }
+                }
+
+                // In human control mode, automatically pause after showing each step (and after markers
+                // have been drawn above) so the human can perform the action before the loop continues.
                 if (humanMode)
                     session.Pause();
 
@@ -171,6 +205,10 @@ public sealed partial class AgentLoop(
                     await session.WaitIfPausedAsync(ct).ConfigureAwait(false);
                 else
                     await session.WaitIfPausedWithCountdownAsync(5, ct).ConfigureAwait(false);
+
+                // In human mode, markers persist indefinitely until the human resumes; clear them now.
+                if (humanMode)
+                    screenProvider.ClearMarkers();
 
                 // If the user submitted guidance with "cancel next action" while paused, skip
                 // execution entirely, emit a cancelled step to the log, then redirect the AI.
@@ -220,13 +258,6 @@ public sealed partial class AgentLoop(
                     continue;
                 }
 
-                // Single progress callback — all sub-steps are attributed to the parent step number.
-                async Task executorProgress(AgentDebugEntry entry)
-                {
-                    if (!debugging && entry.ImageBase64 is null) return;
-                    await session.RaiseSubStepUpdateAsync(new AgentSubStep(step, entry)).ConfigureAwait(false);
-                }
-
                 List<ActionExecutionResult> batchResults = new List<ActionExecutionResult>(actionsToRun.Count);
                 List<QueuedSubStep>? subSteps = isBatch ? new(actionsToRun.Count) : null;
                 bool batchTerminated = false;
@@ -244,12 +275,15 @@ public sealed partial class AgentLoop(
                     ActionExecutionResult result;
                     TokenUsage execUsage;
 
-                    // In human control mode the human performs every action themselves.
-                    // Skip OS execution for all non-terminal actions and treat them as successful.
-                    if (humanMode && currentAction.Kind is not AgentActionKind.Done and not AgentActionKind.Fail)
+                    // In human mode, replay the pre-execution results (markers were drawn before the pause;
+                    // token usage was already added to stepUsage during pre-execution).
+                    if (humanPreResults is not null && qi < humanPreResults.Count && currentAction.Kind is not AgentActionKind.Done and not AgentActionKind.Fail)
                     {
-                        result = new ActionExecutionResult(true, "Action performed by user.", IsTerminal: false, GoalAchieved: false);
+                        result = humanPreResults[qi].Result;
                         execUsage = new TokenUsage(0, 0, 0);
+                        // For qi > 0 (batch sub-steps), restore the debug log captured during pre-execution.
+                        if (qi > 0 && humanPreResults[qi].DebugLog is { Count: > 0 })
+                            qiDebugLog = humanPreResults[qi].DebugLog;
                     }
                     else
                     {
