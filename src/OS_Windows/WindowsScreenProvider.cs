@@ -165,7 +165,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     /// </summary>
     private sealed class MarkerPool
     {
-        private readonly ConcurrentBag<MarkerWindow> _idle = [];
+        private readonly ConcurrentDictionary<MarkerType, ConcurrentBag<MarkerWindow>> _idle = new();
         private readonly ConcurrentDictionary<int, MarkerWindow> _active = new();
         private volatile MarkerWindow? _latest;
         private int _idCounter;
@@ -174,7 +174,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         public MarkerWindow? Latest => _latest;
 
         /// <summary>Returns a hidden window to the idle pool for reuse by the next draw call.</summary>
-        public void MakeIdle(MarkerWindow window) => _idle.Add(window);
+        public void MakeIdle(MarkerWindow window) => _idle.GetOrAdd(window.Type, _ => new ConcurrentBag<MarkerWindow>()).Add(window);
 
         /// <summary>Removes the marker with <paramref name="id"/> from the active set. Returns <c>true</c> and populates <paramref name="window"/> if found.</summary>
         public bool TryDeactivate(int id, out MarkerWindow window) => _active.TryRemove(id, out window!);
@@ -213,8 +213,8 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         /// <returns>The activated window, with <see cref="MarkerWindow.Id"/> set to its assigned ID.</returns>
         public MarkerWindow Rent(MarkerType type, CancellationTokenSource cts)
         {
-            MarkerWindow window = _idle.TryTake(out MarkerWindow? w) ? w : new MarkerWindow(type);
-            window.Type = type;
+            ConcurrentBag<MarkerWindow> bucket = _idle.GetOrAdd(type, _ => new ConcurrentBag<MarkerWindow>());
+            MarkerWindow window = bucket.TryTake(out MarkerWindow? w) ? w : CreateMarkerWindow(type);
             window.Cts = cts;
             int id = Interlocked.Increment(ref _idCounter);
             window.Id = id;
@@ -222,6 +222,14 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             _latest = window;
             return window;
         }
+
+        private static MarkerWindow CreateMarkerWindow(MarkerType type) => type switch
+        {
+            MarkerType.ClickPoint  => new ClickPoint(),
+            MarkerType.BoundingBox => new BoundingBox(),
+            MarkerType.ClickDrag   => new ClickDrag(),
+            _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
+        };
 
         /// <summary>
         /// Retrieves the most recent marker window, optionally filtered by type.
@@ -259,7 +267,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     /// <param name="durationMs">How long the marker stays visible in milliseconds. Pass <c>0</c> to keep it visible until <see cref="ClearAllMarkers"/> is called.</param>
     /// <param name="markerOpacity">Opacity of the marker from 0 (invisible) to 255 (fully opaque).</param>
     /// <returns><c>true</c> on success.</returns>
-    public void DrawClickPoint(int x, int y, int durationMs, int markerOpacity = 255)
+    public void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity = 255)
     {
         MarkerWindow window = _markerPool.Rent(MarkerType.ClickPoint, new());
 
@@ -285,11 +293,22 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         }
     }
 
+    public void DrawBoundingBox(int x1, int y1, int x2, int y2, int durationMs, int borderOpacity = 255, int fillOpacity = 0)
+    {
+        MarkerWindow window = _markerPool.Rent(MarkerType.BoundingBox, new());
+
+    }
+
+    public void DrawClickDragMarker(int x_start, int y_start, int x_end, int y_end, int durationMs, int markerOpacity = 255)
+    {
+        MarkerWindow window = _markerPool.Rent(MarkerType.ClickDrag, new());
+    }
+
     /// <summary>
-    /// Hides all currently visible markers and cancels any pending auto-hide timers.
+    /// Hides all currently visible markers
     /// Released marker windows are returned to the pool for reuse.
     /// </summary>
-    public void ClearClickPoints() => _markerPool.ClearAll();
+    public void ClearMarkers() => _markerPool.ClearAll();
 
     /// <summary>
     /// Hides only the most recently drawn marker and cancels its auto-hide timer.
@@ -297,7 +316,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     /// </summary>
     public void ClearLatestMarker() => _markerPool.ClearLatest();
 
-    private class MarkerWindow
+    private abstract class MarkerWindow
     {
         private IntPtr _hwnd;
         private IntPtr _magentaBrush;
@@ -310,14 +329,19 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
         /// <summary>The unique ID assigned to this window by the provider for the current draw call. Reset on each reuse.</summary>
         public int Id { get; set; }
-        /// <summary>The type of the marker.</summary>
-        public MarkerType Type { get; set; }
+        /// <summary>The type of the marker. Implemented by each subclass as a constant value.</summary>
+        public abstract MarkerType Type { get; }
+        /// <summary>
+        /// The window size and anchor offset for this marker.
+        /// The offset is subtracted from the target coordinate so the visual centre lands on that point.
+        /// Can be overridden per-instance to customise the size of an individual marker.
+        /// </summary>
+        public abstract (int width, int height, int offsetX, int offsetY) Geometry { get; set; }
         /// <summary>The cancellation source for this window's active auto-hide timer. Set on activation, disposed and nulled on clear.</summary>
         public CancellationTokenSource? Cts { get; set; }
 
-        public MarkerWindow(MarkerType type)
+        protected MarkerWindow()
         {
-            Type = type;
             _wndProcDelegate = WndProc;
             _messageThread = new Thread(MessagePump) { IsBackground = true, Name = "MarkerWindowPump" };
             _messageThread.SetApartmentState(ApartmentState.STA);
@@ -355,6 +379,9 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             }
         }
 
+        /// <summary>Performs the GDI drawing for this marker type onto <paramref name="g"/>.</summary>
+        protected abstract void Paint(Graphics g);
+
         private void MessagePump()
         {
             // CRITICAL: Make this thread Per-Monitor DPI Aware V2 so SetWindowPos uses raw physical pixels
@@ -375,9 +402,15 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             // Layered = transparency. Transparent = mouse clicks pass right through it. Topmost = stays on top.
             uint dwExStyle = NativeMethods.WS_EX_LAYERED | NativeMethods.WS_EX_TRANSPARENT | NativeMethods.WS_EX_TOPMOST | NativeMethods.WS_EX_TOOLWINDOW;
 
+            (int w, int h, _, _) = Geometry;
             _hwnd = NativeMethods.CreateWindowExW(
-                dwExStyle, "TUA_MarkerWindow", "TUA Marker", NativeMethods.WS_POPUP,
-                0, 0, 60, 60, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+                dwExStyle: dwExStyle,
+                lpClassName: "TUA_MarkerWindow",
+                lpWindowName: "TUA Marker",
+                dwStyle: NativeMethods.WS_POPUP,
+                x: 0, y: 0, nWidth: w, nHeight: h,
+                hWndParent: IntPtr.Zero, hMenu: IntPtr.Zero, hInstance: IntPtr.Zero, lpParam: IntPtr.Zero
+            );
 
             _ready.Set();
 
@@ -399,11 +432,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                     int x, y, op;
                     lock (_stateLock) { x = _x; y = _y; op = _opacity; }
 
-                    // Make magenta fully transparent, and apply the master opacity to the red drawings
+                    // Make magenta fully transparent, and apply the master opacity to the drawings
                     NativeMethods.SetLayeredWindowAttributes(hWnd, 0x00FF00FF, (byte)op, NativeMethods.LWA_COLORKEY | NativeMethods.LWA_ALPHA);
 
-                    // Move the 60x60 window so its center (30,30) is exactly over the target coordinates
-                    NativeMethods.SetWindowPos(hWnd, NativeMethods.HWND_TOPMOST, x - 30, y - 30, 60, 60, NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+                    // Position the window so its visual centre lands on the target coordinate
+                    (int w, int h, int ox, int oy) = Geometry;
+                    NativeMethods.SetWindowPos(hWnd, NativeMethods.HWND_TOPMOST, x - ox, y - oy, w, h, NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
 
                     // Force a repaint in case it was already visible
                     NativeMethods.InvalidateRect(hWnd, IntPtr.Zero, true);
@@ -417,13 +451,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                     IntPtr hdc = NativeMethods.BeginPaint(hWnd, out NativeMethods.PAINTSTRUCT ps);
 
                     using (Graphics g = Graphics.FromHdc(hdc))
-                    using (Pen pen = new Pen(Color.Red, 4))
-                    {
-                        // Draw at the center of our 60x60 window (30, 30)
-                        g.DrawEllipse(pen, 15, 15, 30, 30); // Radius 15
-                        g.DrawLine(pen, 8, 30, 52, 30);     // Horizontal crosshair
-                        g.DrawLine(pen, 30, 8, 30, 52);     // Vertical crosshair
-                    }
+                        Paint(g);
 
                     NativeMethods.EndPaint(hWnd, ref ps);
                     return IntPtr.Zero;
@@ -447,7 +475,36 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         }
     }
 
+    private sealed class ClickPoint : MarkerWindow
+    {
+        public override MarkerType Type => MarkerType.ClickPoint;
+        public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (60, 60, 30, 30);
 
+        protected override void Paint(Graphics g)
+        {
+            using Pen pen = new Pen(Color.Red, 4);
+            // Draw at the centre of the 60x60 window (30, 30)
+            g.DrawEllipse(pen, 15, 15, 30, 30); // Radius 15
+            g.DrawLine(pen, 8, 30, 52, 30);     // Horizontal crosshair
+            g.DrawLine(pen, 30, 8, 30, 52);     // Vertical crosshair
+        }
+    }
+
+    private sealed class BoundingBox : MarkerWindow
+    {
+        public override MarkerType Type => MarkerType.BoundingBox;
+        public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (0, 0, 0, 0);
+
+        protected override void Paint(Graphics g) => throw new NotImplementedException();
+    }
+
+    private sealed class ClickDrag : MarkerWindow
+    {
+        public override MarkerType Type => MarkerType.ClickDrag;
+        public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (0, 0, 0, 0);
+
+        protected override void Paint(Graphics g) => throw new NotImplementedException();
+    }
 }
 
 internal static class NativeMethods

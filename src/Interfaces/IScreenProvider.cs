@@ -48,10 +48,33 @@ public interface IScreenProvider
     /// <param name="y">The y-coordinate of the click point.</param>
     /// <param name="durationMs">The duration in milliseconds for which the click point should be displayed. Default is 1000ms. 0 for until cleared manually.</param>
     /// <param name="markerOpacity">The opacity of the click marker, from 0 (fully transparent) to 255 (fully opaque). Default is 255.</param>
-    void DrawClickPoint(int x, int y, int durationMs, int markerOpacity=255);
+    void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity=255);
+
+    /// <summary>
+    /// Draws a visual marker representing a click-and-drag operation from a starting point to an ending point.
+    /// </summary>
+    /// <param name="x_start">The horizontal coordinate of the drag starting point.</param>
+    /// <param name="y_start">The vertical coordinate of the drag starting point.</param>
+    /// <param name="x_end">The horizontal coordinate of the drag ending point.</param>
+    /// <param name="y_end">The vertical coordinate of the drag ending point.</param>
+    /// <param name="durationMs">The duration for which the marker is displayed, in milliseconds.</param>
+    /// <param name="markerOpacity">The opacity of the marker, ranging from 0 (transparent) to 255 (opaque).</param>
+    void DrawClickDragMarker(int x_start, int y_start, int x_end, int y_end, int durationMs, int markerOpacity = 255);
+
+    /// <summary>
+    /// Draws a bounding box with the specified coordinates, duration, and opacity settings. Can be used to highlight text box element etc.
+    /// </summary>
+    /// <param name="x1">The left X coordinate of the bounding box.</param>
+    /// <param name="y1">The top Y coordinate of the bounding box.</param>
+    /// <param name="x2">The right X coordinate of the bounding box.</param>
+    /// <param name="y2">The bottom Y coordinate of the bounding box.</param>
+    /// <param name="durationMs">The duration in milliseconds to display the bounding box.</param>
+    /// <param name="borderOpacity">The opacity of the border (0-255). Default is 255 (fully opaque).</param>
+    /// <param name="fillOpacity">The opacity of the fill (0-255). Default is 0 (transparent).</param>
+    void DrawBoundingBox(int x1, int y1, int x2, int y2, int durationMs, int borderOpacity = 255, int fillOpacity = 0);
 
     /// <summary>
     /// Clears all drawn click points.
     /// </summary>
-    void ClearClickPoints();
+    void ClearMarkers();
 }

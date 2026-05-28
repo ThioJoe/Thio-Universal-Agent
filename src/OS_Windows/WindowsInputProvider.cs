@@ -5,6 +5,8 @@ namespace Thio_Universal_Agent.OS_Windows
 {
     public partial class WindowsInputProvider : IInputProvider
     {
+        public bool HumanControlOnlyMode => _appConfig.General.HumanControlOnlyMode;
+
         private readonly AppConfig _appConfig;
         private readonly IScreenProvider _screenProvider;
 
@@ -137,7 +139,7 @@ namespace Thio_Universal_Agent.OS_Windows
         {
             if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
-                _screenProvider.DrawClickPoint(x, y, _appConfig.General.ShowClickMarkersDuration);
+                _screenProvider.DrawClickPointMarker(x, y, _appConfig.General.ShowClickMarkersDuration);
             }
 
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -153,7 +155,7 @@ namespace Thio_Universal_Agent.OS_Windows
         {
             if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
-                _screenProvider.DrawClickPoint(x, y, _appConfig.General.ShowClickMarkersDuration);
+                _screenProvider.DrawClickPointMarker(x, y, _appConfig.General.ShowClickMarkersDuration);
             }
 
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -169,7 +171,7 @@ namespace Thio_Universal_Agent.OS_Windows
         {
             if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
-                _screenProvider.DrawClickPoint(x, y, _appConfig.General.ShowClickMarkersDuration);
+                _screenProvider.DrawClickPointMarker(x, y, _appConfig.General.ShowClickMarkersDuration);
             }
 
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -185,7 +187,7 @@ namespace Thio_Universal_Agent.OS_Windows
         {
             if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
-                _screenProvider.DrawClickPoint(x, y, _appConfig.General.ShowClickMarkersDuration);
+                _screenProvider.DrawClickPointMarker(x, y, _appConfig.General.ShowClickMarkersDuration);
             }
 
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

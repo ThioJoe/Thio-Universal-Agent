@@ -6,9 +6,10 @@ namespace Thio_Universal_Agent
     /// </summary>
     public interface IInputProvider
     {
+        bool HumanControlOnlyMode { get; }
+
         /// <summary>
-        /// Simulates typing a string of text.
-        /// </summary>
+        /// Simulates typing a string of text.        /// </summary>
         /// <param name="text">The text to type.</param>
         Task TypeTextAsync(string text);
 
@@ -43,6 +44,4 @@ namespace Thio_Universal_Agent
         /// </summary>
         void ReleaseModifierKeys(ModifierKeys modifiers) { }
     }
-
-
 }
