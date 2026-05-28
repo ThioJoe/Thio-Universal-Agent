@@ -184,10 +184,12 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         TokenUsage? usage = null;
         if (openAiResponse?.Usage != null)
         {
+            int? reasoningTokens = openAiResponse.Usage.CompletionTokensDetails?.ReasoningTokens;
             usage = new TokenUsage(
                 openAiResponse.Usage.PromptTokens ?? 0,
                 openAiResponse.Usage.CompletionTokens ?? 0,
-                openAiResponse.Usage.TotalTokens ?? 0
+                openAiResponse.Usage.TotalTokens ?? 0,
+                reasoningTokens > 0 ? reasoningTokens : null
             );
         }
 
@@ -244,7 +246,8 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
     private record OpenAIMessage(string Role, List<OpenAIContentPart> Content);
     private record OpenAIContentPart(string Type, string? Text, [property: JsonPropertyName("image_url")] OpenAIImageUrl? ImageUrl);
     private record OpenAIImageUrl([property: JsonPropertyName("url")] string Url);
-    private record OpenAIUsage([property: JsonPropertyName("prompt_tokens")] int? PromptTokens, [property: JsonPropertyName("completion_tokens")] int? CompletionTokens, [property: JsonPropertyName("total_tokens")] int? TotalTokens);
+    private record OpenAICompletionTokensDetails([property: JsonPropertyName("reasoning_tokens")] int? ReasoningTokens);
+    private record OpenAIUsage([property: JsonPropertyName("prompt_tokens")] int? PromptTokens, [property: JsonPropertyName("completion_tokens")] int? CompletionTokens, [property: JsonPropertyName("total_tokens")] int? TotalTokens, [property: JsonPropertyName("completion_tokens_details")] OpenAICompletionTokensDetails? CompletionTokensDetails);
     private record OpenAIResponse(List<OpenAIChoice>? Choices, OpenAIError? Error, OpenAIUsage? Usage);
     private record OpenAIChoice(OpenAIMessageResponse? Message, [property: JsonPropertyName("finish_reason")] string? FinishReason);
     private record OpenAIMessageResponse(string? Content);

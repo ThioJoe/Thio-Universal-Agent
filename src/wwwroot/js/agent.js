@@ -1,7 +1,7 @@
 // @ts-check
 // ── Type definitions ──────────────────────────────────────────────────────
 
-/** @typedef {{ promptTokens: number, completionTokens: number, totalTokens: number }} TokenUsage */
+/** @typedef {{ promptTokens: number, completionTokens: number, totalTokens: number, thinkingTokens?: number }} TokenUsage */
 /** @typedef {{ aiResponseMs: number, parseMs: number, executionMs: number, coordResolutionMs?: number }} StepTimings */
 /** @typedef {{ label: string, text?: string, imageBase64?: string }} DebugLogEntry */
 /** @typedef {{ action: string, result: string, durationMs: number, success: boolean, debugLog?: DebugLogEntry[], usage?: TokenUsage }} QueuedSubStep */
@@ -623,7 +623,8 @@ function handleStep(msg) {
     }
 
     if (msg.usage && msg.usage.totalTokens > 0) {
-        html += `<div class="step-tokens" style="font-size:0.85em;color:#888;margin-top:4px;">Tokens: ${msg.usage.totalTokens.toLocaleString()} (${msg.usage.promptTokens.toLocaleString()} prompt, ${msg.usage.completionTokens.toLocaleString()} completion)</div>`;
+        const thinkingPart = msg.usage.thinkingTokens != null ? `, ${msg.usage.thinkingTokens.toLocaleString()} thinking` : '';
+        html += `<div class="step-tokens" style="font-size:0.85em;color:#888;margin-top:4px;">Tokens: ${msg.usage.totalTokens.toLocaleString()} (${msg.usage.promptTokens.toLocaleString()} prompt, ${msg.usage.completionTokens.toLocaleString()} completion${thinkingPart})</div>`;
     }
 
     // Nested expandable queue sub-steps
@@ -671,7 +672,8 @@ function renderQueuedSubSteps(subSteps) {
         html += `<div class="queue-substep-action">${escapeHtml(s.action)}<span class="step-duration">&nbsp;${formatDuration(s.durationMs)}</span></div>`;
         html += `<div class="queue-substep-result">${ok ? '✓' : '✗'}&nbsp;${escapeHtml(s.result)}</div>`;
         if (s.usage && s.usage.totalTokens > 0) {
-            html += `<div class="step-tokens" style="font-size:0.8em;color:#777;margin-top:2px;">Tokens: ${s.usage.totalTokens.toLocaleString()}</div>`;
+            const thinkingPart = s.usage.thinkingTokens != null ? ` (${s.usage.thinkingTokens.toLocaleString()} thinking)` : '';
+            html += `<div class="step-tokens" style="font-size:0.8em;color:#777;margin-top:2px;">Tokens: ${s.usage.totalTokens.toLocaleString()}${thinkingPart}</div>`;
         }
         if (s.debugLog && debugEnabled) {
             const vis = s.debugLog.filter(e => e.text || e.imageBase64);

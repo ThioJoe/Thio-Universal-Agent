@@ -335,7 +335,8 @@ public sealed class GeminiProvider(HttpClient httpClient, AppConfig appConfig, I
             usage = new TokenUsage(
                 geminiResponse.UsageMetadata.PromptTokenCount ?? 0,
                 geminiResponse.UsageMetadata.CandidatesTokenCount ?? 0,
-                geminiResponse.UsageMetadata.TotalTokenCount ?? 0
+                geminiResponse.UsageMetadata.TotalTokenCount ?? 0,
+                geminiResponse.UsageMetadata.ThoughtsTokenCount > 0 ? geminiResponse.UsageMetadata.ThoughtsTokenCount : null
             );
         }
 
@@ -404,7 +405,7 @@ public sealed class GeminiProvider(HttpClient httpClient, AppConfig appConfig, I
 
     // --- Private response DTOs ---
 
-    private record GeminiUsageMetadata(int? PromptTokenCount, int? CandidatesTokenCount, int? TotalTokenCount);
+    private record GeminiUsageMetadata(int? PromptTokenCount, int? CandidatesTokenCount, int? TotalTokenCount, int? ThoughtsTokenCount);
     private record GeminiResponse(List<GeminiCandidate>? Candidates, GeminiPromptFeedback? PromptFeedback, GeminiUsageMetadata? UsageMetadata);
     private record GeminiCandidate(GeminiContent? Content, string? FinishReason);
     private record GeminiPromptFeedback(string? BlockReason);

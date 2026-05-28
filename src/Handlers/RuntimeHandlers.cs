@@ -6,8 +6,25 @@ namespace Thio_Universal_Agent;
 
 public static class RuntimeHandlers
 {
-    public static int FindAvailablePort()
+    public static int FindAvailablePort(int? defaultPortTry)
     {
+        // Try the default port first if one was provided
+        if (defaultPortTry.HasValue)
+        {
+            try
+            {
+                TcpListener defaultListener = new TcpListener(IPAddress.Loopback, defaultPortTry.Value);
+                defaultListener.Start();
+                defaultListener.Stop();
+                return defaultPortTry.Value;
+            }
+            catch (SocketException)
+            {
+                // Default port is unavailable; fall through to let the OS assign one
+            }
+        }
+        // --------------------------
+
         // Bind to port 0 to let the OS assign an available port
         TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
 
@@ -16,8 +33,7 @@ public static class RuntimeHandlers
         // Retrieve the port the OS actually assigned
         int assignedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
 
-        // Stop it if you just needed to find the port, or keep it running if this is your actual server
-         listener.Stop();
+        listener.Stop();
 
         return assignedPort;
     }

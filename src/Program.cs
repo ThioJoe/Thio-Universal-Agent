@@ -13,6 +13,7 @@ using Thio_Universal_Agent.OS_Windows;
 // Enforce single instance, open the main instance's URL if already open
 const string appMutexName = "ThioUniversalAgent_SingleInstance_Mutex";
 const string pipeName = "ThioUniversalAgent_URL_Pipe";
+const int defaultPort = 51122;
 
 // Mutex check to see if we are the second instance
 using Mutex mutex = new Mutex(true, appMutexName, out bool createdNew);
@@ -22,6 +23,9 @@ if (!createdNew)
     // We are the second instance. Connect to the pipe, get the URL, and exit.
     try
     {
+        // Print to console to tell the user what's going on
+        Console.WriteLine("Another instance is already running. Opening the existing instance...");
+
         using NamedPipeClientStream client = new NamedPipeClientStream(".", pipeName, PipeDirection.In);
         client.Connect(2000); // 2-second timeout
 
@@ -42,7 +46,7 @@ if (!createdNew)
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // Use port from args if given, otherwise finds available port
-int availablePort = builder.Configuration.GetValue<int?>("port") ?? RuntimeHandlers.FindAvailablePort(); 
+int availablePort = builder.Configuration.GetValue<int?>("port") ?? RuntimeHandlers.FindAvailablePort(defaultPortTry: defaultPort); 
 builder.WebHost.UseUrls($"http://localhost:{availablePort}");
 
 // 3. Register our managed IPC server to run in the background

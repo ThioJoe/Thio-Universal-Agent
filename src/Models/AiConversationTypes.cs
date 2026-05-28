@@ -14,10 +14,17 @@ public enum AiChatRole
 }
 
 /// <summary>Token usage information for an AI API call.</summary>
-public sealed record TokenUsage(int PromptTokens, int CompletionTokens, int TotalTokens)
+/// <param name="ThinkingTokens">Tokens consumed by the model's internal reasoning/thinking, if reported by the provider (e.g. Gemini <c>thoughtsTokenCount</c>, OpenAI <c>reasoning_tokens</c>). <see langword="null"/> when the provider does not report this separately.</param>
+public sealed record TokenUsage(int PromptTokens, int CompletionTokens, int TotalTokens, int? ThinkingTokens = null)
 {
     public static TokenUsage operator +(TokenUsage a, TokenUsage b) =>
-        new TokenUsage(a.PromptTokens + b.PromptTokens, a.CompletionTokens + b.CompletionTokens, a.TotalTokens + b.TotalTokens);
+        new TokenUsage(
+            PromptTokens: a.PromptTokens + b.PromptTokens,
+            CompletionTokens: a.CompletionTokens + b.CompletionTokens,
+            TotalTokens: a.TotalTokens + b.TotalTokens,
+            ThinkingTokens: (a.ThinkingTokens.HasValue || b.ThinkingTokens.HasValue)
+                ? (a.ThinkingTokens ?? 0) + (b.ThinkingTokens ?? 0)
+                : null);
 }
 
 /// <summary>Represents the result of an AI prompt call.</summary>
