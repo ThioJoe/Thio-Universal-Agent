@@ -70,6 +70,23 @@ public static class AgentPromptBuilder
             internal const string Human =      "13. Prefer the use of COORDS mode for tools where available — a crosshair will be shown to guide the user precisely. If the user repeatedly misses, switch to natural language descriptions.";
             internal const string Autonomous = "13. Prefer the use of COORDS mode for tools where available. If it repeatly fails to hit the correction location, try using natural language.";
         }
+
+        /// <summary>The TYPE_TEXT tool description, which includes an optional bounding-box COORDS line in human mode.</summary>
+        internal static class TypeText
+        {
+            internal const string Human =
+                """
+                TYPE_TEXT "text to type" COORDS X1,Y1,X2,Y2
+                  Types the given text using the keyboard. A text field must already have focus from a prior click.
+                  COORDS X1,Y1,X2,Y2 — provide an estimated bounding box of the text field the user should type into,
+                  normalized within {normalizeSize}x{normalizeSize}. A bounding-box overlay will be displayed to guide the user.
+                """;
+            internal const string Autonomous =
+                """
+                TYPE_TEXT "text to type"
+                  Types the given text using the keyboard. A text field must already have focus from a prior click.
+                """;
+        }
     }
 
     /// <summary>
@@ -112,8 +129,7 @@ public static class AgentPromptBuilder
           Drags from exact coordinates X1,Y1 to X2,Y2. Either pair can be CURRENT to use the cursor's present position.
           Example: CLICK_DRAG COORDS CURRENT 300,400
 
-        TYPE_TEXT "text to type"
-          Types the given text using the keyboard. A text field must already have focus from a prior click.
+        {typeTextDescription}
 
         KEY_COMBO key[+modifier...]
           Presses a key combination. Examples: KEY_COMBO enter, KEY_COMBO ctrl+s, KEY_COMBO alt+f4, KEY_COMBO ctrl+shift+n
@@ -223,8 +239,9 @@ public static class AgentPromptBuilder
         string coordsRule           = humanMode ? ModeStrings.CoordsRule.Human          : ModeStrings.CoordsRule.Autonomous;
         string visualConfirmRule    = humanMode ? ModeStrings.VisualConfirmRule.Human   : ModeStrings.VisualConfirmRule.Autonomous;
         string coordsPreferenceRule = humanMode ? ModeStrings.CoordsPreferenceRule.Human: ModeStrings.CoordsPreferenceRule.Autonomous;
+        string typeTextDescription    = humanMode ? ModeStrings.TypeText.Human            : ModeStrings.TypeText.Autonomous;
 
-        // Mode-dependent replacements must run first — their expanded strings may themselves contain universal placeholders (e.g. {normalizeSize} inside CoordsRule.Human).
+        // Mode-dependent replacements must run first
         return template
             .Replace("{modeDependentIntro}",   intro)
             .Replace("{WAIT}",                 waitInstructions)
@@ -233,7 +250,8 @@ public static class AgentPromptBuilder
             .Replace("{coordsRule}",           coordsRule)
             .Replace("{visualConfirmRule}",    visualConfirmRule)
             .Replace("{coordsPreferenceRule}", coordsPreferenceRule)
-            // Universal replacements follow — these also resolve any placeholders that were introduced by the mode-dependent expansions above.
+            .Replace("{typeTextDescription}",   typeTextDescription)
+            // Universal replacements follow
             .Replace("{systemInfo}",           systemInfo)
             .Replace("{goal}",                 goal)
             .Replace("{maxQueueSize}",         maxQueueSize.ToString())

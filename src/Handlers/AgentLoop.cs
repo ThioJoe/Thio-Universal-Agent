@@ -397,7 +397,7 @@ public sealed partial class AgentLoop(
 
         for (int attempt = 0; attempt <= _maxParseRetries; attempt++)
         {
-            if (AgentActionParser.TryParse(responseText, appConfig.General.MaxQueueSize, out AgentParsedResponse? parsed, out string? error))
+            if (AgentActionParser.TryParse(responseText, appConfig.General.MaxQueueSize, appConfig.General.HumanControlOnlyMode, out AgentParsedResponse? parsed, out string? error))
                 return (parsed, parseRejections, totalUsage);
 
             parseRejections ??= [];

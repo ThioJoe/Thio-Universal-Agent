@@ -84,6 +84,10 @@ public enum AgentActionAltMode
 /// <param name="Modifiers">Modifier keys held (for <see cref="AgentActionKind.KeyCombo"/>).</param>
 /// <param name="Amount">Notch count for scroll or seconds for wait.</param>
 /// <param name="Reason">Explanation when the agent declares <see cref="AgentActionKind.Fail"/>.</param>
+/// <param name="BoundingBox">
+/// Optional bounding box for <see cref="AgentActionKind.TypeText"/> in human-control mode.
+/// Stored as a normalized <c>"X1,Y1,X2,Y2"</c> string (same coordinate space as other COORDS values).
+/// </param>
 public sealed record AgentAction(
     AgentActionKind Kind,
     string? Target = null,
@@ -93,7 +97,8 @@ public sealed record AgentAction(
     AgentActionAltMode AltMode = AgentActionAltMode.None,
     ModifierKeys Modifiers = ModifierKeys.None,
     int Amount = 1,
-    string? Reason = null
+    string? Reason = null,
+    string? BoundingBox = null
     );
 
 /// <summary>The AI's parsed response: a reasoning thought and one or more queued actions.</summary>

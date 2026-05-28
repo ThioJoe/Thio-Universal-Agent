@@ -19,8 +19,9 @@ public static class AgentActionParser
 
     /// <summary> Attempts to parse the AI's response text into a thought and action. </summary>
     /// <param name="maxQueueSize">Maximum number of actions permitted in a QUEUE: block; sourced from <see cref="GeneralConfig.MaxQueueSize"/>.</param>
+    /// <param name="humanMode">When <see langword="true"/> the parser accepts the optional <c>COORDS X1,Y1,X2,Y2</c> bounding-box suffix on <c>TYPE_TEXT</c>.</param>
     /// <returns>True if parsing succeeded; false otherwise.</returns>
-    public static bool TryParse(string responseText, int maxQueueSize, [NotNullWhen(true)] out AgentParsedResponse? result, [NotNullWhen(false)] out string? error)
+    public static bool TryParse(string responseText, int maxQueueSize, bool humanMode, [NotNullWhen(true)] out AgentParsedResponse? result, [NotNullWhen(false)] out string? error)
     {
         result = null;
         error = null;
@@ -46,7 +47,7 @@ public static class AgentActionParser
         }
 
         if (hasQueue)
-            return TryParseQueueResponse(responseText, queueIndex, maxQueueSize, out result, out error);
+            return TryParseQueueResponse(responseText, queueIndex, maxQueueSize, humanMode, out result, out error);
 
         // ── Single-action path (original behavior) ────────────────────────────
 
@@ -66,7 +67,7 @@ public static class AgentActionParser
             return false;
         }
 
-        if (!TryParseActionLine(actionPayload, out AgentAction? action, out error))
+        if (!TryParseActionLine(actionPayload, humanMode, out AgentAction? action, out error))
             return false;
 
         result = new AgentParsedResponse(thought, action);
@@ -77,7 +78,7 @@ public static class AgentActionParser
     /// Parses a QUEUE: block that contains 1–<paramref name="maxQueueSize"/> action lines.
     /// </summary>
     private static bool TryParseQueueResponse(
-        string responseText, int queueIndex, int maxQueueSize,
+        string responseText, int queueIndex, int maxQueueSize, bool humanMode,
         [NotNullWhen(true)] out AgentParsedResponse? result,
         [NotNullWhen(false)] out string? error)
     {
@@ -138,7 +139,7 @@ public static class AgentActionParser
         List<AgentAction> actions = new List<AgentAction>(actionPayloads.Count);
         foreach (string payload in actionPayloads)
         {
-            if (!TryParseActionLine(payload, out AgentAction? act, out error))
+            if (!TryParseActionLine(payload, humanMode, out AgentAction? act, out error))
                 return false;
             if (act.Kind == AgentActionKind.Done)
             {
@@ -165,7 +166,7 @@ public static class AgentActionParser
             "SCROLL_UP" or "SCROLL_DOWN" or "WAIT" or "DONE" or "FAIL";
     }
 
-    private static bool TryParseActionLine(string payload, [NotNullWhen(true)] out AgentAction? action, [NotNullWhen(false)] out string? error)
+    private static bool TryParseActionLine(string payload, bool humanMode, [NotNullWhen(true)] out AgentAction? action, [NotNullWhen(false)] out string? error)
     {
         action = null;
         error = null;
@@ -205,7 +206,7 @@ public static class AgentActionParser
                 return TryParseClickDragAction(dragArgs, out action, out error);
 
             case "TYPE_TEXT":
-                return TryParseTextAction(args, out action, out error);
+                return TryParseTextAction(args, humanMode, out action, out error);
 
             case "KEY_COMBO":
                 return TryParseKeyComboAction(args, out action, out error);
@@ -504,13 +505,56 @@ public static class AgentActionParser
         }
     }
 
-    /// <summary>Parses TYPE_TEXT whose argument is the quoted text to type.</summary>
+    /// <summary>Parses TYPE_TEXT whose argument is the quoted text to type, with an optional COORDS bounding box in human mode.</summary>
     private static bool TryParseTextAction(
         string args,
+        bool humanMode,
         [NotNullWhen(true)] out AgentAction? action,
         [NotNullWhen(false)] out string? error)
     {
         action = null;
+
+        // In human mode the AI may append:  COORDS X1,Y1,X2,Y2
+        // Find the closing quote of the text first so we can split off the optional suffix.
+        string? boundingBox = null;
+        if (humanMode)
+        {
+            // args looks like: "some text" COORDS X1,Y1,X2,Y2
+            //                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            // Find the last quote that ends the text payload, then look for COORDS after it.
+            int closeQuote = -1;
+            bool inQuote = args.Length > 0 && args[0] == '"';
+            if (inQuote)
+            {
+                closeQuote = args.IndexOf('"', 1);
+            }
+
+            if (closeQuote > 0)
+            {
+                string afterQuote = args[(closeQuote + 1)..].Trim();
+                if (afterQuote.StartsWith("COORDS ", StringComparison.OrdinalIgnoreCase))
+                {
+                    string coordsPart = afterQuote["COORDS ".Length..].Trim();
+                    string[] parts = coordsPart.Split(',', StringSplitOptions.TrimEntries);
+                    if (parts.Length == 4
+                        && int.TryParse(parts[0], out int x1)
+                        && int.TryParse(parts[1], out int y1)
+                        && int.TryParse(parts[2], out int x2)
+                        && int.TryParse(parts[3], out int y2))
+                    {
+                        boundingBox = $"{x1},{y1},{x2},{y2}";
+                        // Trim the COORDS suffix so StripQuotes below only sees the text.
+                        args = args[..(closeQuote + 1)];
+                    }
+                    else
+                    {
+                        error = $"TYPE_TEXT COORDS bounding box must be four integers (e.g. TYPE_TEXT \"text\" COORDS 100,200,400,350). Got: '{coordsPart}'.";
+                        return false;
+                    }
+                }
+            }
+        }
+
         string text = StripQuotes(args);
         if (text.Length == 0)
         {
@@ -519,7 +563,7 @@ public static class AgentActionParser
         }
 
         error = null;
-        action = new AgentAction(AgentActionKind.TypeText, Text: text);
+        action = new AgentAction(AgentActionKind.TypeText, Text: text, BoundingBox: boundingBox);
         return true;
     }
 
