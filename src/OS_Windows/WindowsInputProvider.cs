@@ -250,7 +250,7 @@ namespace Thio_Universal_Agent.OS_Windows
         /// Unlike SetCursorPos, this pushes through the hardware input queue so applications
         /// that process WM_MOUSEMOVE from the queue (e.g. during a drag) receive the event.
         /// </summary>
-        private void SendMouseMove(int screenX, int screenY)
+        private void SendMouseMove(int screenX, int screenY, bool suppressMarker = false)
         {
             int vScreenLeft   = GetSystemMetrics(76); // SM_XVIRTUALSCREEN
             int vScreenTop    = GetSystemMetrics(77); // SM_YVIRTUALSCREEN
@@ -262,14 +262,16 @@ namespace Thio_Universal_Agent.OS_Windows
             int normalizedY = ((screenY - vScreenTop) * 65535) / (vScreenHeight - 1);
 
             // Draw arrow
-            if (HumanControlOnlyMode == true)
+            if (!suppressMarker)
             {
-                _screenProvider.DrawMouseMoveMarker(screenX, screenY, int.MaxValue, 200);
-
-            }
-            else if (_appConfig.General.ShowClickMarkersDuration > 0)
-            {
-                _screenProvider.DrawMouseMoveArrow(screenX, screenY, _appConfig.General.ShowClickMarkersDuration);
+                if (HumanControlOnlyMode == true)
+                {
+                    _screenProvider.DrawMouseMoveMarker(screenX, screenY, int.MaxValue, 200);
+                }
+                else if (_appConfig.General.ShowClickMarkersDuration > 0)
+                {
+                    _screenProvider.DrawMouseMoveArrow(screenX, screenY, _appConfig.General.ShowClickMarkersDuration);
+                }
             }
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
@@ -295,13 +297,20 @@ namespace Thio_Universal_Agent.OS_Windows
 
         public async Task ClickDrag_MonitorCoords(int x_start, int y_start, int x_end, int y_end)
         {
-
+            if (HumanControlOnlyMode == true)
+            {
+                _screenProvider.DrawClickDragMarker(x_start, y_start, x_end, y_end, int.MaxValue, 200);
+            }
+            else if (_appConfig.General.ShowClickMarkersDuration > 0)
+            {
+                _screenProvider.DrawClickDragMarker(x_start, y_start, x_end, y_end, _appConfig.General.ShowClickMarkersDuration);
+            }
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
             IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-            SendMouseMove(x_start, y_start);
+            SendMouseMove(x_start, y_start, suppressMarker: true);
             SetThreadDpiAwarenessContext(originalContext);
 
             await Task.Yield();
@@ -318,7 +327,7 @@ namespace Thio_Universal_Agent.OS_Windows
                 originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
                 int currentX = x_start + ((x_end - x_start) * i / steps);
                 int currentY = y_start + ((y_end - y_start) * i / steps);
-                SendMouseMove(currentX, currentY);
+                SendMouseMove(currentX, currentY, suppressMarker: true);
                 SetThreadDpiAwarenessContext(originalContext);
 
                 await Task.Yield();
