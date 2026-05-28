@@ -15,20 +15,78 @@ public static class AgentPromptBuilder
     public static ISystemProvider? SystemProvider { get; set; }
 
     /// <summary>
+    /// Application configuration. Set this once at startup before any prompts are built.
+    /// Used to select the mode-dependent intro and apply other config-driven prompt adjustments.
+    /// </summary>
+    public static AppConfig Config { get; set; } = null!;
+
+    private static class ModeStrings
+    {
+        internal static class Intro
+        {
+            internal const string Human = "You are a semi-autonomous computer agent. " +
+                "You issue control command requests to a real desktop computer by looking at screenshots and issuing actions. " +
+                "The user will be the one to perform each action themselves — you direct, they execute.";
+            internal const string Autonomous = "You are an autonomous computer agent. You control a real desktop computer by looking at screenshots and issuing actions.";
+        }
+
+        internal static class Wait
+        {
+            internal const string Human =      "WAIT \"<condition>\"\n  Instructs the user to wait until the described condition is visible on screen before proceeding.\n  <condition> must be a precise description of what to look for, e.g.: WAIT \"the progress bar disappears\" or WAIT \"the dialog closes and the main window is visible\"";
+            internal const string Autonomous = "WAIT seconds\n  Pauses for the given number of seconds (1-10). Use when waiting for something to load or animate.";
+        }
+
+        /// <summary>Contextual note placed at the top of the AVAILABLE TOOLS section.</summary>
+        internal static class ToolsContextNote
+        {
+            internal const string Human = "\nNOTE: You are directing a human operator. Each command below is a request for the user to perform — issue them in the exact same syntax. The user will carry out each action on your behalf.\n";
+            internal const string Autonomous = "";
+        }
+
+        /// <summary>The REASON line description shown in the RESPONSE FORMAT section.</summary>
+        internal static class ReasonDescription
+        {
+            internal const string Human =      "REASON: <concise explanation of WHY the user needs to perform this action>";
+            internal const string Autonomous = "REASON: <your reason / intention for the action taken>";
+        }
+
+        /// <summary>Rule 11 — coordinates normalization, with a crosshair note for human mode.</summary>
+        internal static class CoordsRule
+        {
+            internal const string Human =       "11. If using a tool's COORDS mode (if available), give the coordinates normalized within {normalizeSize}x{normalizeSize} regardless of original aspect ratio or resolution. The true coordinates will be calculated automatically and a crosshair marker will be displayed to the user at that location to guide them.";
+            internal const string Autonomous =  "11. If using a tool's COORDS mode (if available), give the coordinates normalized within {normalizeSize}x{normalizeSize} coordinates regardless of original aspect ratio or resolution. The true coordinates will be automatically calculated from this.";
+        }
+
+        /// <summary>Rule 12 — visual confirmation behavior differs between modes.</summary>
+        internal static class VisualConfirmRule
+        {
+            internal const string Human =      "12. After issuing an action, visually confirm via the next screenshot that the user performed it correctly. If the result doesn't match expectations, reassess and provide a corrected instruction.";
+            internal const string Autonomous = "12. Always visually confirm the action was taken to ensure it worked is possible. For example, the computer may have missed the action and it needs to be repeated.";
+        }
+
+        /// <summary>Rule 13 — coordinate preference note, with crosshair reminder for human mode.</summary>
+        internal static class CoordsPreferenceRule
+        {
+            internal const string Human =      "13. Prefer the use of COORDS mode for tools where available — a crosshair will be shown to guide the user precisely. If the user repeatedly misses, switch to natural language descriptions.";
+            internal const string Autonomous = "13. Prefer the use of COORDS mode for tools where available. If it repeatly fails to hit the correction location, try using natural language.";
+        }
+    }
+
+    /// <summary>
     /// The built-in default system prompt template.
     /// Use <c>{systemInfo}</c>, <c>{goal}</c>, <c>{maxQueueSize}</c>, and <c>{normalizeSize}</c>
     /// as substitution placeholders — they are replaced at runtime by <see cref="BuildSystemPrompt"/>.
     /// </summary>
     public static readonly string DefaultSystemPromptTemplate =
         """
-        You are an autonomous computer agent. You control a real desktop computer by looking at screenshots and issuing actions. You have NO access to terminals, APIs, or code — only visual perception and the tools listed below.
+        {modeDependentIntro} You have NO access to terminals, APIs, or code — only visual perception and the tools listed below.
 
         {systemInfo}
 
         ═══════════════════════════════════
         AVAILABLE TOOLS
         ═══════════════════════════════════
-
+        {toolsContextNote}
         LEFT_CLICK <modifiers> <target>
         RIGHT_CLICK <modifiers> <target>
         DOUBLE_CLICK <modifiers> <target>
@@ -66,8 +124,7 @@ public static class AgentPromptBuilder
         SCROLL_DOWN amount
           Scrolls down by the given number of notches (1-10). Default is 1.
 
-        WAIT seconds
-          Pauses for the given number of seconds (1-10). Use when waiting for something to load or animate.
+        {WAIT}
 
         DONE
           Declare the goal has been fully achieved. Only use when you have visually confirmed success on screen.
@@ -97,11 +154,11 @@ public static class AgentPromptBuilder
         You MUST respond in EXACTLY one of these two formats every single time:
 
         Format A — single action:
-        REASON: <your reason / intention for the action taken>
+        {reasonDescription}
         ACTION: <exactly one tool call from the list above>
 
         Format B — queued actions (up to {maxQueueSize}):
-        REASON: <your reason / intention for the action taken>
+        {reasonDescription}
         QUEUE:
         <tool call 1>
         <tool call 2>
@@ -123,9 +180,9 @@ public static class AgentPromptBuilder
         8. Use DONE only when the screen visually confirms the goal is complete.
         9. If you are stuck after several attempts, use FAIL with a clear explanation.
         10. When describing a target, use language only (not coordinates), unless a tool has a COORDS mode you are using.
-        11. If using a tool's COORDS mode (if available), give the coordinates normalized within {normalizeSize}x{normalizeSize} coordinates regardless of original aspect ratio or resolution. The true coordinates will be automatically calculated from this.
-        12. Always visually confirm the action was taken to ensure it worked is possible. For example, the computer may have missed the action and it needs to be repeated.
-        13. Prefer the use of COORDS mode for tools where available. If it repeatly fails to hit the correction location, try using natural language.
+        {coordsRule}
+        {visualConfirmRule}
+        {coordsPreferenceRule}
         14. Queued actions should be used if the user interface is not expected to change from the actions. 
             For example but not limited to: Checking multiple boxes in the same window (but NOT to close a menu then click something behind it), drawing, selecting multiple items. If able, you SHOULD use queued actions as much as possible when possible.
             Tip: Test an action once by itself before queuing up the rest of the sequence the queue.
@@ -157,11 +214,31 @@ public static class AgentPromptBuilder
 
         string template = templateOverride ?? DefaultSystemPromptTemplate;
 
+        bool humanMode = Config.General.HumanControlOnlyMode;
+
+        string intro                = humanMode ? ModeStrings.Intro.Human                : ModeStrings.Intro.Autonomous;
+        string waitInstructions     = humanMode ? ModeStrings.Wait.Human                : ModeStrings.Wait.Autonomous;
+        string toolsContextNote     = humanMode ? ModeStrings.ToolsContextNote.Human    : ModeStrings.ToolsContextNote.Autonomous;
+        string reasonDescription    = humanMode ? ModeStrings.ReasonDescription.Human   : ModeStrings.ReasonDescription.Autonomous;
+        string coordsRule           = humanMode ? ModeStrings.CoordsRule.Human          : ModeStrings.CoordsRule.Autonomous;
+        string visualConfirmRule    = humanMode ? ModeStrings.VisualConfirmRule.Human   : ModeStrings.VisualConfirmRule.Autonomous;
+        string coordsPreferenceRule = humanMode ? ModeStrings.CoordsPreferenceRule.Human: ModeStrings.CoordsPreferenceRule.Autonomous;
+
+        // Mode-dependent replacements must run first — their expanded strings may themselves contain universal placeholders (e.g. {normalizeSize} inside CoordsRule.Human).
         return template
-            .Replace("{systemInfo}",    systemInfo)
-            .Replace("{goal}",          goal)
-            .Replace("{maxQueueSize}",  maxQueueSize.ToString())
-            .Replace("{normalizeSize}", normalizeSize);
+            .Replace("{modeDependentIntro}",   intro)
+            .Replace("{WAIT}",                 waitInstructions)
+            .Replace("{toolsContextNote}",     toolsContextNote)
+            .Replace("{reasonDescription}",    reasonDescription)
+            .Replace("{coordsRule}",           coordsRule)
+            .Replace("{visualConfirmRule}",    visualConfirmRule)
+            .Replace("{coordsPreferenceRule}", coordsPreferenceRule)
+            // Universal replacements follow — these also resolve any placeholders that were introduced by the mode-dependent expansions above.
+            .Replace("{systemInfo}",           systemInfo)
+            .Replace("{goal}",                 goal)
+            .Replace("{maxQueueSize}",         maxQueueSize.ToString())
+            .Replace("{normalizeSize}",        normalizeSize)
+            ;
     }
 
     /// <summary>
