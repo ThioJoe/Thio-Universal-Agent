@@ -282,30 +282,15 @@ namespace Thio_Universal_Agent.OS_Windows
             SetThreadDpiAwarenessContext(originalContext);
         }
 
-
-        // ScrollUp - Two overloads
         public async Task ScrollUp(int multiple = 1)
         {
-            Scroll(ScrollDirection.Up, null, multiple);
+            Scroll(ScrollDirection.Up, multiple);
             await Task.CompletedTask;
         }
 
-        public async Task ScrollUp(int multiple, ScrollMode forceScrollMode)
-        {
-            Scroll(ScrollDirection.Up, forceScrollMode, multiple);
-            await Task.CompletedTask;
-        }
-
-        // ScrollDown - Two overloads
         public async Task ScrollDown(int multiple = 1)
         {
-            Scroll(ScrollDirection.Down, null, multiple);
-            await Task.CompletedTask;
-        }
-
-        public async Task ScrollDown(int multiple, ScrollMode forceScrollMode)
-        {
-            Scroll(ScrollDirection.Down, forceScrollMode, multiple);
+            Scroll(ScrollDirection.Down, multiple);
             await Task.CompletedTask;
         }
 

@@ -250,23 +250,16 @@ public partial class WindowsInputProvider : IInputProvider
         Down = 2
     }
 
-    private void Scroll(ScrollDirection direction, ScrollMode? mode, int multiple)
+    private void Scroll(ScrollDirection direction, int multiple, ScrollMode mode = ScrollMode.SendInput)
     {
-        ScrollMode scrollMode;
         int scrollAmount = Math.Abs(multiple); // Ensure a sign hasn't been given to multiple already
 
         // Set sign based on direction
         if (direction == ScrollDirection.Down)
             scrollAmount = -scrollAmount; // Negative for scrolling down
 
-        // Determine mode to use
-        if (mode != null)
-            scrollMode = (ScrollMode)mode;
-        else
-            scrollMode = ScrollMode.SendInput; // SendInput is more reliable across apps
-
         // Send the input
-        if (scrollMode == ScrollMode.SendInput)
+        if (mode == ScrollMode.SendInput)
             ScrollMouse_WithSendInput_Async(WHEEL_DELTA * scrollAmount);
         else
             ScrollMouse_WithWM_Async(scrollAmount);
