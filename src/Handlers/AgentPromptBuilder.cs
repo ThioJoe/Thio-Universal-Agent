@@ -46,7 +46,7 @@ public static class AgentPromptBuilder
         /// <summary>The REASON line description shown in the RESPONSE FORMAT section.</summary>
         internal static class ReasonDescription
         {
-            internal const string Human =      "REASON: <concise explanation of WHY the user needs to perform this action>";
+            internal const string Human =      "REASON: <2nd-person instruction to the user explaining what to do and why, e.g. \"Please click the Save button to apply your changes.\">";
             internal const string Autonomous = "REASON: <your reason / intention for the action taken>";
         }
 
@@ -69,6 +69,13 @@ public static class AgentPromptBuilder
         {
             internal const string Human =      "13. Prefer the use of COORDS mode for tools where available — a crosshair will be shown to guide the user precisely. If the user repeatedly misses, switch to natural language descriptions.";
             internal const string Autonomous = "13. Prefer the use of COORDS mode for tools where available. If it repeatly fails to hit the correction location, try using natural language.";
+        }
+
+        /// <summary>Rule 16 — tone enforcement: 2nd-person for human mode, omitted in autonomous mode.</summary>
+        internal static class ToneRule
+        {
+            internal const string Human =      "16. Always address the user in the second person (\"you\"/\"your\"). Write every REASON as a direct instruction or explanation to the user — never narrate your own internal reasoning in the first person (e.g. do NOT write \"I will click…\"; instead write \"Please click…\" or \"You need to click…\").";
+            internal const string Autonomous = "";
         }
 
         /// <summary>The TYPE_TEXT tool description, which includes an optional bounding-box COORDS line in human mode.</summary>
@@ -203,6 +210,7 @@ public static class AgentPromptBuilder
             For example but not limited to: Checking multiple boxes in the same window (but NOT to close a menu then click something behind it), drawing, selecting multiple items. If able, you SHOULD use queued actions as much as possible when possible.
             Tip: Test an action once by itself before queuing up the rest of the sequence the queue.
         15. NEVER queue the DONE action. You must ALWAYS visually verify completion of the goal as directed as a dedicated individual step.
+        {toneRule}
 
         ═══════════════════════════════════
         YOUR GOAL
@@ -240,6 +248,7 @@ public static class AgentPromptBuilder
         string visualConfirmRule    = humanMode ? ModeStrings.VisualConfirmRule.Human   : ModeStrings.VisualConfirmRule.Autonomous;
         string coordsPreferenceRule = humanMode ? ModeStrings.CoordsPreferenceRule.Human: ModeStrings.CoordsPreferenceRule.Autonomous;
         string typeTextDescription    = humanMode ? ModeStrings.TypeText.Human            : ModeStrings.TypeText.Autonomous;
+        string toneRule               = humanMode ? ModeStrings.ToneRule.Human            : ModeStrings.ToneRule.Autonomous;
 
         // Mode-dependent replacements must run first
         return template
@@ -251,6 +260,7 @@ public static class AgentPromptBuilder
             .Replace("{visualConfirmRule}",    visualConfirmRule)
             .Replace("{coordsPreferenceRule}", coordsPreferenceRule)
             .Replace("{typeTextDescription}",   typeTextDescription)
+            .Replace("{toneRule}",             toneRule)
             // Universal replacements follow
             .Replace("{systemInfo}",           systemInfo)
             .Replace("{goal}",                 goal)

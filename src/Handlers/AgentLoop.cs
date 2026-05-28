@@ -436,6 +436,8 @@ public sealed partial class AgentLoop(
         }
         finally
         {
+            // Clear any on-screen markers left over from human-control mode overlays.
+            screenProvider.ClearMarkers();
             // Always signal termination so SSE stream waiters are unblocked regardless of how the loop exits.
             session.SignalTerminated();
         }
