@@ -389,8 +389,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             }
         }
 
+        /// <summary>Called just before the window is hidden. Override in subclasses to hide companion windows.</summary>
+        protected virtual void OnBeforeHide() { }
+
         private void Hide()
         {
+            OnBeforeHide();
             NativeMethods.PostMessage(_hwnd, NativeMethods.WM_APP_HIDE, IntPtr.Zero, IntPtr.Zero);
         }
 
@@ -601,6 +605,140 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         }
     }
 
+    /// <summary>
+    /// A small floating read-only text window shown above a bounding box so the human operator
+    /// can see and copy the text the AI wants typed into the highlighted field.
+    /// Unlike <see cref="MarkerWindow"/>, this window is NOT click-through — the user can click
+    /// into it, select all with Ctrl+A, and copy with Ctrl+C.
+    /// </summary>
+    private sealed class TypeTextTooltipWindow : IDisposable
+    {
+        private IntPtr _hwnd;
+        private IntPtr _editHwnd;
+        private IntPtr _hFont;
+        private readonly Thread _messageThread;
+        private readonly ManualResetEventSlim _ready = new(false);
+        private readonly NativeMethods.WndProcDelegate _wndProcDelegate;
+
+        private const int WindowHeight = 30;
+        private const int EditPadding  = 2;
+        private const string WndClassName = "TUA_TypeTextTooltip";
+
+        private int    _x, _y, _w;
+        private string _text = "";
+
+        public TypeTextTooltipWindow()
+        {
+            _wndProcDelegate = WndProc;
+            _messageThread = new Thread(MessagePump) { IsBackground = true, Name = "TypeTextTooltipPump" };
+            _messageThread.SetApartmentState(ApartmentState.STA);
+            _messageThread.Start();
+            _ready.Wait();
+        }
+
+        /// <summary>Positions and shows the tooltip above (or below if near screen top) the given bounding box.</summary>
+        public void ShowAboveBox(int boxLeft, int boxTop, int boxRight, string text)
+        {
+            int w = Math.Max(boxRight - boxLeft, 120);
+            int y = boxTop - WindowHeight - 2;
+            if (y < 0) y = boxTop + 2; // Not enough room above — show just below the box top
+            lock (this) { _x = boxLeft; _y = y; _w = w; _text = text; }
+            NativeMethods.PostMessage(_hwnd, NativeMethods.WM_APP_SHOW, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        /// <summary>Hides the tooltip window.</summary>
+        public void Hide()
+        {
+            NativeMethods.PostMessage(_hwnd, NativeMethods.WM_APP_HIDE, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        private void MessagePump()
+        {
+            NativeMethods.SetThreadDpiAwarenessContext(new IntPtr(-4));
+
+            IntPtr hbrBackground = NativeMethods.CreateSolidBrush(0x00FFFFFF); // white
+
+            NativeMethods.WNDCLASSEX wc = new NativeMethods.WNDCLASSEX
+            {
+                cbSize        = (uint)Marshal.SizeOf<NativeMethods.WNDCLASSEX>(),
+                lpfnWndProc   = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate),
+                lpszClassName = WndClassName,
+                hbrBackground = hbrBackground,
+            };
+            NativeMethods.RegisterClassExW(ref wc); // Silently no-ops if already registered by another instance
+
+            // Topmost tool window; NOT click-through (no WS_EX_TRANSPARENT) so the user can interact
+            uint exStyle = NativeMethods.WS_EX_TOPMOST | NativeMethods.WS_EX_TOOLWINDOW;
+            uint style   = NativeMethods.WS_POPUP | NativeMethods.WS_BORDER;
+
+            _hwnd = NativeMethods.CreateWindowExW(exStyle, WndClassName, "",
+                style, 0, 0, 120, WindowHeight,
+                IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+
+            // Single-line read-only EDIT child — user can click in, select all, Ctrl+C
+            uint editStyle = NativeMethods.WS_CHILD | NativeMethods.WS_VISIBLE
+                           | NativeMethods.ES_READONLY | NativeMethods.ES_AUTOHSCROLL;
+            _editHwnd = NativeMethods.CreateWindowExW(0, "EDIT", "", editStyle,
+                EditPadding, EditPadding, 120 - EditPadding * 2, WindowHeight - EditPadding * 2,
+                _hwnd, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+
+            // Segoe UI 11pt bold — matches the label style used by other markers
+            _hFont = NativeMethods.CreateFontW(-15, 0, 0, 0, 700 /* FW_BOLD */, 0, 0, 0,
+                0, 0, 0, 4 /* ANTIALIASED_QUALITY */, 0, "Segoe UI");
+            NativeMethods.SendMessageW(_editHwnd, NativeMethods.WM_SETFONT, _hFont, new IntPtr(1));
+
+            _ready.Set();
+
+            while (NativeMethods.GetMessage(out NativeMethods.MSG msg, IntPtr.Zero, 0, 0) > 0)
+            {
+                NativeMethods.TranslateMessage(ref msg);
+                NativeMethods.DispatchMessageW(ref msg);
+            }
+
+            NativeMethods.DestroyWindow(_hwnd);
+            NativeMethods.DeleteObject(hbrBackground);
+            if (_hFont != IntPtr.Zero) NativeMethods.DeleteObject(_hFont);
+        }
+
+        private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+        {
+            switch (msg)
+            {
+                case NativeMethods.WM_APP_SHOW:
+                    int x, y, w; string text;
+                    lock (this) { x = _x; y = _y; w = _w; text = _text; }
+                    // Update edit text and resize it to fill the (possibly new) window width
+                    NativeMethods.SetWindowTextW(_editHwnd, text);
+                    NativeMethods.SetWindowPos(_editHwnd, IntPtr.Zero,
+                        EditPadding, EditPadding, w - EditPadding * 2, WindowHeight - EditPadding * 2,
+                        NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+                    NativeMethods.SetWindowPos(hWnd, NativeMethods.HWND_TOPMOST, x, y, w, WindowHeight,
+                        NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+                    return IntPtr.Zero;
+
+                case NativeMethods.WM_APP_HIDE:
+                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_HIDE);
+                    return IntPtr.Zero;
+
+                case NativeMethods.WM_CLOSE:
+                    NativeMethods.PostMessage(hWnd, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+                    return IntPtr.Zero;
+            }
+            return NativeMethods.DefWindowProcW(hWnd, msg, wParam, lParam);
+        }
+
+        public void Dispose()
+        {
+            if (_hwnd != IntPtr.Zero)
+            {
+                NativeMethods.PostMessage(_hwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                _messageThread.Join(2000);
+                _hwnd = IntPtr.Zero;
+            }
+            _ready.Dispose();
+        }
+    }
+
     private sealed class BoundingBoxMarker : MarkerWindow
     {
         private const int BorderThickness = 3;
@@ -608,6 +746,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private const int Padding = (BorderThickness + 1) / 2 + 1;
 
         private int _localWidth, _localHeight, _fillOpacity;
+        private TypeTextTooltipWindow? _tooltip;
 
         public override MarkerType Type => MarkerType.BoundingBox;
         public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (0, 0, 0, 0);
@@ -631,7 +770,18 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 _fillOpacity  = fillOpacity;
             }
 
+            if (Label is not null)
+            {
+                _tooltip ??= new TypeTextTooltipWindow();
+                _tooltip.ShowAboveBox(Math.Min(x1, x2), Math.Min(y1, y2), Math.Max(x1, x2), Label);
+            }
+
             Show(x1, y1, borderOpacity, durationMs, pool);
+        }
+
+        protected override void OnBeforeHide()
+        {
+            _tooltip?.Hide();
         }
 
         protected override void Paint(Graphics g)
@@ -650,11 +800,6 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
             using Pen border = new Pen(Color.Red, BorderThickness);
             g.DrawRectangle(border, rect);
-
-            if (Label != null) 
-            { 
-                AddLabel(g, originX + 4, originY - 22, Label, Color.Red); 
-            }
         }
     }
 
@@ -843,10 +988,18 @@ internal static class NativeMethods
     public const uint WM_APP_HIDE = 0x8002;
 
     public const uint WS_POPUP = 0x80000000;
+    public const uint WS_BORDER = 0x00800000;
     public const uint WS_EX_TOPMOST = 0x00000008;
     public const uint WS_EX_TRANSPARENT = 0x00000020;
     public const uint WS_EX_TOOLWINDOW = 0x00000080;
     public const uint WS_EX_LAYERED = 0x00080000;
+
+    public const uint WS_CHILD   = 0x40000000;
+    public const uint WS_VISIBLE = 0x10000000;
+    public const uint ES_READONLY    = 0x0800;
+    public const uint ES_AUTOHSCROLL = 0x0080;
+    public const uint WM_SETFONT = 0x0030;
+    public const uint SWP_NOZORDER = 0x0004;
 
     public const uint LWA_COLORKEY = 0x00000001;
     public const uint LWA_ALPHA = 0x00000002;
@@ -946,4 +1099,15 @@ internal static class NativeMethods
 
     [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern bool SetWindowTextW(IntPtr hWnd, string lpString);
+
+    [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern IntPtr SendMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern IntPtr CreateFontW(int cHeight, int cWidth, int cEscapement, int cOrientation,
+        int cWeight, uint bItalic, uint bUnderline, uint bStrikeOut, uint iCharSet,
+        uint iOutPrecision, uint iClipPrecision, uint iQuality, uint iPitchAndFamily, string pszFaceName);
 }
