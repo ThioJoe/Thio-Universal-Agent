@@ -150,16 +150,24 @@ public sealed partial class AgentLoop(
                 IReadOnlyList<AgentAction> actionsToRun = parsed.QueuedActions ?? [parsed.Action];
                 bool isBatch = actionsToRun.Count > 1;
 
+                bool humanMode = appConfig.General.HumanControlOnlyMode;
+
                 // Emit ONE preview for the whole batch — UI shows the first action and a queue badge.
                 // This is intentionally done BEFORE the pause gate so the user can see the AI's
                 // plan even while the session is paused.
                 AgentStepPreview preview = new AgentStepPreview(step, parsed.Thought, actionsToRun[0], actionsToRun.Count);
                 await session.RaiseStepStartingAsync(preview).ConfigureAwait(false);
 
+                // In human control mode, automatically pause after showing each step so the human
+                // can perform the action themselves before the loop continues.
+                if (humanMode)
+                    session.Pause();
+
                 // If the user paused while the AI was responding, block here until resumed.
+                // In human mode always use a plain wait (no countdown — the human determines timing).
                 // Skip the countdown entirely when the next action is already flagged for cancellation —
                 // there's nothing pending to execute, so there's no need to give the user preparation time.
-                if (session.HasCancelNextAction)
+                if (session.HasCancelNextAction || humanMode)
                     await session.WaitIfPausedAsync(ct).ConfigureAwait(false);
                 else
                     await session.WaitIfPausedWithCountdownAsync(5, ct).ConfigureAwait(false);
@@ -233,8 +241,22 @@ public sealed partial class AgentLoop(
                     List<AgentDebugEntry>? qiDebugLog = qi == 0 ? debugLog : (debugging ? [] : null);
 
                     Stopwatch executeSw = Stopwatch.StartNew();
-                    (ActionExecutionResult result, TokenUsage execUsage) = await ExecuteWithTargetRecoveryAsync(
-                        currentAction, screenshot, conversation, ct, qiDebugLog, executorProgress).ConfigureAwait(false);
+                    ActionExecutionResult result;
+                    TokenUsage execUsage;
+
+                    // In human control mode the human performs every action themselves.
+                    // Skip OS execution for all non-terminal actions and treat them as successful.
+                    if (humanMode && currentAction.Kind is not AgentActionKind.Done and not AgentActionKind.Fail)
+                    {
+                        result = new ActionExecutionResult(true, "Action performed by user.", IsTerminal: false, GoalAchieved: false);
+                        execUsage = new TokenUsage(0, 0, 0);
+                    }
+                    else
+                    {
+                        (result, execUsage) = await ExecuteWithTargetRecoveryAsync(
+                            currentAction, screenshot, conversation, ct, qiDebugLog, executorProgress).ConfigureAwait(false);
+                    }
+
                     executeSw.Stop();
                     stepUsage += execUsage;
 
@@ -577,7 +599,7 @@ public sealed partial class AgentLoop(
         AgentActionKind.TypeText => $"\"{action.Text}\"",
         AgentActionKind.KeyCombo => $"{(action.Modifiers.HasFlag(ModifierKeys.Ctrl) ? "Ctrl+" : "")}{(action.Modifiers.HasFlag(ModifierKeys.Shift) ? "Shift+" : "")}{(action.Modifiers.HasFlag(ModifierKeys.Alt) ? "Alt+" : "")}{(action.Modifiers.HasFlag(ModifierKeys.Win) ? "Win+" : "")}{action.Key}",
         AgentActionKind.ScrollUp or AgentActionKind.ScrollDown => action.Amount.ToString(),
-        AgentActionKind.Wait => $"{action.Amount}s",
+        AgentActionKind.Wait => action.Text is not null ? $"\"{action.Text}\"" : $"{action.Amount}s",
         AgentActionKind.Fail => action.Reason ?? "",
         _ => "",
     };

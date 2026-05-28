@@ -218,7 +218,7 @@ public static class AgentActionParser
                 return TryParseScrollAction(AgentActionKind.ScrollDown, args, out action, out error);
 
             case "WAIT":
-                return TryParseWaitAction(args, out action, out error);
+                return TryParseWaitAction(args, humanMode, out action, out error);
 
             case "DONE":
                 action = new AgentAction(AgentActionKind.Done);
@@ -651,13 +651,27 @@ public static class AgentActionParser
     /// <summary>Parses WAIT whose argument is a number of seconds.</summary>
     private static bool TryParseWaitAction(
         string args,
+        bool humanMode,
         [NotNullWhen(true)] out AgentAction? action,
         [NotNullWhen(false)] out string? error)
     {
         action = null;
         string raw = StripQuotes(args);
-        int seconds = 1;
 
+        if (humanMode)
+        {
+            // In human mode WAIT takes a quoted condition string, e.g.: WAIT "the progress bar disappears"
+            if (raw.Length == 0)
+            {
+                error = "WAIT requires a condition description (e.g. WAIT \"the dialog closes\").";
+                return false;
+            }
+            error = null;
+            action = new AgentAction(AgentActionKind.Wait, Text: raw);
+            return true;
+        }
+
+        int seconds = 1;
         if (raw.Length > 0 && !int.TryParse(raw, out seconds))
         {
             error = "WAIT requires an integer number of seconds (e.g. WAIT 2).";
