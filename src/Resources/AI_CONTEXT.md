@@ -1,13 +1,13 @@
 # AI Context: Thio Universal Agent (TUA)
 
 ## 1. Project Overview
-**Thio Universal Agent** is an autonomous, cross-platform AI desktop assistant capable of host-native execution. It uses a Vision-Language Model (Google Gemini) to visually "see" the computer screen and perform tasks by taking physical control of the mouse and keyboard.
+**Thio Universal Agent** is an autonomous, cross-platform AI desktop assistant capable of host-native execution. It uses a Vision-Language Model to visually "see" the computer screen and perform tasks by taking physical control of the mouse and keyboard.
 
 **Tech Stack:**
 * **Backend:** C# / .NET 10, ASP.NET Core Minimal APIs.
 * **Frontend:** Vanilla HTML/CSS/JS (embedded in the assembly via `wwwroot`). No modern JS frameworks.
 * **OS Integration:** Windows (implemented via P/Invoke `user32.dll`, `gdi32.dll`), architected via interfaces for future cross-platform support.
-* **AI Provider:** Currently only Google Gemini API (`generativelanguage.googleapis.com`) using structured text/vision prompting, but with scaffolding to accept others later.
+* **AI Provider:** Currently OpenAI ChatGPT, Google Gemini, and Anthropic Claude, using structured text/vision prompting.
 
 ---
 
@@ -27,12 +27,16 @@ The system operates on an **Observe-Think-Act** loop, managed asynchronously and
 
 ### (Root)
 * `Program.cs`: Entry point. Sets up OS-specific Dependency Injection (DI) based on the runtime OS, initializes the `AppConfig` singleton, registers Minimal API routes, and serves embedded static files.
+* `GlobalSuppressions.cs`: Assembly-level `SuppressMessage` attributes that suppress specific Roslyn/code-analysis warnings project-wide (e.g. `SYSLIB1054` for `DllImport` vs `LibraryImport`, and select IDE style rules).
 
 ### `/Interfaces/` (The Abstraction Layer)
 * `IAiProvider.cs`: Contract for the LLM (SendPrompt, StartConversation, ContinueConversation with/without images).
+* `IAiProviderConfig.cs`: Common contract for every AI provider's configuration block (`ProviderName`, `ApiKey`, `Model`, token pricing fields). Each concrete implementation (e.g. `GeminiConfig`) adds provider-specific settings.
 * `IScreenProvider.cs`: Contract for capturing screenshots and enumerating monitors.
-* `IInputProvider.cs`: Contract for simulating OS events (mouse clicks, drags, typing text, keyboard combos).
+* `InputProviders.cs`: Contract (`IInputProvider`) for simulating OS events (mouse clicks, drags, typing text, keyboard combos).
 * `ISystemProvider.cs`: Contract for retrieving OS details (name, build) to feed the AI context.
+* `IHotkeyProvider.cs`: Contract (`IHotkeyProvider`) for registering and unregistering system-wide hotkeys. Also defines the `HotkeyModifiers` flags enum (`Alt`, `Control`, `Shift`, `Win`, `NoRepeat`).
+
 
 ### `/Handlers/` (Core Logic)
 * `AgentSessionManager.cs`: Singleton that creates `AgentSession`s and spawns the `AgentLoop` on background tasks. Handles stop/pause/resume requests from the UI.
@@ -43,14 +47,19 @@ The system operates on an **Observe-Think-Act** loop, managed asynchronously and
 * `ScreenshotProcessing.cs` (part of `CoordinatePrompter`): Handles SkiaSharp image manipulation, drawing grids, crosshairs, and cropping for zoom modes.
 * `AgentPromptBuilder.cs`: Constructs the massive system prompt teaching the AI its tools, rules, and formats.
 * `SecretStorage.cs`: Cross-platform encrypted storage for API keys and other secrets. Defines the `ISecretProvider` interface (`SaveSecret`, `LoadSecret`, `SecretExists`, `DeleteSecret`) and its `SecretsHandler` implementation. Each secret is stored as an AES-encrypted value within a `.json` file in the OS `LocalApplicationData` folder under `ThioUniversalAgent/`. The encryption key is derived from a **password hash** (never the raw password) via PBKDF2-SHA256 with 100,000 iterations. The hash is computed client-side in the browser using `SubtleCrypto` SHA-256, so the plaintext password never reaches the server. The hash can optionally be persisted in `localStorage` for auto-unlock on next visit. This design keeps the encrypted files isolated on the server's filesystem, separate from the browser, guarding against XSS and rudimentary credential stealers even when the "remember hash" option is enabled.
+* `RuntimeHandlers.cs`: Application-level functions such as finding an available port to launch on.
+* `HotkeyService.cs`: `IHostedService` that reads `AppConfig.Hotkeys` on startup and registers the configured Pause/Resume and Stop hotkeys via `IHotkeyProvider`. Routes `HotkeyPressed` callbacks to `AgentSessionManager`. Exposes `ReloadHotkeys()` to swap registrations after a config change. Also contains the internal `HotkeyStringParser` helper, which parses human-readable strings like `"Ctrl+Shift+P"` into `HotkeyModifiers` flags and Win32 virtual-key codes.
 
 ### `/Models/` (Data Structures)
 * `AgentSession.cs`: Holds state for a running task (Goal, Status, History, Cancel tokens, Pause states).
 * `AgentAction.cs`: Enums (`AgentActionKind`) and records defining what the AI wants to do.
 * `Config.cs`: Deeply nested typed configuration (`AppConfig`, `GeminiConfig`, `AgentConfig`). Uses custom `[ConfigField]` attributes to auto-generate the frontend UI settings page.
+* `AiConversationTypes.cs`: Shared conversation and response data types used by all AI providers: `AiChatRole` (enum), `AiChatMessage` (role + optional text/image), `AiConversation` (ordered message history with `AddUserMessage`/`AddModelMessage`), `AiResponse` (success flag + text + optional `TokenUsage`), `AiRequestOptions` (per-call overrides such as `MaxOutputTokens`), and `TokenUsage` (prompt/completion/total/thinking counts with a `+` operator for accumulation).
+* `Globals.cs`: Placeholder `static` class for future process-wide statics; currently empty.
 * `ScreenCoordinate.cs` & `Screenshot.cs`: Mathematical wrappers for translating between virtual desktop space, normalized AI space (0-1000), and image-local pixels.
 
 ### `/OS_Windows/` (Platform Implementations)
+* `WindowsHotkeyProvider.cs`: Windows implementation of `IHotkeyProvider`. Creates an invisible message-only window (`HWND_MESSAGE`) on a dedicated STA background thread so that `RegisterHotKey` and the `WndProc` callback share the required Win32 thread affinity. Marshals `RegisterHotkey`/`UnregisterHotkey` calls from any thread onto the pump thread via custom `WM_APP` messages, with a `TaskCompletionSource` handshake to surface Win32 errors back to the caller.
 * `WindowsInputProvider.cs`: Heavy P/Invoke logic. Maps `SendInput` for keyboard/mouse events, handles Unicode text typing, and scroll wheel messages.
 * `WindowsScreenProvider.cs`: Uses GDI (`BitBlt`) to capture screens rapidly and accounts for multi-monitor virtual desktop coordinates.
 
@@ -60,7 +69,11 @@ The system operates on an **Observe-Think-Act** loop, managed asynchronously and
 * `SecretsEndpoints.cs`: Four routes under `/api/secrets/` that front `ISecretProvider` — `POST /save` (encrypt and persist), `POST /load` (decrypt and return, 401 on wrong password / 404 if not found), `GET /{key}/exists` (existence check without decryption), and `DELETE /{key}` (permanently remove a secret file). Secret keys follow the `{sectionKey}_{fieldKey}` convention (e.g. `gemini_apiKey`).
 * `TestEndpoints.cs`: Isolated `/api/test/...` endpoints purely for the web-based debugging tools.
 
+### `/Extensions/` (Utility Extensions)
+* `ByteArrayExtensions.cs`: Extension methods on `byte[]`: `ToBase64()` (plain Base64 string) and `ToBase64DataUri(mimeType)` (data URI suitable for HTML `<img>` tags or AI vision API payloads).
+
 ### `/wwwroot/` (Frontend)
 * `Agent.html`: The main control panel. Connects to the SSE stream to display live thoughts, actions, and debug images.
 * `Config.html`: Dynamically renders inputs based on the backend schema. Saves non-secret settings to `localStorage` and syncs with the C# backend. API key fields (`IsPassword = true`) are managed separately via the **API Key Vault** UI: the user enters a vault password, it is hashed client-side with `SubtleCrypto` SHA-256, and the hash is used to save/load secrets through `SecretsEndpoints`. On page load the vault attempts auto-unlock if a remembered hash is present in `localStorage`. The "Reset + Erase API Keys" button additionally calls `DELETE /api/secrets/{key}` for each known secret before resetting other settings.
+* `/css/` and `/js/`: Style and script parts used in the html front end.
 * `/Testing/`: Sandboxed HTML pages for testing Chat, Screenshot bounding boxes, and Coordinate prompting in isolation.
