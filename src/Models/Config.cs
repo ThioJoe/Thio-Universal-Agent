@@ -84,6 +84,9 @@ public enum AiProviderType
 /// <summary>Application-level settings that apply globally, regardless of AI provider.</summary>
 public class GeneralConfig
 {
+    [ConfigField("Human Control Only Mode", Description = "When enabled, the AI will tell you where to click and what to do (by drawing crosshairs), but it cannot make any inputs itself. You manually advance each step.")]
+    public bool HumanControlOnlyMode { get; set; } = true;
+
     [ConfigField("Active AI Provider", Description = "Which AI API provider to use for the agent")]
     public AiProviderType ActiveProvider { get; set; } = AiProviderType.Gemini;
 
@@ -122,9 +125,6 @@ public class GeneralConfig
 
     [ConfigField("Click Marker Duration (ms)", Description = "Overlay crosshair on click locations to easily see click actions, for this many milliseconds. 0 Disables.")]
     public int ShowClickMarkersDuration { get; set; } = 1000;
-
-    [ConfigField("Human Control Only Mode", Description = "When enabled, the AI will tell you where to click and what to do (by drawing crosshairs), but it cannot make any inputs itself. You manually advance each step.")]
-    public bool HumanControlOnlyMode { get; set; } = false;
 
     [ConfigField("System Prompt Template",
         Description = "The full instruction prompt sent to the AI at the start of every session. Use {systemInfo}, {goal}, {maxQueueSize}, and {normalizeSize} as placeholders (including the brackets) — do not rename or remove them.",

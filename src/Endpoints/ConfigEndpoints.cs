@@ -25,6 +25,7 @@ internal static class ConfigEndpoints
             AppConfigResponse response = new AppConfigResponse(
                 General: new GeneralConfigDto(
                         ActiveProvider:     appConfig.General.ActiveProvider.ToString(),
+                        HumanControlOnlyMode: appConfig.General.HumanControlOnlyMode,
                         SettleDelayMs:      appConfig.General.SettleDelayMs,
                         QueueSettleDelayMs: appConfig.General.QueueSettleDelayMs,
                         EnableContextReset: appConfig.General.EnableContextReset,
@@ -222,6 +223,7 @@ internal sealed record AppConfigResponse(
 
 internal sealed record GeneralConfigDto(
     string ActiveProvider,
+    bool HumanControlOnlyMode,
     int SettleDelayMs,
     int QueueSettleDelayMs,
     bool EnableContextReset,

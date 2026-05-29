@@ -13,7 +13,7 @@
 /** @typedef {{ type: 'guidanceQueued', message: string, cancelNextAction: boolean }} AgentGuidanceQueuedMessage */
 /** @typedef {{ type: 'done', status: string, finalResult?: string, totalDurationMs?: number }} AgentDoneMessage */
 /** @typedef {AgentStepMessage | AgentStepStartingMessage | AgentSubStepMessage | AgentCountdownMessage | AgentGuidanceQueuedMessage | AgentDoneMessage | { type: 'paused' } | { type: 'resumed' }} AgentSseMessage */
-/** @typedef {{ gemini?: { model?: string, apiKey?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData */
+/** @typedef {{ general?: { activeProvider?: string, humanControlOnlyMode?: boolean }, gemini?: { model?: string, apiKey?: string }, openai?: { model?: string, apiKey?: string }, anthropic?: { model?: string, apiKey?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData */
 /** @typedef {{ index: number, isPrimary: boolean, width: number, height: number }} MonitorInfo */
 /** @typedef {{ goal?: string, status: string, isPaused: boolean, startedAt?: string, completedAt?: string, totalDurationMs?: number, finalResult?: string, totalTokensUsed?: number }} SessionStatusResponse */
 /** @typedef {{ sessionId: string }} StartAgentResponse */
@@ -29,6 +29,9 @@ const countdownNum    = /** @type {HTMLSpanElement} */    (document.getElementBy
 const btnPause        = /** @type {HTMLButtonElement} */  (document.getElementById('btn-pause'));
 const btnStop         = /** @type {HTMLButtonElement} */  (document.getElementById('btn-stop'));
 const btnNewSession   = /** @type {HTMLButtonElement} */  (document.getElementById('btn-new-session'));
+const humanModeBanner = /** @type {HTMLDivElement} */     (document.getElementById('human-mode-banner'));
+const humanModeState  = /** @type {HTMLSpanElement} */    (document.getElementById('human-mode-state'));
+const humanModeText   = /** @type {HTMLSpanElement} */    (document.getElementById('human-mode-text'));
 const statusDot       = /** @type {HTMLDivElement} */     (document.getElementById('status-dot'));
 const statusText      = /** @type {HTMLSpanElement} */    (document.getElementById('status-text'));
 const stepCounter     = /** @type {HTMLSpanElement} */    (document.getElementById('step-counter'));
@@ -74,6 +77,33 @@ let configuredHotkeys = {
  */
 function getStoredConfig() {
     try { return JSON.parse(localStorage.getItem(CONFIG_STORE_KEY) || '{}'); } catch { return {}; }
+}
+
+/**
+ * @param {{ general?: { humanControlOnlyMode?: boolean } } | null | undefined} serverCfg
+ * @param {StoredConfigData} storedCfg
+ * @returns {boolean}
+ */
+function resolveHumanControlOnlyMode(serverCfg, storedCfg) {
+    if (typeof storedCfg?.general?.humanControlOnlyMode === 'boolean') return storedCfg.general.humanControlOnlyMode;
+    if (typeof serverCfg?.general?.humanControlOnlyMode === 'boolean') return serverCfg.general.humanControlOnlyMode;
+    return true;
+}
+
+/**
+ * @param {boolean} enabled
+ * @returns {void}
+ */
+function updateHumanControlModeDisplay(enabled) {
+    if (!humanModeBanner || !humanModeState || !humanModeText) return;
+
+    humanModeBanner.classList.remove('pending');
+    humanModeBanner.classList.toggle('on', enabled);
+    humanModeBanner.classList.toggle('off', !enabled);
+    humanModeState.textContent = enabled ? 'ON' : 'OFF';
+    humanModeText.textContent = enabled
+        ? 'AI guidance only. (AI cannot send inputs even if it wanted). You perform each click and input yourself. '
+        : 'Autonomous input enabled. The AI will control the mouse and keyboard directly.';
 }
 
 /**
@@ -173,6 +203,14 @@ let activePricing = {};
 /** Running total cost in dollars for the current session */
 let sessionTotalCost = 0;
 
+updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, getStoredConfig()));
+
+window.addEventListener('storage', (event) => {
+    if (event.key === CONFIG_STORE_KEY) {
+        updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, getStoredConfig()));
+    }
+});
+
 // ── Boot: fetch server config + try to resume a stored session ──────────
 (async () => {
     try {
@@ -185,6 +223,7 @@ let sessionTotalCost = 0;
         if (cfgRes.ok) {
             const cfg = await cfgRes.json();
             const storedCfg = getStoredConfig();
+            updateHumanControlModeDisplay(resolveHumanControlOnlyMode(cfg, storedCfg));
             // Do not assume a default provider — only use the configured activeProvider when present
             const activeProv = storedCfg?.general?.activeProvider || cfg.general?.activeProvider || null;
             let model = null;
@@ -340,6 +379,7 @@ async function startAgent() {
     await pushConfigToServer();
 
     const cfg = getStoredConfig();
+    updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, cfg));
     const activeProvider = cfg?.general?.activeProvider || null;
 
     let apiKey = null;
