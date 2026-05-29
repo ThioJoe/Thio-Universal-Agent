@@ -993,21 +993,27 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     }
 
     /// <summary>
-    /// A message-only window that subscribes to raw mouse input via <c>RIDEV_INPUTSINK</c>.
-    /// It stays fully invisible and never steals focus. When a real mouse button-down lands within
-    /// <see cref="HitRadius"/> pixels of a registered interactive marker target, it fires that
-    /// marker's callback and unregisters the target. The overlay window for the marker remains
-    /// fully click-through (<c>WS_EX_TRANSPARENT</c>) at all times; no event is re-injected.
+    /// An off-screen tool window that subscribes to raw mouse input via <c>RIDEV_INPUTSINK</c>.
+    /// It never takes focus or shows up in normal window chrome. When a real mouse button-down lands
+    /// within <see cref="HitRadius"/> pixels of a registered interactive marker target, it fires that
+    /// marker's callback and unregisters the target. The overlay window for the marker remains fully
+    /// click-through (<c>WS_EX_TRANSPARENT</c>) at all times; no event is re-injected.
     /// </summary>
     private sealed class RawInputSink : IDisposable
     {
         private const int HitRadius = 30; // pixels — generous enough for fat-finger accuracy
-        private const string SinkClassName = "TUA_RawInputSink";
+        private const int HiddenWindowX = -32000;
+        private const int HiddenWindowY = -32000;
+        private const int HiddenWindowSize = 1;
+
+        private static int _instanceCounter;
+        private string _windowClassName = "";
 
         private IntPtr _hwnd;
         private readonly Thread _thread;
         private readonly ManualResetEventSlim _ready = new(false);
         private readonly NativeMethods.WndProcDelegate _wndProcDelegate;
+        private Exception? _startupException;
 
         // markerId -> (targetX, targetY, callback)
         private readonly ConcurrentDictionary<int, (int x, int y, Action callback)> _targets = new();
@@ -1019,6 +1025,9 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             _thread.SetApartmentState(ApartmentState.STA);
             _thread.Start();
             _ready.Wait();
+
+            if (_startupException != null)
+                throw new InvalidOperationException("Failed to initialize the raw input sink window.", _startupException);
         }
 
         /// <summary>Registers a marker target. From this point, any button-down within <see cref="HitRadius"/> of (<paramref name="x"/>,<paramref name="y"/>) will dismiss it.</summary>
@@ -1031,44 +1040,77 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
         private void Pump()
         {
-            NativeMethods.SetThreadDpiAwarenessContext(new IntPtr(-4));
-
-            NativeMethods.WNDCLASSEX wc = new NativeMethods.WNDCLASSEX
+            try
             {
-                cbSize        = (uint)Marshal.SizeOf<NativeMethods.WNDCLASSEX>(),
-                lpfnWndProc   = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate),
-                lpszClassName = SinkClassName,
-                hbrBackground = IntPtr.Zero,
-            };
-            NativeMethods.RegisterClassExW(ref wc);
+                NativeMethods.SetThreadDpiAwarenessContext(new IntPtr(-4));
 
-            // HWND_MESSAGE parent = message-only window; never shown, never focused.
-            _hwnd = NativeMethods.CreateWindowExW(
-                dwExStyle: 0, lpClassName: SinkClassName, lpWindowName: "",
-                dwStyle: 0, x: 0, y: 0, nWidth: 0, nHeight: 0,
-                hWndParent: new IntPtr(-3) /* HWND_MESSAGE */,
-                hMenu: IntPtr.Zero, hInstance: IntPtr.Zero, lpParam: IntPtr.Zero);
+                // Use a unique class name so this instance's WndProc is always the one bound to the HWND.
+                _windowClassName = $"TUA_RawInputSink_{Interlocked.Increment(ref _instanceCounter)}";
 
-            // RIDEV_INPUTSINK: receive WM_INPUT even when not in foreground.
-            // Usage page 1 (Generic Desktop), usage 2 (Mouse).
-            NativeMethods.RAWINPUTDEVICE[] rid =
-            [
-                new NativeMethods.RAWINPUTDEVICE
+                NativeMethods.WNDCLASSEX wc = new NativeMethods.WNDCLASSEX
                 {
-                    usUsagePage = 0x01,
-                    usUsage     = 0x02,
-                    dwFlags     = NativeMethods.RIDEV_INPUTSINK,
-                    hwndTarget  = _hwnd
-                }
-            ];
-            NativeMethods.RegisterRawInputDevices(rid, 1, (uint)Marshal.SizeOf<NativeMethods.RAWINPUTDEVICE>());
+                    cbSize        = (uint)Marshal.SizeOf<NativeMethods.WNDCLASSEX>(),
+                    lpfnWndProc   = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate),
+                    lpszClassName = _windowClassName,
+                    hbrBackground = IntPtr.Zero,
+                };
+                if (NativeMethods.RegisterClassExW(ref wc) == 0)
+                    throw CreateWin32Failure("RegisterClassExW for raw input sink failed");
 
-            _ready.Set();
+                // Use an off-screen top-level tool window instead of a message-only window.
+                // This matches the user's working sample more closely and avoids relying on
+                // message-only-window delivery semantics for WM_INPUT.
+                _hwnd = NativeMethods.CreateWindowExW(
+                    dwExStyle: NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_NOACTIVATE,
+                    lpClassName: _windowClassName,
+                    lpWindowName: "TUA Raw Input Sink",
+                    dwStyle: NativeMethods.WS_POPUP | NativeMethods.WS_VISIBLE,
+                    x: HiddenWindowX,
+                    y: HiddenWindowY,
+                    nWidth: HiddenWindowSize,
+                    nHeight: HiddenWindowSize,
+                    hWndParent: IntPtr.Zero,
+                    hMenu: IntPtr.Zero,
+                    hInstance: IntPtr.Zero,
+                    lpParam: IntPtr.Zero);
+                if (_hwnd == IntPtr.Zero)
+                    throw CreateWin32Failure("CreateWindowExW for raw input sink failed");
+
+                // RIDEV_INPUTSINK: receive WM_INPUT even when not in foreground.
+                // Usage page 1 (Generic Desktop), usage 2 (Mouse).
+                NativeMethods.RAWINPUTDEVICE[] rid =
+                [
+                    new NativeMethods.RAWINPUTDEVICE
+                    {
+                        usUsagePage = 0x01,
+                        usUsage     = 0x02,
+                        dwFlags     = NativeMethods.RIDEV_INPUTSINK,
+                        hwndTarget  = _hwnd
+                    }
+                ];
+                if (!NativeMethods.RegisterRawInputDevices(rid, 1, (uint)Marshal.SizeOf<NativeMethods.RAWINPUTDEVICE>()))
+                    throw CreateWin32Failure("RegisterRawInputDevices for mouse input failed");
+            }
+            catch (Exception ex)
+            {
+                _startupException = ex;
+                return;
+            }
+            finally
+            {
+                _ready.Set();
+            }
 
             while (NativeMethods.GetMessage(out NativeMethods.MSG msg, IntPtr.Zero, 0, 0) > 0)
             {
                 NativeMethods.TranslateMessage(ref msg);
                 NativeMethods.DispatchMessageW(ref msg);
+            }
+
+            if (_hwnd != IntPtr.Zero)
+            {
+                NativeMethods.DestroyWindow(_hwnd);
+                _hwnd = IntPtr.Zero;
             }
         }
 
@@ -1093,9 +1135,21 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                     if (NativeMethods.GetCursorPos(out NativeMethods.POINT_RI pt))
                         CheckHit(pt.x, pt.y);
                 }
+
+                return IntPtr.Zero;
             }
+
+            if (msg == NativeMethods.WM_CLOSE)
+            {
+                NativeMethods.PostMessage(hWnd, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+                return IntPtr.Zero;
+            }
+
             return NativeMethods.DefWindowProcW(hWnd, msg, wParam, lParam);
         }
+
+        private static InvalidOperationException CreateWin32Failure(string operation)
+            => new InvalidOperationException($"{operation} (Win32 error {Marshal.GetLastWin32Error()}).");
 
         private void CheckHit(int px, int py)
         {
@@ -1218,6 +1272,7 @@ internal static class NativeMethods
     public const uint WS_EX_TRANSPARENT = 0x00000020;
     public const uint WS_EX_TOOLWINDOW = 0x00000080;
     public const uint WS_EX_LAYERED = 0x00080000;
+    public const uint WS_EX_NOACTIVATE = 0x08000000;
 
     public const uint WS_CHILD   = 0x40000000;
     public const uint WS_VISIBLE = 0x10000000;
@@ -1371,16 +1426,35 @@ internal static class NativeMethods
         public IntPtr wParam;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Explicit)]
     public struct RAWMOUSE
     {
+        public const int ButtonUnionOffset = 4;
+
+        [FieldOffset(0)]
         public ushort usFlags;
+
+        // Win32 inserts 2 bytes of padding after usFlags so the 4-byte button union starts at offset 4.
+        [FieldOffset(ButtonUnionOffset)]
+        public uint ulButtons;
+
+        [FieldOffset(ButtonUnionOffset)]
         public ushort usButtonFlags;
+
+        [FieldOffset(ButtonUnionOffset + sizeof(ushort))]
         public ushort usButtonData;
-        public uint   ulRawButtons;
-        public int    lLastX;
-        public int    lLastY;
-        public uint   ulExtraInformation;
+
+        [FieldOffset(8)]
+        public uint ulRawButtons;
+
+        [FieldOffset(12)]
+        public int lLastX;
+
+        [FieldOffset(16)]
+        public int lLastY;
+
+        [FieldOffset(20)]
+        public uint ulExtraInformation;
     }
 
     [StructLayout(LayoutKind.Sequential)]

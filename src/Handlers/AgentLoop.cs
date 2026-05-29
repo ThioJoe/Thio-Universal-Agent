@@ -173,16 +173,19 @@ public sealed partial class AgentLoop(
                 List<(ActionExecutionResult Result, List<AgentDebugEntry>? DebugLog)>? humanPreResults = null;
                 if (humanMode)
                 {
-                    // If every non-terminal action is a plain click (left / right / double / middle),
+                    static bool IsAutoAdvanceClickAction(AgentActionKind kind) =>
+                        kind is AgentActionKind.LeftClick or AgentActionKind.RightClick
+                             or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick
+                             or AgentActionKind.LeftClickCoords or AgentActionKind.RightClickCoords
+                             or AgentActionKind.DoubleClickCoords or AgentActionKind.MiddleClickCoords;
+
+                    // If every non-terminal action is a click (target-based or COORDS-based),
                     // wire up auto-advance: the session resumes automatically once all markers are dismissed.
                     bool allClicks = actionsToRun.All(a =>
                         a.Kind is AgentActionKind.Done or AgentActionKind.Fail
-                        || a.Kind is AgentActionKind.LeftClick or AgentActionKind.RightClick
-                                  or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick);
+                        || IsAutoAdvanceClickAction(a.Kind));
 
-                    int clickCount = actionsToRun.Count(a =>
-                        a.Kind is AgentActionKind.LeftClick or AgentActionKind.RightClick
-                                or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick);
+                    int clickCount = actionsToRun.Count(a => IsAutoAdvanceClickAction(a.Kind));
 
                     if (allClicks && clickCount > 0)
                     {
