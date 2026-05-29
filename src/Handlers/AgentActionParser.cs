@@ -53,19 +53,26 @@ public static class AgentActionParser
 
         // Everything before ACTION: is the thought (strip optional THOUGHT: prefix)
         string thoughtRaw = responseText[..actionIndex].Trim();
-        if (thoughtRaw.StartsWith(ThoughtPrefix, StringComparison.OrdinalIgnoreCase))
-            thoughtRaw = thoughtRaw[ThoughtPrefix.Length..].Trim();
-
-        string thought = thoughtRaw.Length > 0 ? thoughtRaw : "(no reasoning provided)";
 
         // The action payload is everything after "ACTION:"
         string actionPayload = responseText[(actionIndex + ActionPrefix.Length)..].Trim();
+
+        if (actionPayload.StartsWith(QueuePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string queuePayload = actionPayload[QueuePrefix.Length..].Trim();
+            return TryParseQueuePayload(thoughtRaw, queuePayload, maxQueueSize, humanMode, out result, out error);
+        }
 
         if (actionPayload.Length == 0)
         {
             error = "ACTION: line is present but empty.";
             return false;
         }
+
+        if (thoughtRaw.StartsWith(ThoughtPrefix, StringComparison.OrdinalIgnoreCase))
+            thoughtRaw = thoughtRaw[ThoughtPrefix.Length..].Trim();
+
+        string thought = thoughtRaw.Length > 0 ? thoughtRaw : "(no reasoning provided)";
 
         if (!TryParseActionLine(actionPayload, humanMode, out AgentAction? action, out error))
             return false;
@@ -82,16 +89,25 @@ public static class AgentActionParser
         [NotNullWhen(true)] out AgentParsedResponse? result,
         [NotNullWhen(false)] out string? error)
     {
-        result = null;
-
         // Thought is everything before QUEUE:
         string thoughtRaw = responseText[..queueIndex].Trim();
+
+        // The queue payload is everything after "QUEUE:"
+        string queuePayload = responseText[(queueIndex + QueuePrefix.Length)..].Trim();
+        return TryParseQueuePayload(thoughtRaw, queuePayload, maxQueueSize, humanMode, out result, out error);
+    }
+
+    private static bool TryParseQueuePayload(
+        string thoughtRaw, string queuePayload, int maxQueueSize, bool humanMode,
+        [NotNullWhen(true)] out AgentParsedResponse? result,
+        [NotNullWhen(false)] out string? error)
+    {
+        result = null;
+
         if (thoughtRaw.StartsWith(ThoughtPrefix, StringComparison.OrdinalIgnoreCase))
             thoughtRaw = thoughtRaw[ThoughtPrefix.Length..].Trim();
         string thought = thoughtRaw.Length > 0 ? thoughtRaw : "(no reasoning provided)";
 
-        // The queue payload is everything after "QUEUE:"
-        string queuePayload = responseText[(queueIndex + QueuePrefix.Length)..].Trim();
         if (queuePayload.Length == 0)
         {
             error = $"QUEUE: block is present but empty. Provide 1 to {maxQueueSize} action lines.";
