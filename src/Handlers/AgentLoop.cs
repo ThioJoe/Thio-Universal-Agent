@@ -173,6 +173,27 @@ public sealed partial class AgentLoop(
                 List<(ActionExecutionResult Result, List<AgentDebugEntry>? DebugLog)>? humanPreResults = null;
                 if (humanMode)
                 {
+                    // If every non-terminal action is a plain click (left / right / double / middle),
+                    // wire up auto-advance: the session resumes automatically once all markers are dismissed.
+                    bool allClicks = actionsToRun.All(a =>
+                        a.Kind is AgentActionKind.Done or AgentActionKind.Fail
+                        || a.Kind is AgentActionKind.LeftClick or AgentActionKind.RightClick
+                                  or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick);
+
+                    int clickCount = actionsToRun.Count(a =>
+                        a.Kind is AgentActionKind.LeftClick or AgentActionKind.RightClick
+                                or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick);
+
+                    if (allClicks && clickCount > 0)
+                    {
+                        int remaining = clickCount;
+                        executor.InputProvider.HumanClickCallback = () =>
+                        {
+                            if (Interlocked.Decrement(ref remaining) == 0)
+                                session.Resume();
+                        };
+                    }
+
                     humanPreResults = new(actionsToRun.Count);
                     for (int preQi = 0; preQi < actionsToRun.Count; preQi++)
                     {
@@ -195,6 +216,9 @@ public sealed partial class AgentLoop(
                         humanPreResults.Add((preResult, preQi == 0 ? null : preDebugLog));
                     }
                     screenProvider.CurrentQueueLabel = null;
+                    // Callback has been captured into each marker's closure; clear the field so it
+                    // isn't accidentally reused if a subsequent non-click step draws a marker.
+                    executor.InputProvider.HumanClickCallback = null;
                 }
 
                 // In human control mode, automatically pause after showing each step (and after markers

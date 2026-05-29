@@ -7,6 +7,9 @@ namespace Thio_Universal_Agent.OS_Windows
     {
         public bool HumanControlOnlyMode => _appConfig.General.HumanControlOnlyMode;
 
+        /// <inheritdoc/>
+        public Action? HumanClickCallback { get; set; }
+
         private readonly AppConfig _appConfig;
         private readonly IScreenProvider _screenProvider;
 
@@ -143,7 +146,7 @@ namespace Thio_Universal_Agent.OS_Windows
         {
             if (HumanControlOnlyMode == true)
             {
-                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200);
+                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200, onClicked: HumanClickCallback);
             }
             else if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
@@ -165,7 +168,7 @@ namespace Thio_Universal_Agent.OS_Windows
         {
             if (HumanControlOnlyMode == true)
             {
-                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200);
+                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200, onClicked: HumanClickCallback);
             }
             else if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
@@ -187,7 +190,7 @@ namespace Thio_Universal_Agent.OS_Windows
         {
             if (HumanControlOnlyMode == true)
             {
-                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200);
+                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200, onClicked: HumanClickCallback);
             }
             else if (_appConfig.General.ShowClickMarkersDuration > 0)
             {
@@ -209,7 +212,7 @@ namespace Thio_Universal_Agent.OS_Windows
         {
             if (HumanControlOnlyMode == true)
             {
-                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200);
+                _screenProvider.DrawClickPointMarker(x, y, int.MaxValue, 200, onClicked: HumanClickCallback);
             }
             else if (_appConfig.General.ShowClickMarkersDuration > 0)
             {

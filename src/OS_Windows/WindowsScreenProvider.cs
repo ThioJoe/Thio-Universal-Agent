@@ -160,6 +160,9 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
     private readonly MarkerPool _markerPool = new();
 
+    // Created on first interactive DrawClickPointMarker call; lives for the lifetime of the provider.
+    private RawInputSink? _rawInputSink;
+
     /// <summary>
     /// When set, each <c>Draw*</c> call stamps this value onto the marker's <c>QueueLabel</c> so the
     /// human operator can see the execution order of a queued batch. Set to <c>null</c> to suppress.
@@ -268,11 +271,26 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     /// <param name="durationMs">How long the marker stays visible in milliseconds. Pass <c>0</c> to keep it visible until <see cref="ClearAllMarkers"/> is called.</param>
     /// <param name="markerOpacity">Opacity of the marker from 0 (invisible) to 255 (fully opaque).</param>
     /// <returns><c>true</c> on success.</returns>
-    public void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity = 255, string? label = null)
+    public void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity = 255, string? label = null, Action? onClicked = null)
     {
         ClickPointMarker window = _markerPool.Rent<ClickPointMarker>(new CancellationTokenSource());
         window.Label = label;
         window.QueueLabel = CurrentQueueLabel;
+
+        if (onClicked != null)
+        {
+            _rawInputSink ??= new RawInputSink();
+            int markerId = window.Id;
+            // Register before Show() so no click event is missed.
+            _rawInputSink.Register(markerId, x, y, () =>
+            {
+                window.Clear(_markerPool);
+                onClicked();
+            });
+            // Unregister if the marker is cleared externally (timeout / ClearMarkers) before it is clicked.
+            window.OnCleared = () => _rawInputSink.Unregister(markerId);
+        }
+
         window.Show(x, y, markerOpacity, durationMs, _markerPool);
     }
 
@@ -357,6 +375,9 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         /// <summary>The cancellation source for this window's active auto-hide timer. Set on activation, disposed and nulled on clear.</summary>
         public CancellationTokenSource? Cts { get; set; }
 
+        /// <summary>Optional callback invoked once when <see cref="Clear"/> successfully deactivates this marker (either from timeout or an explicit clear). Reset to <c>null</c> on reuse.</summary>
+        internal Action? OnCleared { get; set; }
+
         protected MarkerWindow()
         {
             _wndProcDelegate = WndProc;
@@ -424,8 +445,11 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 Cts?.Cancel();
                 Cts?.Dispose();
                 Cts = null;
+                Action? cleared = OnCleared;
+                OnCleared = null;
                 Hide();
                 pool.Remove(this);
+                cleared?.Invoke();
             }
         }
 
@@ -963,8 +987,140 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             if (displayLabel != null)
             {
                 // Place the label above the destination crosshair; the Padding guarantees vertical room.
-                AddLabel(g, endX - 8, Math.Max(2, endY - Padding - 16), displayLabel, Color.Orange);
+                AddLabel(g, endX - 8, Math.Max(2, endY - Padding - 16), displayLabel, Color.Orange); 
             }
+        }
+    }
+
+    /// <summary>
+    /// A message-only window that subscribes to raw mouse input via <c>RIDEV_INPUTSINK</c>.
+    /// It stays fully invisible and never steals focus. When a real mouse button-down lands within
+    /// <see cref="HitRadius"/> pixels of a registered interactive marker target, it fires that
+    /// marker's callback and unregisters the target. The overlay window for the marker remains
+    /// fully click-through (<c>WS_EX_TRANSPARENT</c>) at all times; no event is re-injected.
+    /// </summary>
+    private sealed class RawInputSink : IDisposable
+    {
+        private const int HitRadius = 30; // pixels — generous enough for fat-finger accuracy
+        private const string SinkClassName = "TUA_RawInputSink";
+
+        private IntPtr _hwnd;
+        private readonly Thread _thread;
+        private readonly ManualResetEventSlim _ready = new(false);
+        private readonly NativeMethods.WndProcDelegate _wndProcDelegate;
+
+        // markerId -> (targetX, targetY, callback)
+        private readonly ConcurrentDictionary<int, (int x, int y, Action callback)> _targets = new();
+
+        public RawInputSink()
+        {
+            _wndProcDelegate = WndProc;
+            _thread = new Thread(Pump) { IsBackground = true, Name = "RawInputSinkPump" };
+            _thread.SetApartmentState(ApartmentState.STA);
+            _thread.Start();
+            _ready.Wait();
+        }
+
+        /// <summary>Registers a marker target. From this point, any button-down within <see cref="HitRadius"/> of (<paramref name="x"/>,<paramref name="y"/>) will dismiss it.</summary>
+        public void Register(int markerId, int x, int y, Action callback)
+            => _targets[markerId] = (x, y, callback);
+
+        /// <summary>Removes a marker registration (called when the marker is cleared externally before being clicked).</summary>
+        public void Unregister(int markerId)
+            => _targets.TryRemove(markerId, out _);
+
+        private void Pump()
+        {
+            NativeMethods.SetThreadDpiAwarenessContext(new IntPtr(-4));
+
+            NativeMethods.WNDCLASSEX wc = new NativeMethods.WNDCLASSEX
+            {
+                cbSize        = (uint)Marshal.SizeOf<NativeMethods.WNDCLASSEX>(),
+                lpfnWndProc   = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate),
+                lpszClassName = SinkClassName,
+                hbrBackground = IntPtr.Zero,
+            };
+            NativeMethods.RegisterClassExW(ref wc);
+
+            // HWND_MESSAGE parent = message-only window; never shown, never focused.
+            _hwnd = NativeMethods.CreateWindowExW(
+                dwExStyle: 0, lpClassName: SinkClassName, lpWindowName: "",
+                dwStyle: 0, x: 0, y: 0, nWidth: 0, nHeight: 0,
+                hWndParent: new IntPtr(-3) /* HWND_MESSAGE */,
+                hMenu: IntPtr.Zero, hInstance: IntPtr.Zero, lpParam: IntPtr.Zero);
+
+            // RIDEV_INPUTSINK: receive WM_INPUT even when not in foreground.
+            // Usage page 1 (Generic Desktop), usage 2 (Mouse).
+            NativeMethods.RAWINPUTDEVICE[] rid =
+            [
+                new NativeMethods.RAWINPUTDEVICE
+                {
+                    usUsagePage = 0x01,
+                    usUsage     = 0x02,
+                    dwFlags     = NativeMethods.RIDEV_INPUTSINK,
+                    hwndTarget  = _hwnd
+                }
+            ];
+            NativeMethods.RegisterRawInputDevices(rid, 1, (uint)Marshal.SizeOf<NativeMethods.RAWINPUTDEVICE>());
+
+            _ready.Set();
+
+            while (NativeMethods.GetMessage(out NativeMethods.MSG msg, IntPtr.Zero, 0, 0) > 0)
+            {
+                NativeMethods.TranslateMessage(ref msg);
+                NativeMethods.DispatchMessageW(ref msg);
+            }
+        }
+
+        private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+        {
+            if (msg == NativeMethods.WM_INPUT)
+            {
+                uint size = (uint)Marshal.SizeOf<NativeMethods.RAWINPUT>();
+                uint result = NativeMethods.GetRawInputData(
+                    lParam, NativeMethods.RID_INPUT,
+                    out NativeMethods.RAWINPUT raw, ref size,
+                    (uint)Marshal.SizeOf<NativeMethods.RAWINPUTHEADER>());
+
+                if (result != uint.MaxValue
+                    && raw.header.dwType == NativeMethods.RIM_TYPEMOUSE
+                    && (raw.mouse.usButtonFlags & (NativeMethods.RI_MOUSE_LEFT_BUTTON_DOWN
+                                                 | NativeMethods.RI_MOUSE_RIGHT_BUTTON_DOWN
+                                                 | NativeMethods.RI_MOUSE_MIDDLE_BUTTON_DOWN)) != 0)
+                {
+                    // Use GetCursorPos — raw deltas are relative in most HID drivers and
+                    // may not reflect the actual DPI-scaled cursor position.
+                    if (NativeMethods.GetCursorPos(out NativeMethods.POINT_RI pt))
+                        CheckHit(pt.x, pt.y);
+                }
+            }
+            return NativeMethods.DefWindowProcW(hWnd, msg, wParam, lParam);
+        }
+
+        private void CheckHit(int px, int py)
+        {
+            foreach (var (id, (tx, ty, callback)) in _targets)
+            {
+                int dx = px - tx;
+                int dy = py - ty;
+                if (dx * dx + dy * dy <= HitRadius * HitRadius)
+                {
+                    if (_targets.TryRemove(id, out _))
+                        callback();
+                    return; // one dismiss per click
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_hwnd != IntPtr.Zero)
+            {
+                NativeMethods.PostMessage(_hwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                _thread.Join(2000);
+                _hwnd = IntPtr.Zero;
+            }
+            _ready.Dispose();
         }
     }
 }
@@ -1187,4 +1343,70 @@ internal static class NativeMethods
     public static extern IntPtr CreateFontW(int cHeight, int cWidth, int cEscapement, int cOrientation,
         int cWeight, uint bItalic, uint bUnderline, uint bStrikeOut, uint iCharSet,
         uint iOutPrecision, uint iClipPrecision, uint iQuality, uint iPitchAndFamily, string pszFaceName);
+
+    // ---- Raw Input (used by RawInputSink for click-through interactive markers) ----
+
+    public const uint WM_INPUT = 0x00FF;
+    public const uint RIM_TYPEMOUSE = 0;
+    public const uint RIDEV_INPUTSINK = 0x00000100;
+    public const ushort RI_MOUSE_LEFT_BUTTON_DOWN   = 0x0001;
+    public const ushort RI_MOUSE_RIGHT_BUTTON_DOWN  = 0x0004;
+    public const ushort RI_MOUSE_MIDDLE_BUTTON_DOWN = 0x0010;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWINPUTDEVICE
+    {
+        public ushort usUsagePage;
+        public ushort usUsage;
+        public uint   dwFlags;
+        public IntPtr hwndTarget;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWINPUTHEADER
+    {
+        public uint   dwType;
+        public uint   dwSize;
+        public IntPtr hDevice;
+        public IntPtr wParam;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWMOUSE
+    {
+        public ushort usFlags;
+        public ushort usButtonFlags;
+        public ushort usButtonData;
+        public uint   ulRawButtons;
+        public int    lLastX;
+        public int    lLastY;
+        public uint   ulExtraInformation;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWINPUT
+    {
+        public RAWINPUTHEADER header;
+        public RAWMOUSE       mouse;   // only mouse member needed; union sized to largest (mouse)
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT_RI
+    {
+        public int x, y;
+    }
+
+    [DllImport("user32.dll", SetLastError = true), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern bool RegisterRawInputDevices(
+        [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] RAWINPUTDEVICE[] pRawInputDevices,
+        uint uiNumDevices, uint cbSize);
+
+    [DllImport("user32.dll", SetLastError = true), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern uint GetRawInputData(IntPtr hRawInput, uint uiCommand,
+        out RAWINPUT pData, ref uint pcbSize, uint cbSizeHeader);
+
+    [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern bool GetCursorPos(out POINT_RI lpPoint);
+
+    public const uint RID_INPUT = 0x10000003;
 }

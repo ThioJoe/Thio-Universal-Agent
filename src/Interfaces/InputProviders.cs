@@ -43,5 +43,12 @@ namespace Thio_Universal_Agent
         /// Sends key-up events for the specified modifier keys, releasing them after a mouse action.
         /// </summary>
         void ReleaseModifierKeys(ModifierKeys modifiers) { }
+
+        /// <summary>
+        /// In human-control-only mode, this callback is passed to <see cref="IScreenProvider.DrawClickPointMarker"/>
+        /// so that clicking near the marker auto-dismisses it. Set by the agent loop before pre-executing a
+        /// click-only step or batch; reset to <c>null</c> afterward. Ignored outside human-control mode.
+        /// </summary>
+        Action? HumanClickCallback { get; set; }
     }
 }

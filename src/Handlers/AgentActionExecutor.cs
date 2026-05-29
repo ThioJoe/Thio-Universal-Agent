@@ -16,6 +16,9 @@ public sealed partial class AgentActionExecutor(
 {
     private readonly int _doubleClickDelayMs = appConfig.General.DoubleClickDelayMs;
 
+    /// <summary>Exposes the input provider so the agent loop can set <see cref="IInputProvider.HumanClickCallback"/>.</summary>
+    internal IInputProvider InputProvider => inputProvider;
+
     /// <summary>
     /// Executes the given action against the OS.
     /// For click/move actions, <paramref name="currentScreenshot"/> is used by the

@@ -49,7 +49,11 @@ public interface IScreenProvider
     /// <param name="durationMs">The duration in milliseconds for which the click point should be displayed. Default is 1000ms. 0 for until cleared manually.</param>
     /// <param name="markerOpacity">The opacity of the click marker, from 0 (fully transparent) to 255 (fully opaque). Default is 255.</param>
     /// <param name="label">Optional text label drawn near the marker. Pass <c>null</c> (default) to show no label.</param>
-    void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity = 255, string? label = null);
+    /// <param name="onClicked">
+    /// Optional callback invoked (on a background thread) when the user physically clicks within the hit-radius of this marker.
+    /// The marker is auto-dismissed before the callback fires. Pass <c>null</c> (default) for a passive, non-interactive marker.
+    /// </param>
+    void DrawClickPointMarker(int x, int y, int durationMs, int markerOpacity = 255, string? label = null, Action? onClicked = null);
 
     /// <summary>
     /// Draws a visual marker representing a click-and-drag operation from a starting point to an ending point.
