@@ -616,6 +616,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private IntPtr _hwnd;
         private IntPtr _editHwnd;
         private IntPtr _hFont;
+        private IntPtr _hbrBackground;
         private readonly Thread _messageThread;
         private readonly ManualResetEventSlim _ready = new(false);
         private readonly NativeMethods.WndProcDelegate _wndProcDelegate;
@@ -656,14 +657,15 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         {
             NativeMethods.SetThreadDpiAwarenessContext(new IntPtr(-4));
 
-            IntPtr hbrBackground = NativeMethods.CreateSolidBrush(0x00FFFFFF); // white
+            // Light rose tint (RGB 255,235,235) ties in with the red bounding box; COLORREF is 0x00BBGGRR
+            _hbrBackground = NativeMethods.CreateSolidBrush(0x00EBEBFF);
 
             NativeMethods.WNDCLASSEX wc = new NativeMethods.WNDCLASSEX
             {
                 cbSize        = (uint)Marshal.SizeOf<NativeMethods.WNDCLASSEX>(),
                 lpfnWndProc   = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate),
                 lpszClassName = WndClassName,
-                hbrBackground = hbrBackground,
+                hbrBackground = _hbrBackground,
             };
             NativeMethods.RegisterClassExW(ref wc); // Silently no-ops if already registered by another instance
 
@@ -678,9 +680,19 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             // Single-line read-only EDIT child — user can click in, select all, Ctrl+C
             uint editStyle = NativeMethods.WS_CHILD | NativeMethods.WS_VISIBLE
                            | NativeMethods.ES_READONLY | NativeMethods.ES_AUTOHSCROLL;
-            _editHwnd = NativeMethods.CreateWindowExW(0, "EDIT", "", editStyle,
-                EditPadding, EditPadding, 120 - EditPadding * 2, WindowHeight - EditPadding * 2,
-                _hwnd, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            _editHwnd = NativeMethods.CreateWindowExW(
+                dwExStyle: 0,
+                lpClassName: "EDIT", lpWindowName: "",
+                dwStyle: editStyle,
+                x: EditPadding,
+                y: EditPadding,
+                nWidth: 120 - (EditPadding * 2),
+                nHeight: WindowHeight - (EditPadding * 2),
+                hWndParent: _hwnd,
+                hMenu: IntPtr.Zero,
+                hInstance: IntPtr.Zero,
+                lpParam: IntPtr.Zero
+            );
 
             // Segoe UI 11pt bold — matches the label style used by other markers
             _hFont = NativeMethods.CreateFontW(-15, 0, 0, 0, 700 /* FW_BOLD */, 0, 0, 0,
@@ -696,7 +708,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             }
 
             NativeMethods.DestroyWindow(_hwnd);
-            NativeMethods.DeleteObject(hbrBackground);
+            NativeMethods.DeleteObject(_hbrBackground);
             if (_hFont != IntPtr.Zero) NativeMethods.DeleteObject(_hFont);
         }
 
@@ -719,6 +731,13 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 case NativeMethods.WM_APP_HIDE:
                     NativeMethods.ShowWindow(hWnd, NativeMethods.SW_HIDE);
                     return IntPtr.Zero;
+
+                case NativeMethods.WM_CTLCOLOREDIT:
+                case NativeMethods.WM_CTLCOLORSTATIC:
+                    // wParam is the HDC for the EDIT control — set colors and return our background brush
+                    NativeMethods.SetBkColor(wParam, 0x00EBEBFF);   // light lavender, matches window background
+                    NativeMethods.SetTextColor(wParam, 0x00000000);  // black text
+                    return _hbrBackground;
 
                 case NativeMethods.WM_CLOSE:
                     NativeMethods.PostMessage(hWnd, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
@@ -999,6 +1018,8 @@ internal static class NativeMethods
     public const uint ES_READONLY    = 0x0800;
     public const uint ES_AUTOHSCROLL = 0x0080;
     public const uint WM_SETFONT = 0x0030;
+    public const uint WM_CTLCOLOREDIT = 0x0133;
+    public const uint WM_CTLCOLORSTATIC = 0x0138;
     public const uint SWP_NOZORDER = 0x0004;
 
     public const uint LWA_COLORKEY = 0x00000001;
@@ -1066,6 +1087,12 @@ internal static class NativeMethods
 
     [DllImport("gdi32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern bool DeleteObject(IntPtr hObject);
+
+    [DllImport("gdi32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern uint SetBkColor(IntPtr hdc, uint crColor);
+
+    [DllImport("gdi32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern uint SetTextColor(IntPtr hdc, uint crColor);
 
     [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
