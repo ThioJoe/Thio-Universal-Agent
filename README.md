@@ -18,6 +18,8 @@ An AI desktop assistant app capable of interacting with your entire computer (an
 
 It controls Windows purely through visual perception and GUI interaction. By interpreting raw pixels and sending hardware-level input (mouse movements, clicks, keystrokes), it operates exactly like a human would. This makes it **universally compatible** with any graphical application on your machine.
 
+## Optional: Human Control Only Mode
+
 It now supports two ways to use it: a **Human Control Only Mode** that is enabled by default, where the AI guides you step-by-step and shows where to click without sending any real input itself, and an **autonomous mode** where it can move the mouse and type on its own.
 
 Also See: [Planned Features Page](https://github.com/ThioJoe/Thio-Universal-Agent/wiki/Planned-Features)
