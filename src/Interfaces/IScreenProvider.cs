@@ -102,4 +102,10 @@ public interface IScreenProvider
     /// human operator can see the execution order of a queued batch. Set to <c>null</c> to suppress numbers.
     /// </summary>
     string? CurrentQueueLabel { get => null; set { } }
+
+    /// <summary>
+    /// Optional callback exposed by human-control overlays that need an explicit "done, continue"
+    /// affordance, such as the type-text tooltip's inline Next button.
+    /// </summary>
+    Action? CurrentHumanAdvanceCallback { get => null; set { } }
 }

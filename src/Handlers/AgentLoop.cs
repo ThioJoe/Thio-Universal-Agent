@@ -153,6 +153,7 @@ public sealed partial class AgentLoop(
                 bool humanMode = appConfig.General.HumanControlOnlyMode;
                 bool humanModeRequiresPause = humanMode && actionsToRun.Any(static a =>
                     a.Kind is not AgentActionKind.Done and not AgentActionKind.Fail);
+                bool hasTypeTextAction = humanModeRequiresPause && actionsToRun.Any(static a => a.Kind == AgentActionKind.TypeText);
 
                 // Single progress callback — all sub-steps are attributed to the parent step number.
                 async Task executorProgress(AgentDebugEntry entry)
@@ -175,6 +176,8 @@ public sealed partial class AgentLoop(
                 List<(ActionExecutionResult Result, List<AgentDebugEntry>? DebugLog)>? humanPreResults = null;
                 if (humanModeRequiresPause)
                 {
+                    screenProvider.CurrentHumanAdvanceCallback = hasTypeTextAction ? session.Resume : null;
+
                     static bool IsAutoAdvanceClickAction(AgentActionKind kind) =>
                         kind is AgentActionKind.LeftClick or AgentActionKind.RightClick
                              or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick
@@ -242,7 +245,10 @@ public sealed partial class AgentLoop(
 
                 // In human mode, markers persist indefinitely until the human resumes; clear them now.
                 if (humanModeRequiresPause)
+                {
                     screenProvider.ClearMarkers();
+                    screenProvider.CurrentHumanAdvanceCallback = null;
+                }
 
                 // If the user submitted guidance with "cancel next action" while paused, skip
                 // execution entirely, emit a cancelled step to the log, then redirect the AI.
@@ -515,6 +521,7 @@ public sealed partial class AgentLoop(
         finally
         {
             // Clear any on-screen markers left over from human-control mode overlays.
+            screenProvider.CurrentHumanAdvanceCallback = null;
             screenProvider.ClearMarkers();
             // Always signal termination so SSE stream waiters are unblocked regardless of how the loop exits.
             session.SignalTerminated();

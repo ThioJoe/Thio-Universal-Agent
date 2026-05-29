@@ -170,6 +170,11 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     public string? CurrentQueueLabel { get; set; }
 
     /// <summary>
+    /// Optional callback surfaced by human-control overlays that let the operator explicitly continue.
+    /// </summary>
+    public Action? CurrentHumanAdvanceCallback { get; set; }
+
+    /// <summary>
     /// Manages the lifecycle of <see cref="MarkerWindow"/> instances: idle pool, active-marker tracking,
     /// latest-marker reference, and ID generation — all in one place.
     /// </summary>
@@ -299,6 +304,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         BoundingBoxMarker window = _markerPool.Rent<BoundingBoxMarker>(new CancellationTokenSource());
         window.Label = label;
         window.QueueLabel = CurrentQueueLabel;
+        window.AdvanceCallback = CurrentHumanAdvanceCallback;
         window.Show(x1, y1, x2, y2, borderOpacity, fillOpacity, durationMs, _markerPool);
     }
 
@@ -675,18 +681,25 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     {
         private IntPtr _hwnd;
         private IntPtr _editHwnd;
+        private IntPtr _buttonHwnd;
         private IntPtr _hFont;
         private IntPtr _hbrBackground;
         private readonly Thread _messageThread;
         private readonly ManualResetEventSlim _ready = new(false);
         private readonly NativeMethods.WndProcDelegate _wndProcDelegate;
 
-        private const int WindowHeight = 30;
+        private const int WindowHeight = 32;
         private const int EditPadding  = 2;
+        private const int ControlGap   = 2;
+        private const int ButtonWidth  = 54;
+        private const int MinEditWidth = 80;
+        private const int EditControlId = 1001;
+        private const int AdvanceButtonControlId = 1002;
         private const string WndClassName = "TUA_TypeTextTooltip";
 
         private int    _x, _y, _w;
         private string _text = "";
+        private Action? _advanceCallback;
 
         public TypeTextTooltipWindow()
         {
@@ -698,12 +711,22 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         }
 
         /// <summary>Positions and shows the tooltip above (or below if near screen top) the given bounding box.</summary>
-        public void ShowAboveBox(int boxLeft, int boxTop, int boxRight, string text)
+        public void ShowAboveBox(int boxLeft, int boxTop, int boxRight, string text, Action? onAdvance = null)
         {
-            int w = Math.Max(boxRight - boxLeft, 120);
+            int minWidth = onAdvance is null
+                ? 120
+                : (EditPadding * 2) + ControlGap + ButtonWidth + MinEditWidth;
+            int w = Math.Max(boxRight - boxLeft, minWidth);
             int y = boxTop - WindowHeight - 2;
             if (y < 0) y = boxTop + 2; // Not enough room above — show just below the box top
-            lock (this) { _x = boxLeft; _y = y; _w = w; _text = text; }
+            lock (this)
+            {
+                _x = boxLeft;
+                _y = y;
+                _w = w;
+                _text = text;
+                _advanceCallback = onAdvance;
+            }
             NativeMethods.PostMessage(_hwnd, NativeMethods.WM_APP_SHOW, IntPtr.Zero, IntPtr.Zero);
         }
 
@@ -749,15 +772,32 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 nWidth: 120 - (EditPadding * 2),
                 nHeight: WindowHeight - (EditPadding * 2),
                 hWndParent: _hwnd,
-                hMenu: IntPtr.Zero,
+                hMenu: new IntPtr(EditControlId),
                 hInstance: IntPtr.Zero,
                 lpParam: IntPtr.Zero
             );
+
+            uint buttonStyle = NativeMethods.WS_CHILD | NativeMethods.WS_VISIBLE | NativeMethods.WS_TABSTOP;
+            _buttonHwnd = NativeMethods.CreateWindowExW(
+                dwExStyle: 0,
+                lpClassName: "BUTTON",
+                lpWindowName: "Next",
+                dwStyle: buttonStyle,
+                x: 0,
+                y: EditPadding,
+                nWidth: ButtonWidth,
+                nHeight: WindowHeight - (EditPadding * 2),
+                hWndParent: _hwnd,
+                hMenu: new IntPtr(AdvanceButtonControlId),
+                hInstance: IntPtr.Zero,
+                lpParam: IntPtr.Zero);
 
             // Segoe UI 11pt bold — matches the label style used by other markers
             _hFont = NativeMethods.CreateFontW(-15, 0, 0, 0, 700 /* FW_BOLD */, 0, 0, 0,
                 0, 0, 0, 4 /* ANTIALIASED_QUALITY */, 0, "Segoe UI");
             NativeMethods.SendMessageW(_editHwnd, NativeMethods.WM_SETFONT, _hFont, new IntPtr(1));
+            NativeMethods.SendMessageW(_buttonHwnd, NativeMethods.WM_SETFONT, _hFont, new IntPtr(1));
+            NativeMethods.ShowWindow(_buttonHwnd, NativeMethods.SW_HIDE);
 
             _ready.Set();
 
@@ -777,13 +817,41 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             switch (msg)
             {
                 case NativeMethods.WM_APP_SHOW:
-                    int x, y, w; string text;
-                    lock (this) { x = _x; y = _y; w = _w; text = _text; }
+                    int x, y, w;
+                    string text;
+                    Action? advanceCallback;
+                    lock (this)
+                    {
+                        x = _x;
+                        y = _y;
+                        w = _w;
+                        text = _text;
+                        advanceCallback = _advanceCallback;
+                    }
+                    bool showAdvanceButton = advanceCallback is not null;
+                    int buttonX = w - EditPadding - ButtonWidth;
+                    int editWidth = showAdvanceButton
+                        ? Math.Max(MinEditWidth, buttonX - ControlGap - EditPadding)
+                        : w - (EditPadding * 2);
                     // Update edit text and resize it to fill the (possibly new) window width
                     NativeMethods.SetWindowTextW(_editHwnd, text);
                     NativeMethods.SetWindowPos(_editHwnd, IntPtr.Zero,
-                        EditPadding, EditPadding, w - EditPadding * 2, WindowHeight - EditPadding * 2,
+                        EditPadding, EditPadding, editWidth, WindowHeight - EditPadding * 2,
                         NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+                    SelectAllText();
+
+                    if (showAdvanceButton)
+                    {
+                        NativeMethods.SetWindowPos(_buttonHwnd, IntPtr.Zero,
+                            buttonX, EditPadding, ButtonWidth, WindowHeight - EditPadding * 2,
+                            NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+                        NativeMethods.ShowWindow(_buttonHwnd, NativeMethods.SW_SHOW);
+                    }
+                    else
+                    {
+                        NativeMethods.ShowWindow(_buttonHwnd, NativeMethods.SW_HIDE);
+                    }
+
                     NativeMethods.SetWindowPos(hWnd, NativeMethods.HWND_TOPMOST, x, y, w, WindowHeight,
                         NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
                     return IntPtr.Zero;
@@ -791,6 +859,27 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 case NativeMethods.WM_APP_HIDE:
                     NativeMethods.ShowWindow(hWnd, NativeMethods.SW_HIDE);
                     return IntPtr.Zero;
+
+                case NativeMethods.WM_COMMAND:
+                    nuint wp = (nuint)wParam;
+                    int controlId = (int)(wp & 0xFFFF);
+                    int notificationCode = (int)((wp >> 16) & 0xFFFF);
+
+                    if (controlId == EditControlId && notificationCode == NativeMethods.EN_SETFOCUS)
+                    {
+                        SelectAllText();
+                        return IntPtr.Zero;
+                    }
+
+                    if (controlId == AdvanceButtonControlId && notificationCode == NativeMethods.BN_CLICKED)
+                    {
+                        Action? advance;
+                        lock (this)
+                            advance = _advanceCallback;
+                        advance?.Invoke();
+                        return IntPtr.Zero;
+                    }
+                    break;
 
                 case NativeMethods.WM_CTLCOLOREDIT:
                 case NativeMethods.WM_CTLCOLORSTATIC:
@@ -804,6 +893,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                     return IntPtr.Zero;
             }
             return NativeMethods.DefWindowProcW(hWnd, msg, wParam, lParam);
+        }
+
+        private void SelectAllText()
+        {
+            if (_editHwnd != IntPtr.Zero)
+                NativeMethods.SendMessageW(_editHwnd, NativeMethods.EM_SETSEL, IntPtr.Zero, new IntPtr(-1));
         }
 
         public void Dispose()
@@ -831,6 +926,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
         private int _localWidth, _localHeight, _fillOpacity;
         private TypeTextTooltipWindow? _tooltip;
+        internal Action? AdvanceCallback;
 
         public override MarkerType Type => MarkerType.BoundingBox;
         public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (0, 0, 0, 0);
@@ -858,7 +954,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             if (Label is not null)
             {
                 _tooltip ??= new TypeTextTooltipWindow();
-                _tooltip.ShowAboveBox(Math.Min(x1, x2), Math.Min(y1, y2), Math.Max(x1, x2), Label);
+                _tooltip.ShowAboveBox(Math.Min(x1, x2), Math.Min(y1, y2), Math.Max(x1, x2), Label, AdvanceCallback);
             }
 
             Show(x1, y1, borderOpacity, durationMs, pool);
@@ -1276,17 +1372,23 @@ internal static class NativeMethods
 
     public const uint WS_CHILD   = 0x40000000;
     public const uint WS_VISIBLE = 0x10000000;
+    public const uint WS_TABSTOP = 0x00010000;
     public const uint ES_READONLY    = 0x0800;
     public const uint ES_AUTOHSCROLL = 0x0080;
+    public const uint WM_COMMAND = 0x0111;
     public const uint WM_SETFONT = 0x0030;
     public const uint WM_CTLCOLOREDIT = 0x0133;
     public const uint WM_CTLCOLORSTATIC = 0x0138;
+    public const uint EM_SETSEL = 0x00B1;
+    public const int EN_SETFOCUS = 0x0100;
+    public const int BN_CLICKED = 0;
     public const uint SWP_NOZORDER = 0x0004;
 
     public const uint LWA_COLORKEY = 0x00000001;
     public const uint LWA_ALPHA = 0x00000002;
 
     public const int SW_HIDE = 0;
+    public const int SW_SHOW = 5;
     public const uint SWP_NOACTIVATE = 0x0010;
     public const uint SWP_SHOWWINDOW = 0x0040;
 
