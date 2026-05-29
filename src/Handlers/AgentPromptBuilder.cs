@@ -382,6 +382,31 @@ public static class AgentPromptBuilder
     }
 
     /// <summary>
+    /// Produces the prompt used when the AI has already said DONE but the user wants to reopen
+    /// the same conversation and continue with additional guidance.
+    /// </summary>
+    public static string BuildPostDoneGuidancePrompt(IReadOnlyList<string> messages)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+
+        StringBuilder sb = new System.Text.StringBuilder();
+        sb.AppendLine("[USER GUIDANCE AFTER DONE]");
+        sb.AppendLine("You previously responded with DONE, but the user has now provided additional guidance.");
+        sb.AppendLine("Treat the task as reopened, reassess the fresh screenshot, and continue from the current state.");
+
+        if (messages.Count > 0)
+        {
+            sb.AppendLine("The user provided the following instruction(s):");
+            for (int i = 0; i < messages.Count; i++)
+                sb.AppendLine($"{i + 1}. \"{messages[i]}\"");
+        }
+
+        sb.AppendLine("A fresh screenshot of the current screen is attached.");
+        sb.AppendLine("Do not repeat DONE unless the updated request is fully satisfied after considering this new guidance.");
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Produces the prompt used when the user cancelled the AI's last planned action and provided guidance.
     /// A fresh screenshot is included in the same message.
     /// </summary>

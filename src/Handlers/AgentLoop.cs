@@ -151,6 +151,8 @@ public sealed partial class AgentLoop(
                 bool isBatch = actionsToRun.Count > 1;
 
                 bool humanMode = appConfig.General.HumanControlOnlyMode;
+                bool humanModeRequiresPause = humanMode && actionsToRun.Any(static a =>
+                    a.Kind is not AgentActionKind.Done and not AgentActionKind.Fail);
 
                 // Single progress callback — all sub-steps are attributed to the parent step number.
                 async Task executorProgress(AgentDebugEntry entry)
@@ -171,7 +173,7 @@ public sealed partial class AgentLoop(
                 // for batches) are stored and replayed in the execution loop below so token usage and
                 // step data remain consistent.
                 List<(ActionExecutionResult Result, List<AgentDebugEntry>? DebugLog)>? humanPreResults = null;
-                if (humanMode)
+                if (humanModeRequiresPause)
                 {
                     static bool IsAutoAdvanceClickAction(AgentActionKind kind) =>
                         kind is AgentActionKind.LeftClick or AgentActionKind.RightClick
@@ -226,20 +228,20 @@ public sealed partial class AgentLoop(
 
                 // In human control mode, automatically pause after showing each step (and after markers
                 // have been drawn above) so the human can perform the action before the loop continues.
-                if (humanMode)
+                if (humanModeRequiresPause)
                     session.Pause();
 
                 // If the user paused while the AI was responding, block here until resumed.
                 // In human mode always use a plain wait (no countdown — the human determines timing).
                 // Skip the countdown entirely when the next action is already flagged for cancellation —
                 // there's nothing pending to execute, so there's no need to give the user preparation time.
-                if (session.HasCancelNextAction || humanMode)
+                if (session.HasCancelNextAction || humanModeRequiresPause)
                     await session.WaitIfPausedAsync(ct).ConfigureAwait(false);
                 else
                     await session.WaitIfPausedWithCountdownAsync(5, ct).ConfigureAwait(false);
 
                 // In human mode, markers persist indefinitely until the human resumes; clear them now.
-                if (humanMode)
+                if (humanModeRequiresPause)
                     screenProvider.ClearMarkers();
 
                 // If the user submitted guidance with "cancel next action" while paused, skip
@@ -387,9 +389,53 @@ public sealed partial class AgentLoop(
                 {
                     session.Status = lastResult.GoalAchieved ? AgentSessionStatus.Completed : AgentSessionStatus.Failed;
                     session.FinalResult = lastResult.Summary;
-                    LogSessionTerminated(logger, session.SessionId, step, lastResult.Summary);
-                    systemProvider.TaskFinishedNotifier($"Agent {(session.Status == AgentSessionStatus.Completed ? "Success" : "Fail")}: {lastResult.Summary}", $"Session {session.Status}");
-                    return;
+
+                    if (!lastResult.GoalAchieved)
+                    {
+                        LogSessionTerminated(logger, session.SessionId, step, lastResult.Summary);
+                        systemProvider.TaskFinishedNotifier($"Agent Fail: {lastResult.Summary}", $"Session {session.Status}");
+                        return;
+                    }
+
+                    LogSessionAwaitingGuidance(logger, session.SessionId, step, lastResult.Summary);
+
+                    await session.WaitForGuidanceAsync(ct).ConfigureAwait(false);
+                    ct.ThrowIfCancellationRequested();
+
+                    List<string> postDoneGuidance = new List<string>();
+                    session.DrainGuidance(postDoneGuidance);
+
+                    session.Status = AgentSessionStatus.Running;
+                    session.FinalResult = null;
+
+                    screenshot = screenProvider.CaptureScreen();
+                    screenshot.Processed = CoordinatePrompter.CreateFullGridOverlayImage(screenshot.Original, appConfig);
+
+                    string continuationPrompt = AgentPromptBuilder.BuildPostDoneGuidancePrompt(postDoneGuidance);
+
+                    if (debugging)
+                        lastPromptSent = continuationPrompt;
+
+                    Stopwatch continueAiSw = Stopwatch.StartNew();
+                    response = await aiProvider.ContinueConversationAsync(
+                        conversation, continuationPrompt, screenshot.Processed, ScreenMimeType, ct).ConfigureAwait(false);
+                    continueAiSw.Stop();
+                    lastAiResponseMs = continueAiSw.ElapsedMilliseconds;
+
+                    if (response.Usage != null) carryOverUsage += response.Usage;
+
+                    if (!response.Success)
+                    {
+                        session.Status = AgentSessionStatus.Error;
+                        session.FinalResult = $"AI request failed after DONE at step {step}: {response.ErrorMessage}";
+                        LogAiCallFailed(logger, step, session.SessionId, response.ErrorMessage);
+                        return;
+                    }
+
+                    if (debugging)
+                        lastRawResponse = response.Text;
+
+                    continue;
                 }
 
                 // Settle delay after the batch (skip if last action was a Wait).
@@ -632,6 +678,9 @@ public sealed partial class AgentLoop(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Session {SessionId} terminated at step {Step}: {Summary}")]
     private static partial void LogSessionTerminated(ILogger logger, string sessionId, int step, string summary);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Session {SessionId} reached DONE at step {Step} and is waiting for more guidance: {Summary}")]
+    private static partial void LogSessionAwaitingGuidance(ILogger logger, string sessionId, int step, string summary);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "AI call failed at step {Step} for session {SessionId}: {Error}")]
     private static partial void LogAiCallFailed(ILogger logger, int step, string sessionId, string? error);

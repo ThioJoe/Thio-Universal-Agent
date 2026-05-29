@@ -57,9 +57,23 @@ public sealed class AgentSession
 
     private readonly object _pauseLock = new();
     private TaskCompletionSource? _pauseTcs;
+    private readonly object _guidanceSignalLock = new();
+    private TaskCompletionSource? _guidanceTcs;
 
     /// <summary>True while the agent loop is suspended at an inter-step pause point.</summary>
     public bool IsPaused { get; private set; }
+
+    /// <summary>True once <see cref="SignalTerminated"/> has been called.</summary>
+    public bool IsTerminated => _terminated.Task.IsCompleted;
+
+    /// <summary>
+    /// True while the session can still accept user guidance.
+    /// This includes the normal running/paused states and the post-DONE completed state
+    /// before the loop has fully terminated.
+    /// </summary>
+    public bool CanAcceptGuidance =>
+        !IsTerminated &&
+        (Status == AgentSessionStatus.Running || Status == AgentSessionStatus.Completed || IsPaused);
 
     /// <summary>
     /// Event raised (on the calling thread) whenever the pause state changes.
@@ -240,6 +254,15 @@ public sealed class AgentSession
         _pendingGuidance.Enqueue(message);
         if (cancelNextAction)
             _cancelNextAction = true;
+
+        TaskCompletionSource? guidanceTcs;
+        lock (_guidanceSignalLock)
+        {
+            guidanceTcs = _guidanceTcs;
+            _guidanceTcs = null;
+        }
+
+        guidanceTcs?.TrySetResult();
         _ = OnGuidanceQueued?.Invoke(message, cancelNextAction);
     }
 
@@ -272,6 +295,28 @@ public sealed class AgentSession
             any = true;
         }
         return any;
+    }
+
+    /// <summary>
+    /// Waits until at least one guidance message is queued.
+    /// Used when the agent has said DONE but the user may want to continue the same session.
+    /// </summary>
+    internal async Task WaitForGuidanceAsync(CancellationToken ct)
+    {
+        if (!_pendingGuidance.IsEmpty || _cancelNextAction)
+            return;
+
+        Task waitTask;
+        lock (_guidanceSignalLock)
+        {
+            if (!_pendingGuidance.IsEmpty || _cancelNextAction)
+                return;
+
+            _guidanceTcs ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            waitTask = _guidanceTcs.Task;
+        }
+
+        await waitTask.WaitAsync(ct).ConfigureAwait(false);
     }
 
     private readonly TaskCompletionSource _terminated = new(TaskCreationOptions.RunContinuationsAsynchronously);

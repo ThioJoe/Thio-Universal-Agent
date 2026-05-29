@@ -170,9 +170,6 @@ internal static class AgentEndpoints
                 try
                 {
                     await WriteStepEventAsync(httpContext.Response, step, ct).ConfigureAwait(false);
-
-                    if (step.Result.IsTerminal)
-                        tcs.TrySetResult();
                 }
                 catch (OperationCanceledException)
                 {
@@ -226,7 +223,7 @@ internal static class AgentEndpoints
             try
             {
                 // If the session already terminated before we subscribed
-                if (session.Status is not AgentSessionStatus.Running)
+                if (session.IsTerminated)
                 {
                     await TryWriteTerminalEventAsync(httpContext.Response, session, ct).ConfigureAwait(false);
                     return;
@@ -236,7 +233,7 @@ internal static class AgentEndpoints
                 if (session.IsPaused)
                     await WritePauseEventAsync(httpContext.Response, AgentPauseChange.Paused, ct).ConfigureAwait(false);
 
-                // Wait until a terminal step arrives, the session ends for any reason, or the client disconnects
+                // Wait until the session ends for any reason or the client disconnects.
                 using CancellationTokenRegistration registration = ct.Register(() => tcs.TrySetResult());
                 _ = session.Terminated.ContinueWith(_ => tcs.TrySetResult(), TaskContinuationOptions.ExecuteSynchronously);
                 await tcs.Task.ConfigureAwait(false);

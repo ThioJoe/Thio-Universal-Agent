@@ -50,7 +50,8 @@ public sealed class AgentSessionManager(
 
     /// <summary>Returns the first session that is currently running or paused, or null if none is active.</summary>
     public AgentSession? GetActiveSession() =>
-        _sessions.Values.FirstOrDefault(s => s.Status == AgentSessionStatus.Running || s.IsPaused);
+        _sessions.Values.FirstOrDefault(s => s.Status == AgentSessionStatus.Running || s.IsPaused)
+        ?? _sessions.Values.FirstOrDefault(s => s.CanAcceptGuidance);
 
     /// <summary>Cancels a running session. Returns false if the session was not found.</summary>
     public bool StopSession(string sessionId)
@@ -87,14 +88,14 @@ public sealed class AgentSessionManager(
 
     /// <summary>
     /// Enqueues a user guidance message to be injected into the next AI feedback call.
-    /// Returns false if the session is not found or is no longer active.
+    /// Returns false if the session is not found or can no longer accept guidance.
     /// </summary>
     public bool SendGuidance(string sessionId, string message, bool cancelNextAction = false)
     {
         if (!_sessions.TryGetValue(sessionId, out AgentSession? session))
             return false;
 
-        if (session.Status != AgentSessionStatus.Running && !session.IsPaused)
+        if (!session.CanAcceptGuidance)
             return false;
 
         logger.LogInformation("User guidance queued for session {SessionId} (cancelNext={CancelNext}).", sessionId, cancelNextAction);

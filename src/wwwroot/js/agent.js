@@ -15,7 +15,7 @@
 /** @typedef {AgentStepMessage | AgentStepStartingMessage | AgentSubStepMessage | AgentCountdownMessage | AgentGuidanceQueuedMessage | AgentDoneMessage | { type: 'paused' } | { type: 'resumed' }} AgentSseMessage */
 /** @typedef {{ gemini?: { model?: string, apiKey?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData */
 /** @typedef {{ index: number, isPrimary: boolean, width: number, height: number }} MonitorInfo */
-/** @typedef {{ goal?: string, status: string, isPaused: boolean, startedAt?: string, totalDurationMs?: number, finalResult?: string, totalTokensUsed?: number }} SessionStatusResponse */
+/** @typedef {{ goal?: string, status: string, isPaused: boolean, startedAt?: string, completedAt?: string, totalDurationMs?: number, finalResult?: string, totalTokensUsed?: number }} SessionStatusResponse */
 /** @typedef {{ sessionId: string }} StartAgentResponse */
 /** @typedef {{ label: string, text?: string, image?: string }} CopyDebugEntry */
 /** @typedef {{ stepNumber: number, thought: string, action: string, result: string, durationMs: number, timings?: StepTimings, isTerminal?: true, goalAchieved?: boolean, debugLog?: CopyDebugEntry[] }} CopyOutputStep */
@@ -85,6 +85,7 @@ let stepsData = [];
 let sessionGoal = '';
 let sessionFinalResult = '';
 let isPaused = false;
+let awaitingGuidance = false;
 /** @type {number | null} */
 let sessionStartTime = null;
 /** @type {ReturnType<typeof setInterval> | undefined} */
@@ -152,25 +153,27 @@ let sessionTotalCost = 0;
             promptBanner.style.display = '';
 
             const isActive = status.status === 'Running';
+            const isAwaitingGuidance = status.status === 'Completed' && !status.completedAt;
             const isPausedStatus = status.isPaused;
 
-            if (isActive) {
+            if (isActive || isAwaitingGuidance) {
                 sessionStartTime = status.startedAt ? new Date(status.startedAt).getTime() : Date.now();
                 clearInterval(elapsedIntervalId);
                 elapsedIntervalId = setInterval(() => {
                     elapsedTimer.textContent = formatElapsed(Date.now() - (sessionStartTime ?? 0));
                 }, 500);
 
-                setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
-                btnStart.disabled  = true;
-                btnPause.disabled  = false;
-                btnStop.disabled   = false;
-                goalInput.disabled = true;
-                monitorSelect.disabled = true;
-                guidancePanel.style.display = 'flex';
+                if (isAwaitingGuidance) {
+                    setAwaitingGuidanceUi(status.finalResult || 'Goal completed.');
+                } else {
+                    awaitingGuidance = false;
+                    setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
+                    setLiveControls(true);
+                }
+
                 guidanceInput.value = '';
 
-                if (isPausedStatus) {
+                if (isActive && isPausedStatus) {
                     isPaused = true;
                     btnPause.textContent = 'Resume';
                     btnPause.classList.add('resuming');
@@ -284,6 +287,7 @@ async function startAgent() {
     sessionGoal = goal;
     sessionFinalResult = '';
     isPaused = false;
+    awaitingGuidance = false;
     sessionStartTime = Date.now();
     elapsedTimer.textContent = '0:00';
     clearInterval(elapsedIntervalId);
@@ -371,7 +375,7 @@ function connectStream(id) {
     eventSource.onerror = () => {
         eventSource?.close();
         eventSource = null;
-        if (statusText.textContent?.startsWith('Running')) {
+        if (statusText.textContent?.startsWith('Running') || statusText.textContent?.startsWith('Paused') || awaitingGuidance) {
             setStatus('error', 'Connection lost');
             resetControls();
         }
@@ -409,6 +413,7 @@ async function newSession() {
     sessionGoal = '';
     sessionFinalResult = '';
     isPaused = false;
+    awaitingGuidance = false;
     stepsData = [];
     stopElapsedTimer(null);
     elapsedTimer.textContent = '';
@@ -468,6 +473,13 @@ async function sendGuidance() {
             guidanceInput.value = '';
             const cancelEl = /** @type {HTMLInputElement | null} */ (document.getElementById('guidance-cancel'));
             if (cancelEl) cancelEl.checked = false;
+            if (awaitingGuidance) {
+                awaitingGuidance = false;
+                setLiveControls(true);
+                setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
+                finalResultEl.style.display = 'none';
+                currentResult.textContent = 'Reassessing with new guidance...';
+            }
             // The SSE guidanceQueued event will fire shortly and add the log entry + ack badge.
         } else {
             const body = await res.json().catch(() => ({}));
@@ -543,6 +555,11 @@ function handleCountdown(msg) {
  * @returns {void}
  */
 function handleStepStarting(msg) {
+    awaitingGuidance = false;
+    setLiveControls(true);
+    setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
+    finalResultEl.style.display = 'none';
+
     stepCounter.textContent = `Step ${msg.stepNumber}`;
 
     currentThought.textContent = msg.thought;
@@ -671,10 +688,17 @@ function handleStep(msg) {
     stepLog.scrollTop = stepLog.scrollHeight;
 
     if (msg.isTerminal) {
-        const status = msg.goalAchieved ? 'completed' : 'failed';
         sessionFinalResult = msg.result;
-        setStatus(status, msg.goalAchieved ? 'Completed' : 'Failed');
-        showFinalResult(status, msg.result);
+
+        if (msg.goalAchieved) {
+            setAwaitingGuidanceUi(msg.result);
+            currentResult.textContent = msg.result;
+            return;
+        }
+
+        awaitingGuidance = false;
+        setStatus('failed', 'Failed');
+        showFinalResult('failed', msg.result);
         stopElapsedTimer(null);
         cleanup();
     }
@@ -736,6 +760,7 @@ function renderDebugLog(entries) {
  * @returns {void}
  */
 function handleDone(msg) {
+    awaitingGuidance = false;
     const statusKey = msg.status.toLowerCase();
     if (msg.finalResult) sessionFinalResult = msg.finalResult;
     setStatus(statusKey, msg.status);
@@ -857,6 +882,7 @@ function showFinalResult(statusKey, message) {
 
 /** @returns {void} */
 function cleanup() {
+    awaitingGuidance = false;
     if (eventSource) {
         eventSource.close();
         eventSource = null;
@@ -876,6 +902,35 @@ function resetControls() {
     monitorSelect.disabled = false;
     guidancePanel.style.display = 'none';
     guidanceAck.classList.remove('show');
+}
+
+/**
+ * @param {boolean} canPause
+ * @returns {void}
+ */
+function setLiveControls(canPause) {
+    btnStart.disabled = true;
+    btnPause.disabled = !canPause;
+    if (!canPause) {
+        btnPause.textContent = 'Pause';
+        btnPause.classList.remove('resuming');
+    }
+    btnStop.disabled = false;
+    goalInput.disabled = true;
+    monitorSelect.disabled = true;
+    guidancePanel.style.display = 'flex';
+}
+
+/**
+ * @param {string} message
+ * @returns {void}
+ */
+function setAwaitingGuidanceUi(message) {
+    awaitingGuidance = true;
+    isPaused = false;
+    setLiveControls(false);
+    setStatus('completed', 'Completed (awaiting guidance)');
+    if (message) showFinalResult('completed', message);
 }
 
 /**
