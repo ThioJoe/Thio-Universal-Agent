@@ -18,6 +18,8 @@ An AI desktop assistant app capable of interacting with your entire computer (an
 
 It controls Windows purely through visual perception and GUI interaction. By interpreting raw pixels and sending hardware-level input (mouse movements, clicks, keystrokes), it operates exactly like a human would. This makes it **universally compatible** with any graphical application on your machine.
 
+It now supports two ways to use it: a **Human Control Only Mode** that is enabled by default, where the AI guides you step-by-step and shows where to click without sending any real input itself, and an **autonomous mode** where it can move the mouse and type on its own.
+
 Also See: [Planned Features Page](https://github.com/ThioJoe/Thio-Universal-Agent/wiki/Planned-Features)
 
 ## Demonstration
@@ -44,7 +46,7 @@ Example of it queuing multiple actions at once, while accurately clicking exact 
 # Frequently Asked Questions
 
 ### **Q:** Is this like OpenClaw or Hermes?
-**A:** No, this is not intended to be a 24/7 running agent. It also doesn't rely on CLI/Shell commands. It's meant for individual tasks or problems you'd normally have to do yourself. Give it a "goal", sit back, and it will start moving the mouse, clicking, typing, etc. just like you would.
+**A:** No, this is not intended to be a 24/7 running agent. It also doesn't rely on CLI/Shell commands. It's meant for individual tasks or problems you'd normally have to do yourself. 
 
 ### **Q:** How long _can_ it run?
 **A:** There's not actually a limit. You can set the max number of steps to any number in the settings. The default is arbitrarily set to 100 steps.
@@ -62,6 +64,9 @@ Example of it queuing multiple actions at once, while accurately clicking exact 
 **A:** Not really. It won't block your mouse or keyboard input or anything. But it's best to not touch anything while it's running to prevent interfering. You can do little stuff between steps to help it though, like if it clicked the wrong thing, click it yourself.
   - You can use global keyboard hotkeys to pause or stop it at any time.
 
+### **Q:** What is Human Only Control Mode?
+**A:** By default it starts in **Human Control Only Mode**, where the AI tells you what to do and where to click while you perform the actions yourself. It draws crosshairs for where to click, and boxes around where to enter text. It also displays a small text box you can copy the recommended text from. This can be switched to fully autonomous mode in the config settings.
+
 --------
 
 # How It's _Built Different_
@@ -74,6 +79,7 @@ Example of it queuing multiple actions at once, while accurately clicking exact 
 * **Multiple AI Providers**: Supports Google Gemini (default), OpenAI (ChatGPT), and Anthropic (Claude).
 
 ### Additional Features:
+* **Human Control Only Mode**: Enabled by default. The AI guides you with step-by-step instructions and on-screen click markers, but it never sends mouse or keyboard input until you disable that mode.
 * **Global Hotkey Support**: Pause, resume, or terminate the agent instantly even when the web UI is minimized.
 * **Live Agent Redirection**: Issue mid-flight text instructions to the agent to override or adjust its current execution plan.
 * **Config Import/Export**: Export your config options to a file and import it. Settings are also stored in the browser to survive between sessions.
@@ -182,8 +188,9 @@ Note: You'll need to add your own API key for your AI of choice. I'll add local 
 
 1. Run the compiled executable. A local web interface will initialize (default: `http://localhost:51122`).
 2. Navigate to the **Config** menu in the web UI.
-3. Enter your required API key (e.g., Google Gemini) and adjust any desired operational parameters (model, temperature, coordinate mode). Click **Save to browser**.
-4. Navigate to the **Agent Control** panel.
+3. Enter your required API key (e.g., Google Gemini) and adjust any desired operational parameters (model, temperature, coordinate mode). 
+  - **Human Control Only Mode is enabled by default** near the top of Config. Leave it on if you want guided/manual control, or turn it off if you want the agent to click and type autonomously. Click **Save to browser**.
+4. Navigate to the **Agent Control** panel. The page shows a prominent Human Control Mode status banner so you can confirm whether the run will be guided or autonomous before starting.
 5. Select a target monitor, enter your task directive in the **Goal** field, and click **Start**.
 6. **Interrupting Execution:** Use the Pause/Stop buttons in the UI, or the default global hotkeys (`Ctrl+Shift+Alt+P` to pause, `Ctrl+Shift+Alt+S` to stop).
 
