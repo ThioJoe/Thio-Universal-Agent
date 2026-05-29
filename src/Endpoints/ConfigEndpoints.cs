@@ -58,6 +58,15 @@ internal static class ConfigEndpoints
                     OutputPricePerMillionTokens:       appConfig.OpenAI.OutputPricePerMillionTokens,
                     CachedInputPricePerMillionTokens:  appConfig.OpenAI.CachedInputPricePerMillionTokens
                 ),
+                OpenAICompatible: new OpenAICompatibleConfigDto(
+                    Model:           appConfig.OpenAICompatible.Model,
+                    EndpointUrl:     appConfig.OpenAICompatible.EndpointUrl,
+                    Temperature:     appConfig.OpenAICompatible.Temperature,
+                    MaxOutputTokens: appConfig.OpenAICompatible.MaxOutputTokens,
+                    InputPricePerMillionTokens:        appConfig.OpenAICompatible.InputPricePerMillionTokens,
+                    OutputPricePerMillionTokens:       appConfig.OpenAICompatible.OutputPricePerMillionTokens,
+                    CachedInputPricePerMillionTokens:  appConfig.OpenAICompatible.CachedInputPricePerMillionTokens
+                ),
                 Anthropic: new AnthropicConfigDto(
                     Model:           appConfig.Anthropic.Model,
                     Temperature:     appConfig.Anthropic.Temperature,
@@ -85,6 +94,7 @@ internal static class ConfigEndpoints
                 BuildSection("general",   "General",   appConfig.General,   isProvider: false),
                 BuildSection("gemini",    "Gemini",    appConfig.Gemini,    isProvider: true),
                 BuildSection("openai",    "ChatGPT",    appConfig.OpenAI,    isProvider: true),
+                BuildSection("openaiCompatible", "OpenAI-Compatible", appConfig.OpenAICompatible, isProvider: true),
                 BuildSection("anthropic", "Claude", appConfig.Anthropic, isProvider: true),
                 BuildSection("agent",     "Agent",     appConfig.Agent,     isProvider: false),
                 BuildSection("hotkeys",   "Hotkeys",   appConfig.Hotkeys,   isProvider: false),
@@ -99,6 +109,7 @@ internal static class ConfigEndpoints
             if (body.TryGetProperty("general", out JsonElement generalEl)) ApplyUpdates(appConfig.General, generalEl);
             if (body.TryGetProperty("gemini", out JsonElement geminiEl)) ApplyUpdates(appConfig.Gemini, geminiEl);
             if (body.TryGetProperty("openai", out JsonElement openaiEl)) ApplyUpdates(appConfig.OpenAI, openaiEl);
+            if (body.TryGetProperty("openaiCompatible", out JsonElement openaiCompatibleEl)) ApplyUpdates(appConfig.OpenAICompatible, openaiCompatibleEl);
             if (body.TryGetProperty("anthropic", out JsonElement anthropicEl)) ApplyUpdates(appConfig.Anthropic, anthropicEl);
             if (body.TryGetProperty("agent", out JsonElement agentEl)) ApplyUpdates(appConfig.Agent, agentEl);
             if (body.TryGetProperty("hotkeys", out JsonElement hotkeysEl))
@@ -217,6 +228,7 @@ internal sealed record AppConfigResponse(
     AgentConfigDto Agent,
     GeminiConfigDto Gemini,
     OpenAIConfigDto OpenAI,
+    OpenAICompatibleConfigDto OpenAICompatible,
     AnthropicConfigDto Anthropic,
     HotkeyConfigDto Hotkeys
 );
@@ -259,6 +271,16 @@ internal sealed record HotkeyConfigDto(
 
 internal sealed record OpenAIConfigDto(
     string? Model,
+    double? Temperature,
+    int? MaxOutputTokens,
+    double? InputPricePerMillionTokens,
+    double? OutputPricePerMillionTokens,
+    double? CachedInputPricePerMillionTokens
+);
+
+internal sealed record OpenAICompatibleConfigDto(
+    string? Model,
+    string? EndpointUrl,
     double? Temperature,
     int? MaxOutputTokens,
     double? InputPricePerMillionTokens,

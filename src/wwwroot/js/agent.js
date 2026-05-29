@@ -13,7 +13,7 @@
 /** @typedef {{ type: 'guidanceQueued', message: string, cancelNextAction: boolean }} AgentGuidanceQueuedMessage */
 /** @typedef {{ type: 'done', status: string, finalResult?: string, totalDurationMs?: number }} AgentDoneMessage */
 /** @typedef {AgentStepMessage | AgentStepStartingMessage | AgentSubStepMessage | AgentCountdownMessage | AgentGuidanceQueuedMessage | AgentDoneMessage | { type: 'paused' } | { type: 'resumed' }} AgentSseMessage */
-/** @typedef {{ general?: { activeProvider?: string, humanControlOnlyMode?: boolean }, gemini?: { model?: string, apiKey?: string }, openai?: { model?: string, apiKey?: string }, anthropic?: { model?: string, apiKey?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData */
+/** @typedef {{ general?: { activeProvider?: string, humanControlOnlyMode?: boolean }, gemini?: { model?: string, apiKey?: string }, openai?: { model?: string, apiKey?: string }, openaiCompatible?: { model?: string, apiKey?: string, endpointUrl?: string }, anthropic?: { model?: string, apiKey?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData */
 /** @typedef {{ index: number, isPrimary: boolean, width: number, height: number }} MonitorInfo */
 /** @typedef {{ goal?: string, status: string, isPaused: boolean, startedAt?: string, completedAt?: string, totalDurationMs?: number, finalResult?: string, totalTokensUsed?: number }} SessionStatusResponse */
 /** @typedef {{ sessionId: string }} StartAgentResponse */
@@ -77,6 +77,33 @@ let configuredHotkeys = {
  */
 function getStoredConfig() {
     try { return JSON.parse(localStorage.getItem(CONFIG_STORE_KEY) || '{}'); } catch { return {}; }
+}
+
+const PROVIDER_SECTION_MAP = Object.freeze({
+    Gemini: 'gemini',
+    ChatGPT: 'openai',
+    OpenAICompatible: 'openaiCompatible',
+    Claude: 'anthropic',
+});
+
+/**
+ * @param {string | null | undefined} providerName
+ * @returns {string | null}
+ */
+function getProviderSectionKey(providerName) {
+    return providerName ? (PROVIDER_SECTION_MAP[providerName] ?? null) : null;
+}
+
+/**
+ * @param {Record<string, any> | null | undefined} cfg
+ * @param {string | null | undefined} sectionKey
+ * @returns {Record<string, any> | null}
+ */
+function getConfigSection(cfg, sectionKey) {
+    if (!cfg || !sectionKey) return null;
+    if (sectionKey === 'openai') return cfg.openAI ?? cfg.openai ?? null;
+    if (sectionKey === 'openaiCompatible') return cfg.openAICompatible ?? cfg.openaiCompatible ?? null;
+    return cfg[sectionKey] ?? null;
 }
 
 /**
@@ -226,10 +253,8 @@ window.addEventListener('storage', (event) => {
             updateHumanControlModeDisplay(resolveHumanControlOnlyMode(cfg, storedCfg));
             // Do not assume a default provider — only use the configured activeProvider when present
             const activeProv = storedCfg?.general?.activeProvider || cfg.general?.activeProvider || null;
-            let model = null;
-            if (activeProv === 'ChatGPT') model = storedCfg?.openai?.model || cfg.openAI?.model || cfg.openai?.model;
-            else if (activeProv === 'Claude') model = storedCfg?.anthropic?.model || cfg.anthropic?.model;
-            else if (activeProv === 'Gemini') model = storedCfg?.gemini?.model || cfg.gemini?.model;
+            const sectionKey = getProviderSectionKey(activeProv);
+            const model = getConfigSection(storedCfg, sectionKey)?.model || getConfigSection(cfg, sectionKey)?.model || null;
 
             if (model) modelBadge.textContent = model;
             updateHotkeyDisplayFromConfig(cfg);
@@ -347,10 +372,7 @@ async function ensureVaultUnlocked() {
         // Don't assume a provider when none is configured; abort auto-unlock if not present
         const activeProv = cfg?.general?.activeProvider || null;
         if (!activeProv) return;
-        let sectionKey = null;
-        if (activeProv === 'ChatGPT') sectionKey = 'openai';
-        else if (activeProv === 'Claude') sectionKey = 'anthropic';
-        else if (activeProv === 'Gemini') sectionKey = 'gemini';
+        const sectionKey = getProviderSectionKey(activeProv);
         if (!sectionKey) return;
 
         const res = await fetch('/api/secrets/load', {
@@ -381,20 +403,11 @@ async function startAgent() {
     const cfg = getStoredConfig();
     updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, cfg));
     const activeProvider = cfg?.general?.activeProvider || null;
+    const activeSectionKey = getProviderSectionKey(activeProvider);
+    const activeConfig = getConfigSection(cfg, activeSectionKey);
 
-    let apiKey = null;
-    let model = null;
-
-    if (activeProvider === 'ChatGPT') {
-        apiKey = cfg?.openai?.apiKey || null;
-        model  = cfg?.openai?.model || null;
-    } else if (activeProvider === 'Claude') {
-        apiKey = cfg?.anthropic?.apiKey || null;
-        model  = cfg?.anthropic?.model || null;
-    } else if (activeProvider === 'Gemini') {
-        apiKey = cfg?.gemini?.apiKey || null;
-        model  = cfg?.gemini?.model || null;
-    }
+    const apiKey = activeConfig?.apiKey || null;
+    const model = activeConfig?.model || null;
 
     // Clear any previous session from storage so a fresh session takes over
     localStorage.removeItem(SESSION_STORE_KEY);
@@ -1102,12 +1115,11 @@ function computeStepCost(usage) {
  * @param {string|null} activeProv
  */
 function loadPricingFromConfig(serverCfg, storedCfg, activeProv) {
-    /** @param {string} section @returns {Record<string, any>} */
-    const merged = (section) => ({ ...(serverCfg[section] ?? {}), ...(storedCfg?.[section] ?? {}) });
-    let provSection;
-    if (activeProv === 'ChatGPT')   provSection = merged('openAI') ?? merged('openai');
-    else if (activeProv === 'Claude') provSection = merged('anthropic');
-    else                              provSection = merged('gemini');
+    const sectionKey = getProviderSectionKey(activeProv);
+    const provSection = {
+        ...(getConfigSection(serverCfg, sectionKey) ?? {}),
+        ...(getConfigSection(storedCfg, sectionKey) ?? {}),
+    };
     activePricing = {
         inputPricePerMillionTokens:       provSection?.inputPricePerMillionTokens  ?? null,
         outputPricePerMillionTokens:      provSection?.outputPricePerMillionTokens ?? null,

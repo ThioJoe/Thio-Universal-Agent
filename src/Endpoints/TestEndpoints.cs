@@ -260,15 +260,57 @@ internal static class TestEndpoints
         {
             AiProviderType.ChatGPT => new OpenAIProvider(
                 httpClient,
-                new AppConfig { OpenAI = new OpenAIConfig { ApiKey = apiKey, Model = string.IsNullOrWhiteSpace(model) ? baseConfig.OpenAI.Model : model! }, General = baseConfig.General, Agent = baseConfig.Agent },
+                new AppConfig
+                {
+                    OpenAI = ConfigObjectCloner.Clone(baseConfig.OpenAI, config =>
+                    {
+                        config.ApiKey = apiKey;
+                        config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.OpenAI.Model : model!;
+                    }),
+                    OpenAICompatible = ConfigObjectCloner.Clone(baseConfig.OpenAICompatible),
+                    General = ConfigObjectCloner.Clone(baseConfig.General, config => config.ActiveProvider = AiProviderType.ChatGPT),
+                    Agent = baseConfig.Agent,
+                },
+                loggerFactory.CreateLogger<OpenAIProvider>()),
+            AiProviderType.OpenAICompatible => new OpenAIProvider(
+                httpClient,
+                new AppConfig
+                {
+                    OpenAI = ConfigObjectCloner.Clone(baseConfig.OpenAI),
+                    OpenAICompatible = ConfigObjectCloner.Clone(baseConfig.OpenAICompatible, config =>
+                    {
+                        config.ApiKey = apiKey;
+                        config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.OpenAICompatible.Model : model!;
+                    }),
+                    General = ConfigObjectCloner.Clone(baseConfig.General, config => config.ActiveProvider = AiProviderType.OpenAICompatible),
+                    Agent = baseConfig.Agent,
+                },
                 loggerFactory.CreateLogger<OpenAIProvider>()),
             AiProviderType.Claude => new AnthropicProvider(
                 httpClient,
-                new AppConfig { Anthropic = new AnthropicConfig { ApiKey = apiKey, Model = string.IsNullOrWhiteSpace(model) ? baseConfig.Anthropic.Model : model! }, General = baseConfig.General, Agent = baseConfig.Agent },
+                new AppConfig
+                {
+                    Anthropic = ConfigObjectCloner.Clone(baseConfig.Anthropic, config =>
+                    {
+                        config.ApiKey = apiKey;
+                        config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.Anthropic.Model : model!;
+                    }),
+                    General = baseConfig.General,
+                    Agent = baseConfig.Agent,
+                },
                 loggerFactory.CreateLogger<AnthropicProvider>()),
             _ => new GeminiProvider(
                 httpClient,
-                new AppConfig { Gemini = new GeminiConfig { ApiKey = apiKey, Model = string.IsNullOrWhiteSpace(model) ? baseConfig.Gemini.Model : model! }, General = baseConfig.General, Agent = baseConfig.Agent },
+                new AppConfig
+                {
+                    Gemini = ConfigObjectCloner.Clone(baseConfig.Gemini, config =>
+                    {
+                        config.ApiKey = apiKey;
+                        config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.Gemini.Model : model!;
+                    }),
+                    General = baseConfig.General,
+                    Agent = baseConfig.Agent,
+                },
                 loggerFactory.CreateLogger<GeminiProvider>()),
         };
     }

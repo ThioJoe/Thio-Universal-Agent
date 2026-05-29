@@ -7,7 +7,7 @@
 * **Backend:** C# / .NET 10, ASP.NET Core Minimal APIs.
 * **Frontend:** Vanilla HTML/CSS/JS (embedded in the assembly via `wwwroot`). No modern JS frameworks.
 * **OS Integration:** Windows (implemented via P/Invoke `user32.dll`, `gdi32.dll`), architected via interfaces for future cross-platform support.
-* **AI Provider:** Currently OpenAI ChatGPT, Google Gemini, and Anthropic Claude, using structured text/vision prompting.
+* **AI Provider:** Currently OpenAI ChatGPT, OpenAI-compatible chat-completions APIs, Google Gemini, and Anthropic Claude, using structured text/vision prompting.
 
 ---
 

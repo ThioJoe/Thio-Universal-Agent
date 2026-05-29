@@ -6,13 +6,14 @@ using System.Text.Json.Serialization;
 namespace Thio_Universal_Agent.AI_API.OpenAI;
 
 /// <summary>
-/// OpenAI REST API implementation of <see cref="IAiProvider"/>.
+/// OpenAI-compatible chat completions implementation of <see cref="IAiProvider"/>.
 /// </summary>
 public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, ILogger<OpenAIProvider> logger) : IAiProvider
 {
-    private const string BaseUrl = "https://api.openai.com/v1/chat/completions";
-    private readonly string? _apiKey = appConfig.OpenAI.ApiKey;
-    private readonly string _model = appConfig.OpenAI.Model;
+    private const string OpenAiChatCompletionsUrl = "https://api.openai.com/v1/chat/completions";
+    private readonly AiProviderType _providerType = appConfig.General.ActiveProvider == AiProviderType.OpenAICompatible
+        ? AiProviderType.OpenAICompatible
+        : AiProviderType.ChatGPT;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -25,8 +26,10 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
 
+        OpenAIRequestSettings settings = GetRequestSettings(options);
+
         OpenAIRequest request = new OpenAIRequest(
-            Model: _model,
+            Model: settings.Model,
             Messages: [
                 new OpenAIMessage(
                     "user",
@@ -39,10 +42,10 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
                     ]
                 )
             ],
-            Temperature: appConfig.OpenAI.Temperature,
-            MaxTokens: options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens
+            Temperature: settings.Temperature,
+            MaxTokens: settings.MaxOutputTokens
             );
-        return SendRequestAsync(request, cancellationToken);
+        return SendRequestAsync(request, settings, cancellationToken);
     }
 
     public Task<AiResponse> SendPromptWithImageAsync(string prompt, byte[] imageBytes, string mimeType = "image/png", CancellationToken cancellationToken = default, AiRequestOptions? options = null)
@@ -50,8 +53,10 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
         ArgumentNullException.ThrowIfNull(imageBytes);
 
+        OpenAIRequestSettings settings = GetRequestSettings(options);
+
         OpenAIRequest request = new OpenAIRequest(
-            _model,
+            settings.Model,
             Messages: [
                 new OpenAIMessage(
                     Role: "user",
@@ -70,11 +75,11 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
                     ]
                 )
             ],
-            Temperature: appConfig.OpenAI.Temperature,
-            MaxTokens: options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens
+            Temperature: settings.Temperature,
+            MaxTokens: settings.MaxOutputTokens
         );
 
-        return SendRequestAsync(request, cancellationToken);
+        return SendRequestAsync(request, settings, cancellationToken);
     }
 
     public async Task<(AiConversation Conversation, AiResponse Response)> StartConversationAsync(string prompt, CancellationToken cancellationToken = default, AiRequestOptions? options = null)
@@ -84,13 +89,13 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         AiConversation conversation = new AiConversation();
         AiChatMessage userMessage = new AiChatMessage { Role = AiChatRole.User, Text = prompt };
 
-        OpenAIRequest request = BuildRequest(
+        (OpenAIRequest request, OpenAIRequestSettings settings) = BuildRequest(
             conversation: conversation,
             additionalMessage: userMessage,
             options: options
         );
 
-        AiResponse response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        AiResponse response = await SendRequestAsync(request, settings, cancellationToken).ConfigureAwait(false);
 
         if (response.Success)
         {
@@ -139,8 +144,8 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
 
     private async Task<AiResponse> ContinueConversationCoreAsync(AiConversation conversation, AiChatMessage userMessage, CancellationToken cancellationToken, AiRequestOptions? options)
     {
-        OpenAIRequest request = BuildRequest(conversation, userMessage, options);
-        AiResponse response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        (OpenAIRequest request, OpenAIRequestSettings settings) = BuildRequest(conversation, userMessage, options);
+        AiResponse response = await SendRequestAsync(request, settings, cancellationToken).ConfigureAwait(false);
 
         if (response.Success)
         {
@@ -151,18 +156,18 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         return response;
     }
 
-    private async Task<AiResponse> SendRequestAsync(OpenAIRequest request, CancellationToken cancellationToken)
+    private async Task<AiResponse> SendRequestAsync(OpenAIRequest request, OpenAIRequestSettings settings, CancellationToken cancellationToken)
     {
-        string? apiKey = _apiKey ?? appConfig.OpenAI.ApiKey;
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("OpenAI:ApiKey is not configured. Provide an API key via the web UI.");
+        if (settings.RequiresApiKey && string.IsNullOrWhiteSpace(settings.ApiKey))
+            throw new InvalidOperationException($"{settings.ProviderName}:ApiKey is not configured. Provide an API key via the web UI.");
 
         if (logger.IsEnabled(LogLevel.Debug))
-            logger.LogDebug("Sending prompt to OpenAI model {Model}.", _model);
+            logger.LogDebug("Sending prompt to {Provider} model {Model} via {EndpointUrl}.", settings.ProviderName, settings.Model, settings.EndpointUrl);
 
-        using HttpRequestMessage httpRequest = new HttpRequestMessage(HttpMethod.Post, BaseUrl);
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        using HttpRequestMessage httpRequest = new HttpRequestMessage(HttpMethod.Post, settings.EndpointUrl);
+        if (!string.IsNullOrWhiteSpace(settings.ApiKey))
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey);
+
         httpRequest.Content = JsonContent.Create(request, options: JsonOptions);
 
         using HttpResponseMessage response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
@@ -170,7 +175,7 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         if (!response.IsSuccessStatusCode)
         {
             string errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            logger.LogError("OpenAI API returned {StatusCode}. Body: {ErrorBody}", (int)response.StatusCode, errorBody);
+            logger.LogError("{Provider} API returned {StatusCode}. Body: {ErrorBody}", settings.ProviderName, (int)response.StatusCode, errorBody);
 
             return new AiResponse(false, string.Empty, $"HTTP {(int)response.StatusCode}: {errorBody}");
         }
@@ -179,7 +184,7 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         string? text = openAiResponse?.Choices?.FirstOrDefault()?.Message?.Content;
 
         if (string.IsNullOrWhiteSpace(text))
-            return new AiResponse(false, string.Empty, "OpenAI returned an empty response.");
+            return new AiResponse(false, string.Empty, $"{settings.ProviderName} returned an empty response.");
 
         TokenUsage? usage = null;
         if (openAiResponse?.Usage != null)
@@ -196,21 +201,58 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
         return new AiResponse(true, text, Usage: usage);
     }
 
-    private OpenAIRequest BuildRequest(AiConversation conversation, AiChatMessage additionalMessage, AiRequestOptions? options)
+    private (OpenAIRequest Request, OpenAIRequestSettings Settings) BuildRequest(AiConversation conversation, AiChatMessage additionalMessage, AiRequestOptions? options)
     {
         bool stripHistoryImages = appConfig.General.StripHistoryImages;
         List<OpenAIMessage> messages = new List<OpenAIMessage>(conversation.Messages.Count + 1);
+        OpenAIRequestSettings settings = GetRequestSettings(options);
 
         foreach (AiChatMessage message in conversation.Messages)
             messages.Add(ToOpenAIMessage(message: message, stripImages: stripHistoryImages));
 
         messages.Add(ToOpenAIMessage(message: additionalMessage, stripImages: false));
 
-        return new OpenAIRequest(
-            Model: _model,
-            Messages: messages,
+        return (
+            new OpenAIRequest(
+                Model: settings.Model,
+                Messages: messages,
+                Temperature: settings.Temperature,
+                MaxTokens: settings.MaxOutputTokens
+            ),
+            settings
+        );
+    }
+
+    private OpenAIRequestSettings GetRequestSettings(AiRequestOptions? options)
+    {
+        if (_providerType == AiProviderType.OpenAICompatible)
+        {
+            string endpointUrl = appConfig.OpenAICompatible.EndpointUrl?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(endpointUrl))
+                throw new InvalidOperationException("OpenAICompatible:EndpointUrl is not configured. Provide the full chat completions endpoint URL via the web UI.");
+
+            if (!Uri.TryCreate(endpointUrl, UriKind.Absolute, out _))
+                throw new InvalidOperationException("OpenAICompatible:EndpointUrl is invalid. Provide a valid absolute URL via the web UI.");
+
+            return new OpenAIRequestSettings(
+                ProviderName: appConfig.OpenAICompatible.ProviderName,
+                EndpointUrl: endpointUrl,
+                ApiKey: appConfig.OpenAICompatible.ApiKey,
+                Model: appConfig.OpenAICompatible.Model,
+                Temperature: appConfig.OpenAICompatible.Temperature,
+                MaxOutputTokens: options?.MaxOutputTokens ?? appConfig.OpenAICompatible.MaxOutputTokens,
+                RequiresApiKey: false
+            );
+        }
+
+        return new OpenAIRequestSettings(
+            ProviderName: appConfig.OpenAI.ProviderName,
+            EndpointUrl: OpenAiChatCompletionsUrl,
+            ApiKey: appConfig.OpenAI.ApiKey,
+            Model: appConfig.OpenAI.Model,
             Temperature: appConfig.OpenAI.Temperature,
-            MaxTokens: options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens
+            MaxOutputTokens: options?.MaxOutputTokens ?? appConfig.OpenAI.MaxOutputTokens,
+            RequiresApiKey: true
         );
     }
 
@@ -252,4 +294,5 @@ public sealed class OpenAIProvider(HttpClient httpClient, AppConfig appConfig, I
     private record OpenAIChoice(OpenAIMessageResponse? Message, [property: JsonPropertyName("finish_reason")] string? FinishReason);
     private record OpenAIMessageResponse(string? Content);
     private record OpenAIError(string? Message);
+    private record OpenAIRequestSettings(string ProviderName, string EndpointUrl, string? ApiKey, string Model, float? Temperature, int? MaxOutputTokens, bool RequiresApiKey);
 }

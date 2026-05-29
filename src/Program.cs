@@ -91,6 +91,7 @@ builder.Services.AddTransient<IAiProvider>(sp =>
     return config.General.ActiveProvider switch
     {
         AiProviderType.ChatGPT => sp.GetRequiredService<OpenAIProvider>(),
+        AiProviderType.OpenAICompatible => sp.GetRequiredService<OpenAIProvider>(),
         AiProviderType.Claude => sp.GetRequiredService<AnthropicProvider>(),
         _ => sp.GetRequiredService<GeminiProvider>()
     };

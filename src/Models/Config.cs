@@ -71,11 +71,30 @@ internal static class ConfigSectionBinder
     }
 }
 
+internal static class ConfigObjectCloner
+{
+    internal static T Clone<T>(T source, Action<T>? mutate = null) where T : class, new()
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        T clone = new();
+        foreach (PropertyInfo prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (!prop.CanRead || !prop.CanWrite) continue;
+            prop.SetValue(clone, prop.GetValue(source));
+        }
+
+        mutate?.Invoke(clone);
+        return clone;
+    }
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum AiProviderType
 {
     Gemini,
     ChatGPT,
+    OpenAICompatible,
     Claude
 }
 
@@ -208,6 +227,7 @@ public class AppConfig
 {
     public GeminiConfig Gemini { get; set; } = new();
     public OpenAIConfig OpenAI { get; set; } = new();
+    public OpenAICompatibleConfig OpenAICompatible { get; set; } = new();
     public AnthropicConfig Anthropic { get; set; } = new();
     public AgentConfig Agent { get; set; } = new();
     public GeneralConfig General { get; set; } = new();
@@ -223,6 +243,7 @@ public class AppConfig
     {
         Gemini = new GeminiConfig(configuration.GetSection("Gemini"));
         OpenAI = new OpenAIConfig(configuration.GetSection("OpenAI"));
+        OpenAICompatible = new OpenAICompatibleConfig(configuration.GetSection("OpenAICompatible"));
         Anthropic = new AnthropicConfig(configuration.GetSection("Anthropic"));
         Agent = new AgentConfig(configuration.GetSection("Agent"));
         General = new GeneralConfig(configuration.GetSection("General"));
