@@ -12,7 +12,7 @@
     <AssemblyVersion>$(Version)</AssemblyVersion>
     <FileVersion>$(Version)</FileVersion>
     <Authors>ThioJoe</Authors>
-    <Version>0.2.0.0</Version>
+    <Version>0.3.0.0</Version>
     <Title>Thio's Universal Agent</Title>
     <PackageProjectUrl>https://github.com/ThioJoe/Thio-Universal-Agent</PackageProjectUrl>
     <Copyright>© 2026 ThioJoe</Copyright>
