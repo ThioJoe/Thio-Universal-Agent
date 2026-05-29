@@ -34,6 +34,10 @@ const statusText      = /** @type {HTMLSpanElement} */    (document.getElementBy
 const stepCounter     = /** @type {HTMLSpanElement} */    (document.getElementById('step-counter'));
 const tokenCounter    = /** @type {HTMLSpanElement} */    (document.getElementById('token-counter'));
 const costCounter     = /** @type {HTMLSpanElement} */    (document.getElementById('cost-counter'));
+const hotkeyStrip     = /** @type {HTMLDivElement} */     (document.getElementById('hotkey-strip'));
+const hotkeyStripLabel = /** @type {HTMLSpanElement} */   (document.getElementById('hotkey-strip-label'));
+const pauseHotkeyChip = /** @type {HTMLSpanElement} */    (document.getElementById('pause-hotkey-chip'));
+const stopHotkeyChip  = /** @type {HTMLSpanElement} */    (document.getElementById('stop-hotkey-chip'));
 const finalResultEl   = /** @type {HTMLDivElement} */     (document.getElementById('final-result'));
 const finalResultMsg  = /** @type {HTMLSpanElement} */    (document.getElementById('final-result-msg'));
 const finalResultTime = /** @type {HTMLSpanElement} */    (document.getElementById('final-result-time'));
@@ -55,11 +59,85 @@ const guidanceAck     = /** @type {HTMLSpanElement} */    (document.getElementBy
 const SESSION_STORE_KEY = 'tua_session_id';
 const CONFIG_STORE_KEY  = 'tua_config_v1';
 
+/** @typedef {{ available: boolean, enabled: boolean, pauseResumeHotkey: string, stopHotkey: string }} UiHotkeyConfig */
+
+/** @type {UiHotkeyConfig} */
+let configuredHotkeys = {
+    available: false,
+    enabled: false,
+    pauseResumeHotkey: '',
+    stopHotkey: '',
+};
+
 /**
  * @returns {StoredConfigData}
  */
 function getStoredConfig() {
     try { return JSON.parse(localStorage.getItem(CONFIG_STORE_KEY) || '{}'); } catch { return {}; }
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeHotkeyLabel(value) {
+    return typeof value === 'string' && value.trim() ? value.trim() : 'Not set';
+}
+
+// Display-only: the backend hotkey service owns the actual global registrations.
+/**
+ * @param {{ hotkeys?: { enabled?: boolean, pauseResumeHotkey?: unknown, stopHotkey?: unknown } }} cfg
+ * @returns {void}
+ */
+function updateHotkeyDisplayFromConfig(cfg) {
+    const hotkeys = cfg?.hotkeys;
+    configuredHotkeys = hotkeys ? {
+        available: true,
+        enabled: hotkeys.enabled !== false,
+        pauseResumeHotkey: normalizeHotkeyLabel(hotkeys.pauseResumeHotkey),
+        stopHotkey: normalizeHotkeyLabel(hotkeys.stopHotkey),
+    } : {
+        available: false,
+        enabled: false,
+        pauseResumeHotkey: '',
+        stopHotkey: '',
+    };
+
+    renderHotkeyHints();
+}
+
+/** @returns {void} */
+function renderHotkeyHints() {
+    if (!hotkeyStrip || !hotkeyStripLabel || !pauseHotkeyChip || !stopHotkeyChip) return;
+
+    if (!configuredHotkeys.available) {
+        hotkeyStrip.hidden = true;
+        btnPause.removeAttribute('title');
+        btnStop.removeAttribute('title');
+        return;
+    }
+
+    const pauseAction = isPaused ? 'Resume' : 'Pause';
+    hotkeyStrip.hidden = false;
+    hotkeyStrip.classList.toggle('disabled', !configuredHotkeys.enabled);
+    hotkeyStripLabel.textContent = configuredHotkeys.enabled ? 'Global hotkeys' : 'Global hotkeys disabled';
+    pauseHotkeyChip.textContent = `${pauseAction}: ${configuredHotkeys.pauseResumeHotkey}`;
+    stopHotkeyChip.textContent = `Stop: ${configuredHotkeys.stopHotkey}`;
+
+    const disabledSuffix = configuredHotkeys.enabled ? '' : '; disabled in config';
+    btnPause.title = `${pauseAction} (${configuredHotkeys.pauseResumeHotkey}${disabledSuffix})`;
+    btnStop.title = `Stop (${configuredHotkeys.stopHotkey}${disabledSuffix})`;
+}
+
+/**
+ * @param {boolean} paused
+ * @returns {void}
+ */
+function setPauseButtonState(paused) {
+    isPaused = paused;
+    btnPause.textContent = paused ? 'Resume' : 'Pause';
+    btnPause.classList.toggle('resuming', paused);
+    renderHotkeyHints();
 }
 
 /** @returns {Promise<void>} */
@@ -105,7 +183,7 @@ let sessionTotalCost = 0;
         ]);
 
         if (cfgRes.ok) {
-        const cfg = await cfgRes.json();
+            const cfg = await cfgRes.json();
             const storedCfg = getStoredConfig();
             // Do not assume a default provider — only use the configured activeProvider when present
             const activeProv = storedCfg?.general?.activeProvider || cfg.general?.activeProvider || null;
@@ -115,6 +193,7 @@ let sessionTotalCost = 0;
             else if (activeProv === 'Gemini') model = storedCfg?.gemini?.model || cfg.gemini?.model;
 
             if (model) modelBadge.textContent = model;
+            updateHotkeyDisplayFromConfig(cfg);
             loadPricingFromConfig(cfg, storedCfg, activeProv);
         }
 
@@ -174,9 +253,7 @@ let sessionTotalCost = 0;
                 guidanceInput.value = '';
 
                 if (isActive && isPausedStatus) {
-                    isPaused = true;
-                    btnPause.textContent = 'Resume';
-                    btnPause.classList.add('resuming');
+                    setPauseButtonState(true);
                     setStatus('paused', debugEnabled ? 'Paused (Debug Mode)' : 'Paused');
                 }
             } else {
@@ -316,8 +393,7 @@ async function startAgent() {
 
     btnStart.disabled = true;
     btnPause.disabled = false;
-    btnPause.textContent = 'Pause';
-    btnPause.classList.remove('resuming');
+    setPauseButtonState(false);
     btnStop.disabled = false;
     goalInput.disabled = true;
     monitorSelect.disabled = true;
@@ -521,17 +597,13 @@ function handleGuidanceQueued(msg, cancelNext) {
 
 /** @returns {void} */
 function handlePaused() {
-    isPaused = true;
-    btnPause.textContent = 'Resume';
-    btnPause.classList.add('resuming');
+    setPauseButtonState(true);
     setStatus('paused', debugEnabled ? 'Paused (Debug Mode)' : 'Paused');
 }
 
 /** @returns {void} */
 function handleResumed() {
-    isPaused = false;
-    btnPause.textContent = 'Pause';
-    btnPause.classList.remove('resuming');
+    setPauseButtonState(false);
     setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
     // Countdown will appear via countdown events; clear any leftover banner just in case.
     countdownBanner.style.display = 'none';
@@ -895,8 +967,7 @@ function cleanup() {
 function resetControls() {
     btnStart.disabled = false;
     btnPause.disabled = true;
-    btnPause.textContent = 'Pause';
-    btnPause.classList.remove('resuming');
+    setPauseButtonState(false);
     btnStop.disabled = true;
     goalInput.disabled = false;
     monitorSelect.disabled = false;
@@ -912,8 +983,9 @@ function setLiveControls(canPause) {
     btnStart.disabled = true;
     btnPause.disabled = !canPause;
     if (!canPause) {
-        btnPause.textContent = 'Pause';
-        btnPause.classList.remove('resuming');
+        setPauseButtonState(false);
+    } else {
+        setPauseButtonState(isPaused);
     }
     btnStop.disabled = false;
     goalInput.disabled = true;

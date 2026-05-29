@@ -21,10 +21,19 @@
     <div class="controls">
         <select id="monitor-select" title="Monitor to capture"></select>
         <input type="text" id="goal-input" placeholder="Enter a goal for the AI agent..." />
-        <button id="btn-start">Start</button>
-        <button id="btn-pause" disabled>Pause</button>
-        <button id="btn-stop" disabled>Stop</button>
-        <button id="btn-new-session" style="background:#2a2a2a;color:#888;border:1px solid #444;border-radius:6px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;margin-left:auto;" title="Stop current session and clear output">New Session</button>
+        <div class="controls-actions">
+            <div class="control-buttons">
+                <button id="btn-start">Start</button>
+                <button id="btn-pause" disabled>Pause</button>
+                <button id="btn-stop" disabled>Stop</button>
+                <button id="btn-new-session" style="background:#2a2a2a;color:#888;border:1px solid #444;border-radius:6px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;" title="Stop current session and clear output">New Session</button>
+            </div>
+            <div class="hotkey-strip" id="hotkey-strip" hidden>
+                <span class="hotkey-label" id="hotkey-strip-label">Global hotkeys</span>
+                <span class="hotkey-chip" id="pause-hotkey-chip"></span>
+                <span class="hotkey-chip stop" id="stop-hotkey-chip"></span>
+            </div>
+        </div>
     </div>
 
     <div class="status-bar">

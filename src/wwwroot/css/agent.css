@@ -30,9 +30,26 @@ header h1 {
 .controls {
     padding: 20px 32px;
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
-    align-items: center;
+    align-items: flex-start;
     border-bottom: 1px solid #1e1e1e;
+}
+
+.controls-actions {
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 16px;
+    min-width: fit-content;
+}
+
+.control-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 12px;
 }
 
 #monitor-select {
@@ -51,6 +68,7 @@ header h1 {
 
 .controls input[type="text"] {
     flex: 1;
+    min-width: 260px;
     padding: 10px 14px;
     background: #1a1a1a;
     border: 1px solid #333;
@@ -153,6 +171,52 @@ header h1 {
 }
 
 #status-text { font-weight: 600; }
+
+.hotkey-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    font-size: 11px;
+    color: #7d8c9c;
+    max-width: 100%;
+}
+
+.hotkey-label {
+    color: #60748a;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.hotkey-strip.disabled .hotkey-label {
+    color: #92754b;
+}
+
+.hotkey-chip {
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid #24303d;
+    background: #171d24;
+    color: #9dc4ff;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 11px;
+    line-height: 1.3;
+}
+
+.hotkey-chip.stop {
+    border-color: #4a2828;
+    background: #241515;
+    color: #efb0b0;
+}
+
+.hotkey-strip.disabled .hotkey-chip {
+    border-color: #4a3b25;
+    background: #211a13;
+    color: #d4b07a;
+}
 
 /* ---- Resume countdown banner ---- */
 #countdown-banner {
