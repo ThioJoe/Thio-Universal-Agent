@@ -161,6 +161,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     private readonly MarkerPool _markerPool = new();
 
     /// <summary>
+    /// When set, each <c>Draw*</c> call stamps this value onto the marker's <c>QueueLabel</c> so the
+    /// human operator can see the execution order of a queued batch. Set to <c>null</c> to suppress.
+    /// </summary>
+    public string? CurrentQueueLabel { get; set; }
+
+    /// <summary>
     /// Manages the lifecycle of <see cref="MarkerWindow"/> instances: idle pool, active-marker tracking,
     /// latest-marker reference, and ID generation — all in one place.
     /// </summary>
@@ -266,6 +272,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     {
         ClickPointMarker window = _markerPool.Rent<ClickPointMarker>(new CancellationTokenSource());
         window.Label = label;
+        window.QueueLabel = CurrentQueueLabel;
         window.Show(x, y, markerOpacity, durationMs, _markerPool);
     }
 
@@ -273,6 +280,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     {
         BoundingBoxMarker window = _markerPool.Rent<BoundingBoxMarker>(new CancellationTokenSource());
         window.Label = label;
+        window.QueueLabel = CurrentQueueLabel;
         window.Show(x1, y1, x2, y2, borderOpacity, fillOpacity, durationMs, _markerPool);
     }
 
@@ -280,6 +288,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     {
         ClickDragMarker window = _markerPool.Rent<ClickDragMarker>(new CancellationTokenSource());
         window.Label = label;
+        window.QueueLabel = CurrentQueueLabel;
         window.Show(x_start, y_start, x_end, y_end, markerOpacity, durationMs, _markerPool);
     }
 
@@ -291,6 +300,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     {
         MouseMoveDestinationMarker window = _markerPool.Rent<MouseMoveDestinationMarker>(new CancellationTokenSource());
         window.Label = label;
+        window.QueueLabel = CurrentQueueLabel;
         window.Show(x, y, x, y, markerOpacity, durationMs, _markerPool);
     }
 
@@ -318,6 +328,9 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
     private abstract class MarkerWindow
     {
+        private static int _instanceCounter;
+        private string _wndClassName = "";
+
         private IntPtr _hwnd;
         private IntPtr _magentaBrush;
         private readonly Thread _messageThread;
@@ -339,6 +352,8 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         public abstract (int width, int height, int offsetX, int offsetY) Geometry { get; set; }
         /// <summary>Optional text drawn near the marker's anchor point. Set before each call to <c>Show</c>; <c>null</c> suppresses the label.</summary>
         internal string? Label;
+        /// <summary>Optional queue order number (e.g. "1", "2") drawn near the marker when it is part of a batch. Set before each call to <c>Show</c>; <c>null</c> suppresses it.</summary>
+        internal string? QueueLabel;
         /// <summary>The cancellation source for this window's active auto-hide timer. Set on activation, disposed and nulled on clear.</summary>
         public CancellationTokenSource? Cts { get; set; }
 
@@ -423,6 +438,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             //TODO: Make enum, see: https://learn.microsoft.com/en-us/windows/win32/hidpi/dpi-awareness-context
             NativeMethods.SetThreadDpiAwarenessContext(new IntPtr(-4));
 
+            // Each instance uses a unique class name so its own WndProc delegate is always the one
+            // registered for its HWND. Without this, all instances share the first registration's
+            // WndProc (Win32 class WndProcs are per-class, not per-HWND), causing wrong paint/state
+            // to be read when multiple marker types are visible simultaneously.
+            _wndClassName = $"TUA_MarkerWindow_{Interlocked.Increment(ref _instanceCounter)}";
+
             // Use Magenta as the background brush so we can Color-Key it out to be perfectly transparent
             _magentaBrush = NativeMethods.CreateSolidBrush(0x00FF00FF);
 
@@ -430,7 +451,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             {
                 cbSize = (uint)Marshal.SizeOf<NativeMethods.WNDCLASSEX>(),
                 lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate),
-                lpszClassName = "TUA_MarkerWindow",
+                lpszClassName = _wndClassName,
                 hbrBackground = _magentaBrush
             };
             NativeMethods.RegisterClassExW(ref wc);
@@ -441,7 +462,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             (int w, int h, _, _) = Geometry;
             _hwnd = NativeMethods.CreateWindowExW(
                 dwExStyle: dwExStyle,
-                lpClassName: "TUA_MarkerWindow",
+                lpClassName: _wndClassName,
                 lpWindowName: "TUA Marker",
                 dwStyle: NativeMethods.WS_POPUP,
                 x: 0, y: 0, nWidth: w, nHeight: h,
@@ -593,14 +614,29 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         public override MarkerType Type => MarkerType.ClickPoint;
         public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (60, 60, 30, 30);
 
+        // Offset of the queue-order number label relative to the crosshair centre.
+        // Positive X moves right, negative Y moves up. Target: top-right corner, outside the crosshair.
+        // The crosshair arms end at ±lineRadius(22) and the circle radius is 15, so x>+15 and y<-15
+        // is clear of all drawn elements. The 60×60 window leaves ~14px to the right of the right arm.
+        private const int QueueLabelOffsetX = +16; // lands at cx+16 = 46, just right of the circle edge
+        private const int QueueLabelOffsetY = -28; // lands at cy-28 =  2, well above the top arm
+
+        // Offset of the legacy label relative to the crosshair centre.
+        private const int LabelOffsetX = 26;
+        private const int LabelOffsetY = 26;
+
         protected override void Paint(Graphics g)
         {
             (int w, int h, int cx, int cy) = Geometry;
             AddCrosshair(g, centerX: cx, centerY: cy, circleRadius: 15, lineRadius: 22, thickness: 4, Color.Red);
 
-            if (Label != null) 
-            { 
-                AddLabel(g, cx + 26, cy + 26, Label, Color.Red); 
+            if (QueueLabel != null)
+            {
+                AddLabel(g, cx + QueueLabelOffsetX, cy + QueueLabelOffsetY, QueueLabel, Color.Red);
+            }
+            else if (Label != null)
+            {
+                AddLabel(g, cx + LabelOffsetX, cy + LabelOffsetY, Label, Color.Red);
             }
         }
     }
@@ -763,6 +799,11 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private const int BorderThickness = 3;
         // Padding so the border stroke is never clipped at the window edge (half stroke width, rounded up).
         private const int Padding = (BorderThickness + 1) / 2 + 1;
+        // Extra height added below the box when a queue-order number label is present.
+        private const int QueueLabelExtraHeight = 28;
+        // Offset of the queue label from the bottom-left corner of the drawn rectangle.
+        private const int QueueLabelOffsetX = 0;
+        private const int QueueLabelOffsetY = 6; // gap between box bottom and label top
 
         private int _localWidth, _localHeight, _fillOpacity;
         private TypeTextTooltipWindow? _tooltip;
@@ -779,7 +820,8 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             int left = Math.Min(x1, x2) - Padding;
             int top  = Math.Min(y1, y2) - Padding;
             int w    = Math.Abs(x2 - x1) + Padding * 2;
-            int h    = Math.Abs(y2 - y1) + Padding * 2;
+            // Expand the window downward when a queue label is present so the label isn't clipped.
+            int h    = Math.Abs(y2 - y1) + Padding * 2 + (QueueLabel != null ? QueueLabelExtraHeight : 0);
 
             lock (StateLock)
             {
@@ -819,6 +861,9 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
             using Pen border = new Pen(Color.Red, BorderThickness);
             g.DrawRectangle(border, rect);
+
+            if (QueueLabel != null)
+                AddLabel(g, originX + QueueLabelOffsetX, originY + localH + QueueLabelOffsetY, QueueLabel, Color.Red);
         }
     }
 
@@ -862,9 +907,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             AddArrow(g, startX, startY, endX, endY, thickness: 3, Color.Blue);
             AddOpenCrosshair(g, endX, endY, circleRadius: 14, spokeLength: 10, thickness: 3, Color.Blue);
 
-            if (Label != null) 
+            string? displayLabel = QueueLabel ?? Label;
+            if (displayLabel != null) 
             { 
-                AddLabel(g, endX + 26, endY + 26, Label, Color.Blue); 
+                // Anchor the label above the endpoint crosshair; this keeps it within the window
+                // regardless of arrow direction (the Padding guarantees room at the top).
+                AddLabel(g, endX - 8, Math.Max(2, endY - Padding - 16), displayLabel, Color.Blue); 
             }
         }
     }
@@ -911,9 +959,11 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             AddCrosshair(g, endX,   endY,   circleRadius: 10, lineRadius: Padding, thickness: 3, Color.Orange);
             AddArrow(g, startX, startY, endX, endY, thickness: 3, Color.Orange);
 
-            if (Label != null)
+            string? displayLabel = QueueLabel ?? Label;
+            if (displayLabel != null)
             {
-                AddLabel(g, endX + Padding + 4, endY + Padding + 4, Label, Color.Orange);
+                // Place the label above the destination crosshair; the Padding guarantees vertical room.
+                AddLabel(g, endX - 8, Math.Max(2, endY - Padding - 16), displayLabel, Color.Orange);
             }
         }
     }

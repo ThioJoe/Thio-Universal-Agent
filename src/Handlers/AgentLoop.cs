@@ -176,6 +176,10 @@ public sealed partial class AgentLoop(
                     humanPreResults = new(actionsToRun.Count);
                     for (int preQi = 0; preQi < actionsToRun.Count; preQi++)
                     {
+                        // Stamp the queue order number onto markers so the human operator can see
+                        // which step is which when multiple markers are visible simultaneously.
+                        screenProvider.CurrentQueueLabel = isBatch ? (preQi + 1).ToString() : null;
+
                         AgentAction preAction = actionsToRun[preQi];
                         // Terminal actions are not pre-executed; they are handled normally in the main loop.
                         if (preAction.Kind is AgentActionKind.Done or AgentActionKind.Fail)
@@ -190,6 +194,7 @@ public sealed partial class AgentLoop(
                         stepUsage += preUsage;
                         humanPreResults.Add((preResult, preQi == 0 ? null : preDebugLog));
                     }
+                    screenProvider.CurrentQueueLabel = null;
                 }
 
                 // In human control mode, automatically pause after showing each step (and after markers

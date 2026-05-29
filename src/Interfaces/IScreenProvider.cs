@@ -92,4 +92,10 @@ public interface IScreenProvider
     /// Clears all drawn click points.
     /// </summary>
     void ClearMarkers();
+
+    /// <summary>
+    /// When set, each <c>Draw*</c> call stamps this value onto the marker's queue-order label so the
+    /// human operator can see the execution order of a queued batch. Set to <c>null</c> to suppress numbers.
+    /// </summary>
+    string? CurrentQueueLabel { get => null; set { } }
 }
