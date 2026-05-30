@@ -54,7 +54,7 @@ Example of it queuing multiple actions at once, while accurately clicking exact 
 **A:** There's not actually a limit. You can set the max number of steps to any number in the settings. The default is arbitrarily set to 100 steps.
 
 ### **Q:** Which AI Services are supported?
-**A:** Currently ChatGPT, OpenAI-compatible chat-completions APIs, Gemini, Claude, and local ONNX Runtime GenAI models. ChatGPT/Gemini/Claude require your own API key; OpenAI-compatible endpoints can also be local or self-hosted and may not require one; local ONNX models run directly from a model folder on disk and do not use an API key. Currently it seems Gemini works the best, especially `gemini-flash-latest`
+**A:** Currently ChatGPT, OpenAI-compatible APIs, Gemini, Claude, and local ONNX models (ChatGPT/Gemini/Claude require your own API key). Currently it seems Gemini works the best, especially `gemini-flash-latest`.
 
 ### **Q:** Doesn't this use a ton of tokens?
 **A:** Sort of, but not as much as you might think. Each step is maybe 3k tokens, but input tokens are cheaper. Completion tokens are usually as few as 50, up to a few hundred for many queued actions. The big factor is how many thinking tokens are used.
@@ -225,5 +225,3 @@ This app is source-available. Free for PERSONAL use only. You may not use it for
 <p align="center">
 <img width="450" src="https://github.com/user-attachments/assets/c6a61205-ba4e-4a7a-b85a-1328a1dec761" />
 </p>
-
-
