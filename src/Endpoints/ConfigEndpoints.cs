@@ -131,7 +131,15 @@ internal static class ConfigEndpoints
 
         app.MapPost("/api/config", (JsonElement body, AppConfig appConfig, HotkeyService? hotkeyService) =>
         {
-            if (body.TryGetProperty("general", out JsonElement generalEl)) ApplyUpdates(appConfig.General, generalEl);
+            if (body.TryGetProperty("general", out JsonElement generalEl))
+            {
+                ApplyUpdates(appConfig.General, generalEl);
+
+             #if HUMAN_ONLY
+                // Prevent a cached browser value of false from overriding the build mode.
+                appConfig.General.HumanControlOnlyMode = true;
+             #endif
+            }
             if (body.TryGetProperty("gemini", out JsonElement geminiEl)) ApplyUpdates(appConfig.Gemini, geminiEl);
             if (body.TryGetProperty("openai", out JsonElement openaiEl)) ApplyUpdates(appConfig.OpenAI, openaiEl);
             if (body.TryGetProperty("openaiCompatible", out JsonElement openaiCompatibleEl)) ApplyUpdates(appConfig.OpenAICompatible, openaiCompatibleEl);

@@ -255,5 +255,10 @@ public class AppConfig
         Agent = new AgentConfig(configuration.GetSection("Agent"));
         General = new GeneralConfig(configuration.GetSection("General"));
         Hotkeys = new HotkeyConfig(configuration.GetSection("Hotkeys"));
+
+     #if HUMAN_ONLY
+        // Ensure the in-memory config reflects the build mode, overriding any cached browser value.
+        General.HumanControlOnlyMode = true;
+     #endif
     }
 }
