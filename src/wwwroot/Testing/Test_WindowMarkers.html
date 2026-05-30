@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Window Marker Test — Thio Agent</title>
+    <link rel="stylesheet" href="/css/shared.css">
+    <link rel="stylesheet" href="/css/testing-common.css">
+    <link rel="stylesheet" href="/css/testing-markers.css">
+</head>
+<body>
+
+    <header>
+        <h1>🪟 Window Marker Test</h1>
+        <nav>
+            <a href="/">← Home</a>
+            <a href="/Testing/Screenshot.html">Screenshot</a>
+            <a href="/Testing/Test_CoordinatePrompt.html">Coordinate</a>
+            <a href="/Config.html">⚙ Config</a>
+        </nav>
+    </header>
+
+    <div id="notice-bar">
+        <strong>Mechanical overlay test.</strong>
+        <span>Draws native marker windows on the selected monitor without asking any AI model to locate or reason about anything on screen.</span>
+    </div>
+
+    <main id="layout">
+        <section class="panel" id="controls-panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Controls</h2>
+                    <p>Pick a monitor, choose the marker set, then draw repeated samples with optional labels and queue numbers.</p>
+                </div>
+                <span class="panel-tag">Debug</span>
+            </div>
+
+            <div class="field-grid">
+                <label class="field">
+                    <span>Monitor</span>
+                    <select id="monitorSelect"></select>
+                </label>
+
+                <label class="field">
+                    <span>Marker Set</span>
+                    <select id="markerKindSelect">
+                        <option value="AllTypes">All Types</option>
+                        <option value="ClickPoint">Click Point</option>
+                        <option value="MouseMove">Mouse Move</option>
+                        <option value="MouseMoveArrow">Mouse Move Arrow</option>
+                        <option value="ClickDrag">Click Drag</option>
+                        <option value="BoundingBox">Bounding Box</option>
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span>Count</span>
+                    <input id="countInput" type="number" min="1" max="24" value="6">
+                </label>
+
+                <label class="field">
+                    <span>Duration (ms)</span>
+                    <input id="durationInput" type="number" min="0" max="600000" step="250" value="" placeholder="Until Cancelled">
+                </label>
+
+                <label class="field">
+                    <span>Marker Opacity</span>
+                    <input id="markerOpacityInput" type="number" min="0" max="255" value="255">
+                </label>
+
+                <label class="field">
+                    <span>Fill Opacity</span>
+                    <input id="fillOpacityInput" type="number" min="0" max="255" value="48">
+                </label>
+            </div>
+
+            <div class="toggle-row">
+                <label class="toggle"><input id="labelsToggle" type="checkbox" checked> Include labels</label>
+                <label class="toggle"><input id="queueToggle" type="checkbox"> Show queue numbers</label>
+                <label class="toggle"><input id="clearExistingToggle" type="checkbox" checked> Clear existing first</label>
+            </div>
+
+            <div class="action-grid">
+                <button class="btn-primary" id="generateBtn">Draw Markers</button>
+                <button class="btn-secondary" id="queuedPresetBtn">Queue + Labels Preset</button>
+                <button class="btn-secondary" id="densePresetBtn">Dense 12-Marker Preset</button>
+                <button class="btn-secondary" id="refreshMonitorsBtn">Refresh Monitors</button>
+                <button class="btn-danger" id="clearBtn">Clear Markers</button>
+            </div>
+
+            <div class="status idle" id="statusPanel">Loading monitor list…</div>
+        </section>
+
+        <section class="panel" id="monitor-panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Monitor Layout</h2>
+                    <p>Monitor 0 is selected by default when it exists.</p>
+                </div>
+                <span class="panel-tag" id="selectedMonitorBadge">Monitor ?</span>
+            </div>
+
+            <div id="monitorCards" class="monitor-cards"></div>
+        </section>
+
+        <section class="panel" id="results-panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Last Draw Call</h2>
+                    <p>Exact coordinates returned by the mechanical marker generator.</p>
+                </div>
+                <span class="panel-tag" id="resultsBadge">No draw yet</span>
+            </div>
+
+            <div class="summary-grid" id="summaryGrid">
+                <article class="summary-card">
+                    <span class="summary-label">Scenario</span>
+                    <strong id="summaryScenario">-</strong>
+                </article>
+                <article class="summary-card">
+                    <span class="summary-label">Count</span>
+                    <strong id="summaryCount">-</strong>
+                </article>
+                <article class="summary-card">
+                    <span class="summary-label">Labels</span>
+                    <strong id="summaryLabels">-</strong>
+                </article>
+                <article class="summary-card">
+                    <span class="summary-label">Queue</span>
+                    <strong id="summaryQueue">-</strong>
+                </article>
+            </div>
+
+            <div id="emptyState">Generate a marker set to inspect the exact draw payload and monitor-relative coordinates.</div>
+
+            <div id="tableWrap" hidden>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Kind</th>
+                            <th>Label</th>
+                            <th>Queue</th>
+                            <th>Start</th>
+                            <th>End</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // @ts-nocheck
+
+        /** @typedef {{ index: number, x: number, y: number, width: number, height: number, isPrimary: boolean }} MonitorInfo */
+        /** @typedef {{ kind: string, label: string | null, queueLabel: string | null, x1: number, y1: number, x2: number | null, y2: number | null }} MarkerResult */
+
+        const monitorSelect = document.getElementById('monitorSelect');
+        const markerKindSelect = document.getElementById('markerKindSelect');
+        const countInput = document.getElementById('countInput');
+        const durationInput = document.getElementById('durationInput');
+        const markerOpacityInput = document.getElementById('markerOpacityInput');
+        const fillOpacityInput = document.getElementById('fillOpacityInput');
+        const labelsToggle = document.getElementById('labelsToggle');
+        const queueToggle = document.getElementById('queueToggle');
+        const clearExistingToggle = document.getElementById('clearExistingToggle');
+        const generateBtn = document.getElementById('generateBtn');
+        const queuedPresetBtn = document.getElementById('queuedPresetBtn');
+        const densePresetBtn = document.getElementById('densePresetBtn');
+        const refreshMonitorsBtn = document.getElementById('refreshMonitorsBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const statusPanel = document.getElementById('statusPanel');
+        const monitorCards = document.getElementById('monitorCards');
+        const selectedMonitorBadge = document.getElementById('selectedMonitorBadge');
+        const resultsBadge = document.getElementById('resultsBadge');
+        const summaryScenario = document.getElementById('summaryScenario');
+        const summaryCount = document.getElementById('summaryCount');
+        const summaryLabels = document.getElementById('summaryLabels');
+        const summaryQueue = document.getElementById('summaryQueue');
+        const emptyState = document.getElementById('emptyState');
+        const tableWrap = document.getElementById('tableWrap');
+        const resultsBody = document.getElementById('resultsBody');
+
+        /** @type {MonitorInfo[]} */
+        let monitors = [];
+
+        function setStatus(message, tone = 'idle') {
+            statusPanel.className = `status ${tone}`;
+            statusPanel.textContent = message;
+        }
+
+        function getNumber(input, fallback) {
+            const value = Number.parseInt(input.value, 10);
+            return Number.isFinite(value) ? value : fallback;
+        }
+
+        function getSelectedMonitorIndex() {
+            const value = Number.parseInt(monitorSelect.value, 10);
+            return Number.isFinite(value) ? value : 0;
+        }
+
+        function renderMonitorOptions() {
+            monitorSelect.innerHTML = '';
+
+            for (const monitor of monitors) {
+                const option = document.createElement('option');
+                option.value = String(monitor.index);
+                option.textContent = `Monitor ${monitor.index}${monitor.isPrimary ? ' (Primary)' : ''} — ${monitor.width}×${monitor.height} @ ${monitor.x}, ${monitor.y}`;
+                monitorSelect.appendChild(option);
+            }
+
+            if (!monitorSelect.options.length) {
+                const option = document.createElement('option');
+                option.value = '0';
+                option.textContent = 'No monitors available';
+                monitorSelect.appendChild(option);
+            }
+        }
+
+        function ensureMonitorSelection() {
+            if (!monitors.length) return;
+
+            const currentIndex = getSelectedMonitorIndex();
+            if (monitors.some(monitor => monitor.index === currentIndex)) {
+                updateMonitorSelectionUI();
+                return;
+            }
+
+            const preferred = monitors.find(monitor => monitor.index === 0) ?? monitors[0];
+            monitorSelect.value = String(preferred.index);
+            updateMonitorSelectionUI();
+        }
+
+        function updateMonitorSelectionUI() {
+            const selectedIndex = getSelectedMonitorIndex();
+            const selectedMonitor = monitors.find(monitor => monitor.index === selectedIndex) ?? null;
+
+            selectedMonitorBadge.textContent = selectedMonitor
+                ? `Monitor ${selectedMonitor.index}`
+                : 'Monitor ?';
+
+            monitorCards.replaceChildren();
+
+            if (!monitors.length) {
+                const emptyCard = document.createElement('article');
+                emptyCard.className = 'monitor-card empty';
+                emptyCard.textContent = 'No monitors reported by the backend.';
+                monitorCards.appendChild(emptyCard);
+                return;
+            }
+
+            for (const monitor of monitors) {
+                const card = document.createElement('article');
+                card.className = monitor.index === selectedIndex ? 'monitor-card selected' : 'monitor-card';
+
+                const title = document.createElement('div');
+                title.className = 'monitor-title';
+                title.textContent = `Monitor ${monitor.index}${monitor.isPrimary ? ' • Primary' : ''}`;
+
+                const size = document.createElement('div');
+                size.className = 'monitor-meta';
+                size.textContent = `${monitor.width}×${monitor.height}`;
+
+                const origin = document.createElement('div');
+                origin.className = 'monitor-meta mono';
+                origin.textContent = `Origin ${monitor.x}, ${monitor.y}`;
+
+                card.appendChild(title);
+                card.appendChild(size);
+                card.appendChild(origin);
+                monitorCards.appendChild(card);
+            }
+        }
+
+        async function readError(response) {
+            const contentType = response.headers.get('content-type') || '';
+
+            if (contentType.includes('json')) {
+                try {
+                    const problem = await response.json();
+                    return problem.detail || problem.title || JSON.stringify(problem);
+                } catch {
+                    return `HTTP ${response.status}`;
+                }
+            }
+
+            const text = await response.text();
+            return text.trim() || `HTTP ${response.status}`;
+        }
+
+        function setBusy(busy) {
+            generateBtn.disabled = busy;
+            queuedPresetBtn.disabled = busy;
+            densePresetBtn.disabled = busy;
+            refreshMonitorsBtn.disabled = busy;
+            clearBtn.disabled = busy;
+        }
+
+        function getRequestBody() {
+            return {
+                markerKind: markerKindSelect.value,
+                monitorIndex: getSelectedMonitorIndex(),
+                count: getNumber(countInput, 6),
+                // Send Int32.MaxValue when empty to indicate "until cancelled" on the server.
+                durationMs: durationInput.value === '' ? 2147483647 : getNumber(durationInput, 2147483647),
+                markerOpacity: getNumber(markerOpacityInput, 255),
+                fillOpacity: getNumber(fillOpacityInput, 48),
+                includeLabels: labelsToggle.checked,
+                includeQueueNumbers: queueToggle.checked,
+                clearExisting: clearExistingToggle.checked,
+            };
+        }
+
+        function renderResults(data, requestBody) {
+            summaryScenario.textContent = data.scenario || requestBody.markerKind;
+            summaryCount.textContent = String(data.count ?? 0);
+            summaryLabels.textContent = requestBody.includeLabels ? 'On' : 'Off';
+            summaryQueue.textContent = requestBody.includeQueueNumbers ? 'On' : 'Off';
+            resultsBadge.textContent = `${data.scenario || requestBody.markerKind} • ${data.count ?? 0} markers`;
+
+            resultsBody.replaceChildren();
+
+            for (const [index, marker] of (data.markers || []).entries()) {
+                const row = document.createElement('tr');
+
+                const cells = [
+                    String(index + 1),
+                    marker.kind,
+                    marker.label || '—',
+                    marker.queueLabel || '—',
+                    `${marker.x1}, ${marker.y1}`,
+                    marker.x2 != null && marker.y2 != null ? `${marker.x2}, ${marker.y2}` : '—',
+                ];
+
+                for (const text of cells) {
+                    const cell = document.createElement('td');
+                    cell.textContent = text;
+                    row.appendChild(cell);
+                }
+
+                resultsBody.appendChild(row);
+            }
+
+            emptyState.hidden = true;
+            tableWrap.hidden = false;
+        }
+
+        async function loadMonitors() {
+            setStatus('Loading monitors…');
+            refreshMonitorsBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/agent/monitors');
+                if (!response.ok) throw new Error(await readError(response));
+
+                const data = await response.json();
+                monitors = Array.isArray(data) ? data : [];
+                renderMonitorOptions();
+                ensureMonitorSelection();
+                setStatus(`Loaded ${monitors.length} monitor${monitors.length === 1 ? '' : 's'}.`, 'ok');
+            } catch (error) {
+                monitors = [];
+                renderMonitorOptions();
+                updateMonitorSelectionUI();
+                setStatus(error.message || 'Failed to load monitors.', 'error');
+            } finally {
+                refreshMonitorsBtn.disabled = false;
+            }
+        }
+
+        async function drawMarkers() {
+            if (!monitors.length) {
+                setStatus('No monitors are available. Refresh the monitor list first.', 'error');
+                return;
+            }
+
+            const requestBody = getRequestBody();
+            setBusy(true);
+            setStatus('Drawing marker sample…');
+
+            try {
+                const response = await fetch('/api/test/window-markers/draw', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody),
+                });
+
+                if (!response.ok) throw new Error(await readError(response));
+
+                const data = await response.json();
+                renderResults(data, requestBody);
+                setStatus(`Drew ${data.count} markers on monitor ${data.selectedMonitor?.index ?? requestBody.monitorIndex}.`, 'ok');
+            } catch (error) {
+                setStatus(error.message || 'Failed to draw markers.', 'error');
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        async function clearMarkers() {
+            setBusy(true);
+            setStatus('Clearing markers…');
+
+            try {
+                const response = await fetch('/api/test/window-markers/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+
+                if (!response.ok) throw new Error(await readError(response));
+
+                setStatus('Cleared all visible markers.', 'ok');
+            } catch (error) {
+                setStatus(error.message || 'Failed to clear markers.', 'error');
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        function applyQueuedPreset() {
+            markerKindSelect.value = 'AllTypes';
+            labelsToggle.checked = true;
+            queueToggle.checked = true;
+            countInput.value = '6';
+            durationInput.value = '';
+            drawMarkers();
+        }
+
+        function applyDensePreset() {
+            markerKindSelect.value = 'AllTypes';
+            labelsToggle.checked = true;
+            queueToggle.checked = true;
+            countInput.value = '12';
+            durationInput.value = '';
+            drawMarkers();
+        }
+
+        monitorSelect.addEventListener('change', updateMonitorSelectionUI);
+        generateBtn.addEventListener('click', drawMarkers);
+        queuedPresetBtn.addEventListener('click', applyQueuedPreset);
+        densePresetBtn.addEventListener('click', applyDensePreset);
+        refreshMonitorsBtn.addEventListener('click', loadMonitors);
+        clearBtn.addEventListener('click', clearMarkers);
+
+        void loadMonitors();
+    </script>
+
+</body>
+</html>

@@ -178,6 +178,108 @@ internal static class TestEndpoints
             }
         });
 
+        group.MapPost("/window-markers/draw", (TestMarkerDrawRequest req, IScreenProvider screenProvider, AppConfig appConfig) =>
+        {
+            if (!CheckTestingEnabled(appConfig))
+                return Results.Problem(TestingDisabledErrorMsg);
+
+            try
+            {
+                if (req.Count is < 1 or > 24)
+                    return Results.Problem("Count must be between 1 and 24.");
+
+                if (req.DurationMs is < 0 or > int.MaxValue)
+                    return Results.Problem("Duration cannot be negative.");
+
+                if (req.MarkerOpacity is < 0 or > 255)
+                    return Results.Problem("Marker opacity must be between 0 and 255.");
+
+                if (req.FillOpacity is < 0 or > 255)
+                    return Results.Problem("Fill opacity must be between 0 and 255.");
+
+                MonitorInfo monitor = ResolveMarkerMonitor(screenProvider, req.MonitorIndex);
+                TestMarkerKind scenario = ParseMarkerKind(req.MarkerKind);
+                IReadOnlyList<TestMarkerDescriptor> markers = BuildMarkerDescriptors(scenario, monitor, req.Count, req.IncludeLabels);
+
+                if (req.ClearExisting)
+                    screenProvider.ClearMarkers();
+
+                string? previousQueueLabel = screenProvider.CurrentQueueLabel;
+                try
+                {
+                    for (int i = 0; i < markers.Count; i++)
+                    {
+                        TestMarkerDescriptor marker = markers[i];
+                        screenProvider.CurrentQueueLabel = req.IncludeQueueNumbers ? marker.QueueLabel : null;
+
+                        switch (marker.Kind)
+                        {
+                            case TestMarkerKind.ClickPoint:
+                                screenProvider.DrawClickPointMarker(marker.X1, marker.Y1, req.DurationMs, req.MarkerOpacity, marker.Label);
+                                break;
+                            case TestMarkerKind.MouseMove:
+                                screenProvider.DrawMouseMoveMarker(marker.X1, marker.Y1, req.DurationMs, req.MarkerOpacity, marker.Label);
+                                break;
+                            case TestMarkerKind.MouseMoveArrow:
+                                screenProvider.DrawMouseMoveArrow(marker.X1, marker.Y1, req.DurationMs, req.MarkerOpacity);
+                                break;
+                            case TestMarkerKind.ClickDrag:
+                                screenProvider.DrawClickDragMarker(marker.X1, marker.Y1, marker.X2 ?? marker.X1, marker.Y2 ?? marker.Y1, req.DurationMs, req.MarkerOpacity, marker.Label);
+                                break;
+                            case TestMarkerKind.BoundingBox:
+                                screenProvider.DrawBoundingBox(marker.X1, marker.Y1, marker.X2 ?? marker.X1, marker.Y2 ?? marker.Y1, req.DurationMs, req.MarkerOpacity, req.FillOpacity, marker.Label);
+                                break;
+                            default:
+                                throw new InvalidOperationException($"Unsupported marker kind: {marker.Kind}.");
+                        }
+                    }
+                }
+                finally
+                {
+                    screenProvider.CurrentQueueLabel = previousQueueLabel;
+                }
+
+                return Results.Ok(new
+                {
+                    selectedMonitor = monitor,
+                    scenario = scenario.ToString(),
+                    count = markers.Count,
+                    markers = markers.Select(marker => new
+                    {
+                        kind = marker.Kind.ToString(),
+                        label = marker.Label,
+                        queueLabel = req.IncludeQueueNumbers ? marker.QueueLabel : null,
+                        x1 = marker.X1,
+                        y1 = marker.Y1,
+                        x2 = marker.X2,
+                        y2 = marker.Y2,
+                    })
+                });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        })
+        .DisableAntiforgery();
+
+        group.MapPost("/window-markers/clear", (IScreenProvider screenProvider, AppConfig appConfig) =>
+        {
+            if (!CheckTestingEnabled(appConfig))
+                return Results.Problem(TestingDisabledErrorMsg);
+
+            try
+            {
+                screenProvider.ClearMarkers();
+                return Results.Ok(new { cleared = true });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        })
+        .DisableAntiforgery();
+
         // Runs the full coordinate-prompt loop against a screenshot and returns every intermediate step for debugging.
         group.MapPost("/coordinate-prompt", async (
             TestCoordinatePromptRequest req,
@@ -349,10 +451,157 @@ internal static class TestEndpoints
             _ => throw new InvalidOperationException($"Unsupported AI provider: {providerType}.")
         };
     }
+
+    private static MonitorInfo ResolveMarkerMonitor(IScreenProvider screenProvider, int? requestedIndex)
+    {
+        IReadOnlyList<MonitorInfo> monitors = screenProvider.GetMonitors();
+        if (monitors.Count == 0)
+            throw new InvalidOperationException("No monitors were reported by the current screen provider.");
+
+        int targetIndex = requestedIndex ?? 0;
+        MonitorInfo? selected = monitors.FirstOrDefault(m => m.Index == targetIndex);
+        if (selected is null)
+            throw new InvalidOperationException($"Monitor {targetIndex} was not found. Available monitor indices: {string.Join(", ", monitors.Select(m => m.Index))}.");
+
+        return selected;
+    }
+
+    private static TestMarkerKind ParseMarkerKind(string? rawKind)
+        => string.IsNullOrWhiteSpace(rawKind)
+            ? TestMarkerKind.AllTypes
+            : Enum.TryParse<TestMarkerKind>(rawKind, ignoreCase: true, out TestMarkerKind parsed)
+                ? parsed
+                : throw new InvalidOperationException($"Unknown marker kind '{rawKind}'.");
+
+    private static IReadOnlyList<TestMarkerDescriptor> BuildMarkerDescriptors(TestMarkerKind scenario, MonitorInfo monitor, int count, bool includeLabels)
+    {
+        TestMarkerKind[] cycle = scenario == TestMarkerKind.AllTypes
+            ? [TestMarkerKind.ClickPoint, TestMarkerKind.MouseMove, TestMarkerKind.MouseMoveArrow, TestMarkerKind.ClickDrag, TestMarkerKind.BoundingBox]
+            : [scenario];
+
+        int columns = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(count)));
+        int rows = Math.Max(1, (int)Math.Ceiling(count / (double)columns));
+        int paddingX = Math.Clamp(monitor.Width / 12, 48, 180);
+        int paddingY = Math.Clamp(monitor.Height / 10, 48, 140);
+        double usableWidth = Math.Max(1, monitor.Width - (paddingX * 2));
+        double usableHeight = Math.Max(1, monitor.Height - (paddingY * 2));
+        double cellWidth = usableWidth / columns;
+        double cellHeight = usableHeight / rows;
+
+        List<TestMarkerDescriptor> descriptors = new(count);
+
+        for (int index = 0; index < count; index++)
+        {
+            TestMarkerKind kind = cycle[index % cycle.Length];
+            int column = index % columns;
+            int row = index / columns;
+
+            int centerX = monitor.X + paddingX + (int)Math.Round(cellWidth * (column + 0.5));
+            int centerY = monitor.Y + paddingY + (int)Math.Round(cellHeight * (row + 0.5));
+
+            int dragDx = Math.Clamp((int)Math.Round(cellWidth * 0.34), 70, 220);
+            int dragDy = Math.Clamp((int)Math.Round(cellHeight * 0.28), 50, 170);
+            int boxHalfWidth = Math.Clamp((int)Math.Round(cellWidth * 0.24), 55, 180);
+            int boxHalfHeight = Math.Clamp((int)Math.Round(cellHeight * 0.18), 36, 120);
+            int minX = monitor.X + 8;
+            int maxX = monitor.X + monitor.Width - 8;
+            int minY = monitor.Y + 8;
+            int maxY = monitor.Y + monitor.Height - 8;
+            string? label = includeLabels ? BuildMarkerLabel(kind, index + 1) : null;
+            string queueLabel = (index + 1).ToString();
+
+            TestMarkerDescriptor descriptor = kind switch
+            {
+                TestMarkerKind.ClickPoint => new TestMarkerDescriptor(kind,
+                    ClampToRange(centerX, minX, maxX),
+                    ClampToRange(centerY, minY, maxY),
+                    null,
+                    null,
+                    label,
+                    queueLabel),
+
+                TestMarkerKind.MouseMove => new TestMarkerDescriptor(kind,
+                    ClampToRange(centerX, minX, maxX),
+                    ClampToRange(centerY, minY, maxY),
+                    null,
+                    null,
+                    label,
+                    queueLabel),
+
+                TestMarkerKind.MouseMoveArrow => new TestMarkerDescriptor(kind,
+                    ClampToRange(centerX, minX, maxX),
+                    ClampToRange(centerY, minY, maxY),
+                    null,
+                    null,
+                    label,
+                    queueLabel),
+
+                TestMarkerKind.ClickDrag => new TestMarkerDescriptor(kind,
+                    ClampToRange(centerX - (dragDx / 2), minX, maxX),
+                    ClampToRange(centerY - (dragDy / 2), minY, maxY),
+                    ClampToRange(centerX + (dragDx / 2), minX, maxX),
+                    ClampToRange(centerY + (dragDy / 2), minY, maxY),
+                    label,
+                    queueLabel),
+
+                TestMarkerKind.BoundingBox => new TestMarkerDescriptor(kind,
+                    ClampToRange(centerX - boxHalfWidth, minX, maxX),
+                    ClampToRange(centerY - boxHalfHeight, minY, maxY),
+                    ClampToRange(centerX + boxHalfWidth, minX, maxX),
+                    ClampToRange(centerY + boxHalfHeight, minY, maxY),
+                    label,
+                    queueLabel),
+
+                _ => throw new InvalidOperationException($"Unsupported marker kind: {kind}.")
+            };
+
+            descriptors.Add(descriptor);
+        }
+
+        return descriptors;
+    }
+
+    private static int ClampToRange(int value, int min, int max)
+        => max < min ? min : Math.Clamp(value, min, max);
+
+    private static string BuildMarkerLabel(TestMarkerKind kind, int order)
+        => kind switch
+        {
+            TestMarkerKind.ClickPoint => $"Click {order}",
+            TestMarkerKind.MouseMove => $"Move {order}",
+            TestMarkerKind.MouseMoveArrow => $"Arrow {order}",
+            TestMarkerKind.ClickDrag => $"Drag {order}",
+            TestMarkerKind.BoundingBox => $"Box {order}",
+            TestMarkerKind.AllTypes => $"Marker {order}",
+            _ => $"Marker {order}"
+        };
 }
 
 // Scoped to this file — it's a transport detail for the test endpoint, not a domain type.
 file record TestChatRequest(string? Prompt, string? ApiKey, string? Model, AiProviderType? Provider, string? ImageBase64, string? ImageMimeType, string? ConversationId);
+internal enum TestMarkerKind
+{
+    ClickPoint,
+    MouseMove,
+    MouseMoveArrow,
+    ClickDrag,
+    BoundingBox,
+    AllTypes,
+}
+
+internal sealed record TestMarkerDescriptor(TestMarkerKind Kind, int X1, int Y1, int? X2, int? Y2, string? Label, string QueueLabel);
+
+internal sealed record TestMarkerDrawRequest(
+    string? MarkerKind = null,
+    int? MonitorIndex = null,
+    int Count = 6,
+    int DurationMs = 4000,
+    int MarkerOpacity = 255,
+    int FillOpacity = 48,
+    bool IncludeLabels = true,
+    bool IncludeQueueNumbers = false,
+    bool ClearExisting = true);
+
 file record TestCoordinatePromptRequest(string? ScreenshotBase64, string? ItemToIdentify, string? ApiKey, string? Model, AiProviderType? Provider, string? Mode, int OriginX = 0, int OriginY = 0)
 {
     /// <summary>
