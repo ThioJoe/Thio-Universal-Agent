@@ -7,7 +7,7 @@
 * **Backend:** C# / .NET 10, ASP.NET Core Minimal APIs.
 * **Frontend:** Vanilla HTML/CSS/JS (embedded in the assembly via `wwwroot`). No modern JS frameworks.
 * **OS Integration:** Windows (implemented via P/Invoke `user32.dll`, `gdi32.dll`), architected via interfaces for future cross-platform support.
-* **AI Provider:** Currently OpenAI ChatGPT, OpenAI-compatible chat-completions APIs (with a user-defined endpoint URL and optional API key for local/self-hosted services), Google Gemini, and Anthropic Claude, using structured text/vision prompting.
+* **AI Provider:** Currently OpenAI ChatGPT, OpenAI-compatible chat-completions APIs (with a user-defined endpoint URL and optional API key for local/self-hosted services), Google Gemini, Anthropic Claude, and local ONNX Runtime GenAI models, using structured text/vision prompting.
 
 ---
 
@@ -34,6 +34,7 @@ The system operates on an **Observe-Think-Act** loop, managed asynchronously and
 * `ChatGPT/OpenAICompatibleConfig.cs`: Configuration for OpenAI-compatible chat-completions services. Adds a user-editable `EndpointUrl`; `ApiKey` may be left blank for local or self-hosted services that do not require authentication.
 * `ChatGPT/OpenAIProvider.cs`: Shared chat-completions client used by both the `ChatGPT` and `OpenAICompatible` provider selections. For the compatible path it posts to the configured endpoint URL and only sends bearer auth when an API key is present.
 * `Gemini/` and `Claude/`: Provider-specific config and transport implementations for Google Gemini and Anthropic Claude.
+* `Onnx/OnnxConfig.cs` and `Onnx/OnnxProvider.cs`: Local ONNX Runtime GenAI support. Loads a model directly from disk, optionally configures an execution provider such as `DML`/`CUDA`, and supports screenshot-driven multimodal prompting through `MultiModalProcessor` when the export is vision-capable.
 
 ### `/Interfaces/` (The Abstraction Layer)
 * `IAiProvider.cs`: Contract for the LLM (SendPrompt, StartConversation, ContinueConversation with/without images).
@@ -61,7 +62,7 @@ The system operates on an **Observe-Think-Act** loop, managed asynchronously and
 ### `/Models/` (Data Structures)
 * `AgentSession.cs`: Holds state for a running task (Goal, Status, History, Cancel tokens, Pause states).
 * `AgentAction.cs`: Enums (`AgentActionKind`) and records defining what the AI wants to do.
-* `Config.cs`: Deeply nested typed configuration (`AppConfig`, `GeminiConfig`, `OpenAIConfig`, `OpenAICompatibleConfig`, `AnthropicConfig`, `AgentConfig`). Includes the `AiProviderType.OpenAICompatible` provider option and uses custom `[ConfigField]` attributes to auto-generate the frontend UI settings page.
+* `Config.cs`: Deeply nested typed configuration (`AppConfig`, `GeminiConfig`, `OpenAIConfig`, `OpenAICompatibleConfig`, `AnthropicConfig`, `OnnxConfig`, `AgentConfig`). Includes the `AiProviderType.OpenAICompatible` and `AiProviderType.Onnx` provider options and uses custom `[ConfigField]` attributes to auto-generate the frontend UI settings page.
 * `AiConversationTypes.cs`: Shared conversation and response data types used by all AI providers: `AiChatRole` (enum), `AiChatMessage` (role + optional text/image), `AiConversation` (ordered message history with `AddUserMessage`/`AddModelMessage`), `AiResponse` (success flag + text + optional `TokenUsage`), `AiRequestOptions` (per-call overrides such as `MaxOutputTokens`), and `TokenUsage` (prompt/completion/total/thinking counts with a `+` operator for accumulation).
 * `Globals.cs`: Placeholder `static` class for future process-wide statics; currently empty.
 * `ScreenCoordinate.cs` & `Screenshot.cs`: Mathematical wrappers for translating between virtual desktop space, normalized AI space (0-1000), and image-local pixels.
@@ -72,16 +73,16 @@ The system operates on an **Observe-Think-Act** loop, managed asynchronously and
 * `WindowsScreenProvider.cs`: Uses GDI (`BitBlt`) to capture screens rapidly and accounts for multi-monitor virtual desktop coordinates.
 
 ### `/Endpoints/` (Minimal APIs)
-* `AgentEndpoints.cs`: Routes for `/api/agent/...` (start, stop, status). Houses the complex SSE (`text/event-stream`) logic for real-time frontend updates. On session start it applies provider-specific API key/model overrides; `OpenAICompatible` may run without an API key.
-* `ConfigEndpoints.cs`: Generates dynamic JSON schema via reflection from `ConfigField` attributes, allowing the frontend to build a settings menu automatically. The provider sections now include `gemini`, `openai`, `openaiCompatible`, and `anthropic`.
+* `AgentEndpoints.cs`: Routes for `/api/agent/...` (start, stop, status). Houses the complex SSE (`text/event-stream`) logic for real-time frontend updates. On session start it applies provider-specific API key/model overrides; `OpenAICompatible` and `Onnx` may run without an API key.
+* `ConfigEndpoints.cs`: Generates dynamic JSON schema via reflection from `ConfigField` attributes, allowing the frontend to build a settings menu automatically. The provider sections now include `gemini`, `openai`, `openaiCompatible`, `anthropic`, and `onnx`.
 * `SecretsEndpoints.cs`: Four routes under `/api/secrets/` that front `ISecretProvider` — `POST /save` (encrypt and persist), `POST /load` (decrypt and return, 401 on wrong password / 404 if not found), `GET /{key}/exists` (existence check without decryption), and `DELETE /{key}` (permanently remove a secret file). Secret keys follow the `{sectionKey}_{fieldKey}` convention (e.g. `gemini_apiKey`).
-* `TestEndpoints.cs`: Isolated `/api/test/...` endpoints purely for the web-based debugging tools. Provider-override testing can instantiate throwaway clients, and the OpenAI-compatible path reuses `OpenAIProvider` with the configured endpoint URL.
+* `TestEndpoints.cs`: Isolated `/api/test/...` endpoints purely for the web-based debugging tools. Provider-override testing can instantiate throwaway clients, the OpenAI-compatible path reuses `OpenAIProvider` with the configured endpoint URL, and ONNX testing can instantiate a throwaway local model provider from the active config.
 
 ### `/Extensions/` (Utility Extensions)
 * `ByteArrayExtensions.cs`: Extension methods on `byte[]`: `ToBase64()` (plain Base64 string) and `ToBase64DataUri(mimeType)` (data URI suitable for HTML `<img>` tags or AI vision API payloads).
 
 ### `/wwwroot/` (Frontend)
 * `Agent.html`: The main control panel. Connects to the SSE stream to display live thoughts, actions, and debug images.
-* `Config.html`: Dynamically renders inputs based on the backend schema. Saves non-secret settings to `localStorage` and syncs with the C# backend. The OpenAI-compatible provider section exposes a configurable endpoint URL and optional API key. API key fields (`IsPassword = true`) are managed separately via the **API Key Vault** UI: the user enters a vault password, it is hashed client-side with `SubtleCrypto` SHA-256, and the hash is used to save/load secrets through `SecretsEndpoints`. On page load the vault attempts auto-unlock if a remembered hash is present in `localStorage`. The "Reset + Erase API Keys" button additionally calls `DELETE /api/secrets/{key}` for each known secret before resetting other settings.
+* `Config.html`: Dynamically renders inputs based on the backend schema. Saves non-secret settings to `localStorage` and syncs with the C# backend. The OpenAI-compatible provider section exposes a configurable endpoint URL and optional API key, while the ONNX section exposes a local model folder path plus execution/runtime controls. API key fields (`IsPassword = true`) are managed separately via the **API Key Vault** UI: the user enters a vault password, it is hashed client-side with `SubtleCrypto` SHA-256, and the hash is used to save/load secrets through `SecretsEndpoints`. On page load the vault attempts auto-unlock if a remembered hash is present in `localStorage`. The "Reset + Erase API Keys" button additionally calls `DELETE /api/secrets/{key}` for each known secret before resetting other settings.
 * `/css/` and `/js/`: Style and script parts used in the html front end.
 * `/Testing/`: Sandboxed HTML pages for testing Chat, Screenshot bounding boxes, and Coordinate prompting in isolation.

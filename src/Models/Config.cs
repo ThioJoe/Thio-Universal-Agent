@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.Json.Serialization;
 using Thio_Universal_Agent.AI_API.Anthropic;
 using Thio_Universal_Agent.AI_API.Gemini;
+using Thio_Universal_Agent.AI_API.Onnx;
 using Thio_Universal_Agent.AI_API.OpenAI;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure
@@ -95,7 +96,8 @@ public enum AiProviderType
     Gemini,
     ChatGPT,
     OpenAICompatible,
-    Claude
+    Claude,
+    Onnx
 }
 
 // ── General ───────────────────────────────────────────────────────────────────
@@ -229,6 +231,7 @@ public class AppConfig
     public OpenAIConfig OpenAI { get; set; } = new();
     public OpenAICompatibleConfig OpenAICompatible { get; set; } = new();
     public AnthropicConfig Anthropic { get; set; } = new();
+    public OnnxConfig Onnx { get; set; } = new();
     public AgentConfig Agent { get; set; } = new();
     public GeneralConfig General { get; set; } = new();
     public HotkeyConfig Hotkeys { get; set; } = new();
@@ -245,6 +248,7 @@ public class AppConfig
         OpenAI = new OpenAIConfig(configuration.GetSection("OpenAI"));
         OpenAICompatible = new OpenAICompatibleConfig(configuration.GetSection("OpenAICompatible"));
         Anthropic = new AnthropicConfig(configuration.GetSection("Anthropic"));
+        Onnx = new OnnxConfig(configuration.GetSection("Onnx"));
         Agent = new AgentConfig(configuration.GetSection("Agent"));
         General = new GeneralConfig(configuration.GetSection("General"));
         Hotkeys = new HotkeyConfig(configuration.GetSection("Hotkeys"));

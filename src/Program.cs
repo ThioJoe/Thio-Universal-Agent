@@ -5,6 +5,7 @@ using System.IO.Pipes;
 using Thio_Universal_Agent;
 using Thio_Universal_Agent.AI_API.Anthropic;
 using Thio_Universal_Agent.AI_API.Gemini;
+using Thio_Universal_Agent.AI_API.Onnx;
 using Thio_Universal_Agent.AI_API.OpenAI;
 using Thio_Universal_Agent.Endpoints;
 using Thio_Universal_Agent.Handlers;
@@ -83,6 +84,7 @@ builder.Services.AddSingleton<VaultSession>();
 builder.Services.AddHttpClient<GeminiProvider>();
 builder.Services.AddHttpClient<OpenAIProvider>();
 builder.Services.AddHttpClient<AnthropicProvider>();
+builder.Services.AddTransient<OnnxProvider>();
 
 // Dynamic factory to resolve the active provider at runtime
 builder.Services.AddTransient<IAiProvider>(sp =>
@@ -93,6 +95,7 @@ builder.Services.AddTransient<IAiProvider>(sp =>
         AiProviderType.ChatGPT => sp.GetRequiredService<OpenAIProvider>(),
         AiProviderType.OpenAICompatible => sp.GetRequiredService<OpenAIProvider>(),
         AiProviderType.Claude => sp.GetRequiredService<AnthropicProvider>(),
+        AiProviderType.Onnx => sp.GetRequiredService<OnnxProvider>(),
         _ => sp.GetRequiredService<GeminiProvider>()
     };
 });

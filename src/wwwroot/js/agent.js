@@ -13,7 +13,7 @@
 /** @typedef {{ type: 'guidanceQueued', message: string, cancelNextAction: boolean }} AgentGuidanceQueuedMessage */
 /** @typedef {{ type: 'done', status: string, finalResult?: string, totalDurationMs?: number }} AgentDoneMessage */
 /** @typedef {AgentStepMessage | AgentStepStartingMessage | AgentSubStepMessage | AgentCountdownMessage | AgentGuidanceQueuedMessage | AgentDoneMessage | { type: 'paused' } | { type: 'resumed' }} AgentSseMessage */
-/** @typedef {{ general?: { activeProvider?: string, humanControlOnlyMode?: boolean }, gemini?: { model?: string, apiKey?: string }, openai?: { model?: string, apiKey?: string }, openaiCompatible?: { model?: string, apiKey?: string, endpointUrl?: string }, anthropic?: { model?: string, apiKey?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData */
+/** @typedef {{ general?: { activeProvider?: string, humanControlOnlyMode?: boolean }, gemini?: { model?: string, apiKey?: string }, openai?: { model?: string, apiKey?: string }, openaiCompatible?: { model?: string, apiKey?: string, endpointUrl?: string }, anthropic?: { model?: string, apiKey?: string }, onnx?: { model?: string }, [key: string]: (Record<string, unknown> | undefined) }} StoredConfigData */
 /** @typedef {{ index: number, isPrimary: boolean, width: number, height: number }} MonitorInfo */
 /** @typedef {{ goal?: string, status: string, isPaused: boolean, startedAt?: string, completedAt?: string, totalDurationMs?: number, finalResult?: string, totalTokensUsed?: number }} SessionStatusResponse */
 /** @typedef {{ sessionId: string }} StartAgentResponse */
@@ -84,6 +84,7 @@ const PROVIDER_SECTION_MAP = Object.freeze({
     ChatGPT: 'openai',
     OpenAICompatible: 'openaiCompatible',
     Claude: 'anthropic',
+    Onnx: 'onnx',
 });
 
 /**

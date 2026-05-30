@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using Thio_Universal_Agent.AI_API.Onnx;
 using Thio_Universal_Agent.Handlers;
 
 namespace Thio_Universal_Agent.Endpoints;
@@ -75,6 +76,17 @@ internal static class ConfigEndpoints
                     OutputPricePerMillionTokens:       appConfig.Anthropic.OutputPricePerMillionTokens,
                     CachedInputPricePerMillionTokens:  appConfig.Anthropic.CachedInputPricePerMillionTokens
                 ),
+                Onnx: new OnnxConfigDto(
+                    Model:           appConfig.Onnx.Model,
+                    ExecutionProvider: appConfig.Onnx.ExecutionProvider,
+                    DeviceId:        appConfig.Onnx.DeviceId,
+                    UseSampling:     appConfig.Onnx.UseSampling,
+                    Temperature:     appConfig.Onnx.Temperature,
+                    TopP:            appConfig.Onnx.TopP,
+                    TopK:            appConfig.Onnx.TopK,
+                    MaxOutputTokens: appConfig.Onnx.MaxOutputTokens,
+                    ModelTypeOverride: appConfig.Onnx.ModelTypeOverride
+                ),
                 Hotkeys: new HotkeyConfigDto(
                     Enabled:            appConfig.Hotkeys.Enabled,
                     PauseResumeHotkey:  appConfig.Hotkeys.PauseResumeHotkey,
@@ -96,6 +108,7 @@ internal static class ConfigEndpoints
                 BuildSection("openai",    "ChatGPT",    appConfig.OpenAI,    isProvider: true),
                 BuildSection("openaiCompatible", "OpenAI-Compatible", appConfig.OpenAICompatible, isProvider: true),
                 BuildSection("anthropic", "Claude", appConfig.Anthropic, isProvider: true),
+                BuildSection("onnx", "Local ONNX", appConfig.Onnx, isProvider: true),
                 BuildSection("agent",     "Agent",     appConfig.Agent,     isProvider: false),
                 BuildSection("hotkeys",   "Hotkeys",   appConfig.Hotkeys,   isProvider: false),
             };
@@ -111,6 +124,7 @@ internal static class ConfigEndpoints
             if (body.TryGetProperty("openai", out JsonElement openaiEl)) ApplyUpdates(appConfig.OpenAI, openaiEl);
             if (body.TryGetProperty("openaiCompatible", out JsonElement openaiCompatibleEl)) ApplyUpdates(appConfig.OpenAICompatible, openaiCompatibleEl);
             if (body.TryGetProperty("anthropic", out JsonElement anthropicEl)) ApplyUpdates(appConfig.Anthropic, anthropicEl);
+            if (body.TryGetProperty("onnx", out JsonElement onnxEl)) ApplyUpdates(appConfig.Onnx, onnxEl);
             if (body.TryGetProperty("agent", out JsonElement agentEl)) ApplyUpdates(appConfig.Agent, agentEl);
             if (body.TryGetProperty("hotkeys", out JsonElement hotkeysEl))
             {
@@ -230,6 +244,7 @@ internal sealed record AppConfigResponse(
     OpenAIConfigDto OpenAI,
     OpenAICompatibleConfigDto OpenAICompatible,
     AnthropicConfigDto Anthropic,
+    OnnxConfigDto Onnx,
     HotkeyConfigDto Hotkeys
 );
 
@@ -295,4 +310,16 @@ internal sealed record AnthropicConfigDto(
     double? InputPricePerMillionTokens,
     double? OutputPricePerMillionTokens,
     double? CachedInputPricePerMillionTokens
+);
+
+internal sealed record OnnxConfigDto(
+    string? Model,
+    string? ExecutionProvider,
+    int? DeviceId,
+    bool UseSampling,
+    double? Temperature,
+    double? TopP,
+    int? TopK,
+    int? MaxOutputTokens,
+    string? ModelTypeOverride
 );

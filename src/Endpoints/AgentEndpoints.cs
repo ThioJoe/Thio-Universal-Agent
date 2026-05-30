@@ -37,11 +37,12 @@ internal static class AgentEndpoints
                 AiProviderType.ChatGPT => appConfig.OpenAI.ApiKey,
                 AiProviderType.OpenAICompatible => appConfig.OpenAICompatible.ApiKey,
                 AiProviderType.Claude => appConfig.Anthropic.ApiKey,
+                AiProviderType.Onnx => null,
                 _ => appConfig.Gemini.ApiKey
             };
 
             string? resolvedKey = string.IsNullOrWhiteSpace(req.ApiKey) ? defaultKey : req.ApiKey;
-            bool requiresApiKey = activeProvider != AiProviderType.OpenAICompatible;
+            bool requiresApiKey = activeProvider is not AiProviderType.OpenAICompatible and not AiProviderType.Onnx;
             if (requiresApiKey && string.IsNullOrWhiteSpace(resolvedKey))
                 return Results.BadRequest(new { error = "No API key found. Set one in Configuration or enter it here." });
 
@@ -59,6 +60,10 @@ internal static class AgentEndpoints
             {
                 appConfig.Anthropic.ApiKey = resolvedKey;
                 if (!string.IsNullOrWhiteSpace(req.Model)) appConfig.Anthropic.Model = req.Model;
+            }
+            else if (activeProvider == AiProviderType.Onnx)
+            {
+                if (!string.IsNullOrWhiteSpace(req.Model)) appConfig.Onnx.Model = req.Model;
             }
             else
             {

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Thio_Universal_Agent.AI_API.Anthropic;
 using Thio_Universal_Agent.AI_API.Gemini;
+using Thio_Universal_Agent.AI_API.Onnx;
 using Thio_Universal_Agent.AI_API.OpenAI;
 
 namespace Thio_Universal_Agent.Endpoints;
@@ -299,6 +300,17 @@ internal static class TestEndpoints
                     Agent = baseConfig.Agent,
                 },
                 loggerFactory.CreateLogger<AnthropicProvider>()),
+            AiProviderType.Onnx => new OnnxProvider(
+                new AppConfig
+                {
+                    Onnx = ConfigObjectCloner.Clone(baseConfig.Onnx, config =>
+                    {
+                        config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.Onnx.Model : model!;
+                    }),
+                    General = ConfigObjectCloner.Clone(baseConfig.General, config => config.ActiveProvider = AiProviderType.Onnx),
+                    Agent = baseConfig.Agent,
+                },
+                loggerFactory.CreateLogger<OnnxProvider>()),
             _ => new GeminiProvider(
                 httpClient,
                 new AppConfig
