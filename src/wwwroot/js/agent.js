@@ -169,6 +169,23 @@ function setMostRecentStepPlaceholder(thought, result) {
     currentResult.textContent = result;
 }
 
+/**
+ * @param {string} thought
+ * @param {string} action
+ * @param {string} result
+ * @param {number} [queueSize]
+ * @returns {void}
+ */
+function setMostRecentStep(thought, action, result, queueSize = 1) {
+    currentThought.textContent = thought;
+    const queueBadge = queueSize > 1
+        ? ` <span class="queue-badge">QUEUE ×${queueSize}</span>`
+        : '';
+    currentAction.innerHTML = escapeHtml(action) + queueBadge;
+    currentAction.style.display = 'inline-block';
+    currentResult.textContent = result;
+}
+
 const SESSION_STORE_KEY = 'tua_session_id';
 const CONFIG_STORE_KEY  = 'tua_config_v1';
 
@@ -181,6 +198,8 @@ let configuredHotkeys = {
     pauseResumeHotkey: '',
     stopHotkey: '',
 };
+
+let humanControlOnlyModeEnabled = true;
 
 /**
  * @returns {StoredConfigData}
@@ -245,9 +264,10 @@ function resolveHumanControlOnlyMode(serverCfg, storedCfg) {
  * @returns {Promise<void>}
  */
 async function updateHumanControlModeDisplay(enabled) {
-    if (!humanModeBanner || !humanModeState || !humanModeText) return;
-
     enabled = enabled || await checkSessionHumanOnlyBuild();
+    humanControlOnlyModeEnabled = enabled;
+
+    if (!humanModeBanner || !humanModeState || !humanModeText) return;
 
     humanModeBanner.classList.remove('pending');
     humanModeBanner.classList.toggle('on', enabled);
@@ -822,6 +842,15 @@ function handleStepStarting(msg) {
         ? `AI responded with a queued batch for step ${msg.stepNumber}. Executing it now...`
         : `AI responded with step ${msg.stepNumber}. Executing it now...`;
     setActivityState('executing', 'Instruction Received', activityText, msg.action);
+
+    setMostRecentStep(
+        msg.thought,
+        msg.action,
+        humanControlOnlyModeEnabled
+            ? 'Awaiting your action before the agent continues.'
+            : 'Executing this instruction... ',
+        msg.queueSize,
+    );
 }
 
 /**
@@ -878,12 +907,11 @@ function handleStep(msg) {
 
     liveSubsteps.innerHTML = '';
 
-    currentThought.textContent = msg.thought;
-    const queueBadge = (msg.queuedSubSteps && msg.queuedSubSteps.length > 1)
-        ? ` <span class="queue-badge">QUEUE ×${msg.queuedSubSteps.length}</span>` : '';
-    currentAction.innerHTML = escapeHtml(msg.action) + queueBadge;
-    currentAction.style.display = 'inline-block';
-    currentResult.textContent = msg.result;
+    const queueSize = msg.queuedSubSteps?.length ?? 1;
+    setMostRecentStep(msg.thought, msg.action, msg.result, queueSize);
+
+    const queueBadge = queueSize > 1
+        ? ` <span class="queue-badge">QUEUE ×${queueSize}</span>` : '';
 
     const entry = document.createElement('div');
     const isCancelled = !msg.success && !msg.isTerminal && msg.result === 'Action cancelled by user.';
