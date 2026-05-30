@@ -88,8 +88,17 @@
         const coordinateModeSelect = document.getElementById('coordinateModeSelect');
 
         const CONFIG_KEY = 'tua_config_v1';
+        let serverConfig = null;
+
         function getStoredConfig() {
             try { return JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}'); } catch { return {}; }
+        }
+
+        function getConfigSection(cfg, sectionKey) {
+            if (!cfg || !sectionKey) return null;
+            if (sectionKey === 'openai') return cfg.openAI ?? cfg.openai ?? null;
+            if (sectionKey === 'openaiCompatible') return cfg.openAICompatible ?? cfg.openaiCompatible ?? null;
+            return cfg[sectionKey] ?? null;
         }
 
         // Maps AiProviderType enum name to its localStorage section key and display name.
@@ -100,13 +109,15 @@
          * and the apiKey/model values from stored config.
          */
         function getActiveProviderConfig() {
-            const cfg = getStoredConfig();
-            const providerName = cfg?.general?.activeProvider ?? null;
+            const storedCfg = getStoredConfig();
+            const providerName = storedCfg?.general?.activeProvider ?? serverConfig?.general?.activeProvider ?? null;
             const sectionKey  = providerName ? (PROVIDER_SECTION_MAP[providerName] ?? null) : null;
+            const storedSection = getConfigSection(storedCfg, sectionKey);
+            const serverSection = getConfigSection(serverConfig, sectionKey);
             return {
                 providerName,
-                apiKey: sectionKey ? (cfg?.[sectionKey]?.apiKey || null) : null,
-                model:  sectionKey ? (cfg?.[sectionKey]?.model  || null) : null,
+                apiKey: storedSection?.apiKey || null,
+                model:  storedSection?.model || serverSection?.model || null,
             };
         }
 
@@ -119,10 +130,10 @@
                 } else {
                     const r = await fetch('/api/config');
                     if (r.ok) {
-                        const d = await r.json();
-                        const provider = d.general?.activeProvider ?? null;
+                        serverConfig = await r.json();
+                        const provider = serverConfig.general?.activeProvider ?? null;
                         const sectionKey = provider ? (PROVIDER_SECTION_MAP[provider] ?? null) : null;
-                        const model = sectionKey ? d[sectionKey]?.model : null;
+                        const model = getConfigSection(serverConfig, sectionKey)?.model ?? null;
                         if (provider && model) document.getElementById('model-badge').textContent = `${provider}: ${model}`;
                     }
                 }

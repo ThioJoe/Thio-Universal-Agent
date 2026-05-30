@@ -92,11 +92,12 @@ builder.Services.AddTransient<IAiProvider>(sp =>
     AppConfig config = sp.GetRequiredService<AppConfig>();
     return config.General.ActiveProvider switch
     {
+        AiProviderType.Gemini => sp.GetRequiredService<GeminiProvider>(),
         AiProviderType.ChatGPT => sp.GetRequiredService<OpenAIProvider>(),
         AiProviderType.OpenAICompatible => sp.GetRequiredService<OpenAIProvider>(),
         AiProviderType.Claude => sp.GetRequiredService<AnthropicProvider>(),
         AiProviderType.Onnx => sp.GetRequiredService<OnnxProvider>(),
-        _ => sp.GetRequiredService<GeminiProvider>()
+        _ => throw new InvalidOperationException("General:ActiveProvider is not configured. Select an AI provider in the web UI.")
     };
 });
 

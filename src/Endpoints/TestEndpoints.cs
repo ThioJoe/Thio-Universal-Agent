@@ -42,7 +42,7 @@ internal static class TestEndpoints
 
         // Thin HTTP shell for the browser-based test UI.
         // Production agent code calls IAiProvider directly in C# — never through this endpoint.
-        group.MapPost("/chat", async (TestChatRequest req, IAiProvider aiProvider, IHttpClientFactory httpClientFactory, AppConfig appConfig, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        group.MapPost("/chat", async (TestChatRequest req, IHttpClientFactory httpClientFactory, AppConfig appConfig, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             if (!CheckTestingEnabled(appConfig))
                 return Results.Problem(TestingDisabledErrorMsg);
@@ -52,17 +52,19 @@ internal static class TestEndpoints
                 bool hasImage = !string.IsNullOrWhiteSpace(req.ImageBase64);
                 bool hasPrompt = !string.IsNullOrWhiteSpace(req.Prompt);
                 bool isNewConversation = string.IsNullOrWhiteSpace(req.ConversationId);
+                AiProviderType? resolvedProviderType = ResolveProviderType(req.Provider, appConfig);
+                if (resolvedProviderType is null)
+                    return Results.Problem("No active AI provider is configured. Select one in Configuration first.");
+
+                string? resolvedModel = string.IsNullOrWhiteSpace(req.Model)
+                    ? GetConfiguredModel(resolvedProviderType.Value, appConfig)
+                    : req.Model;
                 bool isKeyOverride = !string.IsNullOrWhiteSpace(req.ApiKey);
+                string? resolvedApiKey = isKeyOverride ? req.ApiKey : null;
 
                 if (isNewConversation)
                 {
-                    // Resolve provider: key-override creates a throwaway instance; otherwise use the injected singleton.
-                    IAiProvider provider = isKeyOverride
-                        ? CreateOverrideProvider(req.Provider ?? appConfig.General.ActiveProvider, req.ApiKey!, req.Model, appConfig, httpClientFactory, loggerFactory)
-                        : aiProvider;
-                    AiProviderType resolvedProviderType = isKeyOverride
-                        ? (req.Provider ?? appConfig.General.ActiveProvider)
-                        : appConfig.General.ActiveProvider;
+                    IAiProvider provider = CreateProvider(resolvedProviderType.Value, resolvedApiKey, resolvedModel, appConfig, httpClientFactory, loggerFactory);
 
                     // StartConversationAsync is text-only; first messages with an image are sent as a one-shot.
                     if (hasImage)
@@ -87,9 +89,13 @@ internal static class TestEndpoints
 
                     string newId = Guid.NewGuid().ToString("N");
 
-                    _conversations[newId] = isKeyOverride
-                        ? new TestConversationSession { Conversation = conversation, OverrideApiKey = req.ApiKey, OverrideProviderType = resolvedProviderType, OverrideModel = req.Model }
-                        : new TestConversationSession { Conversation = conversation };
+                    _conversations[newId] = new TestConversationSession
+                    {
+                        Conversation = conversation,
+                        OverrideApiKey = resolvedApiKey,
+                        OverrideProviderType = resolvedProviderType.Value,
+                        OverrideModel = resolvedModel,
+                    };
 
                     return Results.Ok(new { response.Text, conversationId = newId });
                 }
@@ -100,16 +106,18 @@ internal static class TestEndpoints
                     if (session.Conversation == null)
                         return Results.Problem("Invalid conversation state. Please clear and start a new conversation.");
 
+                    if (req.Provider is { } requestedProvider && requestedProvider != session.OverrideProviderType)
+                        return Results.Problem("Cannot switch AI providers mid-conversation. Please clear and start a new conversation.");
+                    if (!string.IsNullOrWhiteSpace(req.Model) && !string.Equals(req.Model, session.OverrideModel, StringComparison.Ordinal))
+                        return Results.Problem("Cannot switch models mid-conversation. Please clear and start a new conversation.");
+
                     // Guard against mid-conversation provider-mode switches.
                     if (session.IsApiKeyMode && !isKeyOverride)
                         return Results.Problem("Cannot switch from API-key override mode to server-key mode mid-conversation. Please clear and start a new conversation.");
                     if (!session.IsApiKeyMode && isKeyOverride)
                         return Results.Problem("Cannot switch from server-key mode to API-key override mid-conversation. Please clear and start a new conversation.");
 
-                    // For key-override sessions, recreate the provider from the credentials stored at conversation start.
-                    IAiProvider provider = session.IsApiKeyMode
-                        ? CreateOverrideProvider(session.OverrideProviderType, session.OverrideApiKey!, session.OverrideModel, appConfig, httpClientFactory, loggerFactory)
-                        : aiProvider;
+                    IAiProvider provider = CreateProvider(session.OverrideProviderType, session.OverrideApiKey, session.OverrideModel, appConfig, httpClientFactory, loggerFactory);
 
                     AiResponse response;
                     if (hasImage && hasPrompt)
@@ -148,7 +156,7 @@ internal static class TestEndpoints
         });
 
         // Doens't send a request but just uses attached screenshot image to create and display what grid image would be generated
-        group.MapPost("/make-grid-image", async (TestCoordinatePromptRequest req, CoordinatePrompter prompter, AppConfig appConfig, CancellationToken ct) =>
+        group.MapPost("/make-grid-image", async (TestCoordinatePromptRequest req, AppConfig appConfig, CancellationToken ct) =>
         {
             if (!CheckTestingEnabled(appConfig))
                 return Results.Problem(TestingDisabledErrorMsg);
@@ -169,7 +177,6 @@ internal static class TestEndpoints
         // Runs the full coordinate-prompt loop against a screenshot and returns every intermediate step for debugging.
         group.MapPost("/coordinate-prompt", async (
             TestCoordinatePromptRequest req,
-            CoordinatePrompter defaultPrompter,
             IHttpClientFactory httpClientFactory,
             AppConfig appConfig,
             ILoggerFactory loggerFactory,
@@ -186,18 +193,16 @@ internal static class TestEndpoints
                 if (string.IsNullOrWhiteSpace(req.ItemToIdentify))
                     return Results.Problem("Item description is required.");
 
-                CoordinatePrompter prompter;
-                if (!string.IsNullOrWhiteSpace(req.ApiKey))
-                {
-                    AiProviderType providerType = req.Provider ?? appConfig.General.ActiveProvider;
-                    AppConfig overrideConfig = new AppConfig { General = appConfig.General, Agent = appConfig.Agent };
-                    IAiProvider provider = CreateOverrideProvider(providerType, req.ApiKey!, req.Model, appConfig, httpClientFactory, loggerFactory);
-                    prompter = new CoordinatePrompter(provider, appConfig);
-                }
-                else
-                {
-                    prompter = defaultPrompter;
-                }
+                AiProviderType? providerType = ResolveProviderType(req.Provider, appConfig);
+                if (providerType is null)
+                    return Results.Problem("No active AI provider is configured. Select one in Configuration first.");
+
+                string? resolvedModel = string.IsNullOrWhiteSpace(req.Model)
+                    ? GetConfiguredModel(providerType.Value, appConfig)
+                    : req.Model;
+
+                IAiProvider provider = CreateProvider(providerType.Value, req.ApiKey, resolvedModel, appConfig, httpClientFactory, loggerFactory);
+                CoordinatePrompter prompter = new CoordinatePrompter(provider, appConfig);
 
                 Screenshot screenshot = req.Screenshot!; // Origin (0, 0) — client has no virtual-desktop context
                 CoordinateMode? coordinateMode = Enum.TryParse<CoordinateMode>(req.Mode, ignoreCase: true, out CoordinateMode parsedMode)
@@ -239,7 +244,7 @@ internal static class TestEndpoints
     {
         public AiConversation? Conversation { get; set; }
 
-        // Only populated for key-override sessions; null means "use injected IAiProvider".
+        // Only populated for API-key override sessions; null means use the current config's key for this provider.
         public string? OverrideApiKey { get; init; }
         public AiProviderType OverrideProviderType { get; init; }
         public string? OverrideModel { get; init; }
@@ -248,24 +253,50 @@ internal static class TestEndpoints
     }
 
     /// <summary>
-    /// Creates a throwaway <see cref="IAiProvider"/> using an API-key override supplied by the test client.
-    /// The provider type is determined by <paramref name="providerType"/>; model falls back to the
-    /// corresponding entry in <paramref name="baseConfig"/> when the caller omits it.
+    /// Creates a throwaway <see cref="IAiProvider"/> using the requested or configured provider settings.
+    /// Model falls back to the corresponding entry in <paramref name="baseConfig"/> when the caller omits it.
     /// </summary>
-    private static IAiProvider CreateOverrideProvider(
-        AiProviderType providerType, string apiKey, string? model,
+    private static AiProviderType? ResolveProviderType(AiProviderType? requestedProvider, AppConfig appConfig)
+        => requestedProvider ?? appConfig.General.ActiveProvider;
+
+    private static string? GetConfiguredModel(AiProviderType providerType, AppConfig baseConfig)
+        => providerType switch
+        {
+            AiProviderType.Gemini => baseConfig.Gemini.Model,
+            AiProviderType.ChatGPT => baseConfig.OpenAI.Model,
+            AiProviderType.OpenAICompatible => baseConfig.OpenAICompatible.Model,
+            AiProviderType.Claude => baseConfig.Anthropic.Model,
+            AiProviderType.Onnx => baseConfig.Onnx.Model,
+            _ => throw new InvalidOperationException($"Unsupported AI provider: {providerType}.")
+        };
+
+    private static IAiProvider CreateProvider(
+        AiProviderType providerType, string? apiKey, string? model,
         AppConfig baseConfig, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
     {
         HttpClient httpClient = httpClientFactory.CreateClient();
         return providerType switch
         {
+            AiProviderType.Gemini => new GeminiProvider(
+                httpClient,
+                new AppConfig
+                {
+                    Gemini = ConfigObjectCloner.Clone(baseConfig.Gemini, config =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(apiKey)) config.ApiKey = apiKey;
+                        config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.Gemini.Model : model!;
+                    }),
+                    General = ConfigObjectCloner.Clone(baseConfig.General, config => config.ActiveProvider = AiProviderType.Gemini),
+                    Agent = baseConfig.Agent,
+                },
+                loggerFactory.CreateLogger<GeminiProvider>()),
             AiProviderType.ChatGPT => new OpenAIProvider(
                 httpClient,
                 new AppConfig
                 {
                     OpenAI = ConfigObjectCloner.Clone(baseConfig.OpenAI, config =>
                     {
-                        config.ApiKey = apiKey;
+                        if (!string.IsNullOrWhiteSpace(apiKey)) config.ApiKey = apiKey;
                         config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.OpenAI.Model : model!;
                     }),
                     OpenAICompatible = ConfigObjectCloner.Clone(baseConfig.OpenAICompatible),
@@ -280,7 +311,7 @@ internal static class TestEndpoints
                     OpenAI = ConfigObjectCloner.Clone(baseConfig.OpenAI),
                     OpenAICompatible = ConfigObjectCloner.Clone(baseConfig.OpenAICompatible, config =>
                     {
-                        config.ApiKey = apiKey;
+                        if (!string.IsNullOrWhiteSpace(apiKey)) config.ApiKey = apiKey;
                         config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.OpenAICompatible.Model : model!;
                     }),
                     General = ConfigObjectCloner.Clone(baseConfig.General, config => config.ActiveProvider = AiProviderType.OpenAICompatible),
@@ -293,10 +324,10 @@ internal static class TestEndpoints
                 {
                     Anthropic = ConfigObjectCloner.Clone(baseConfig.Anthropic, config =>
                     {
-                        config.ApiKey = apiKey;
+                        if (!string.IsNullOrWhiteSpace(apiKey)) config.ApiKey = apiKey;
                         config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.Anthropic.Model : model!;
                     }),
-                    General = baseConfig.General,
+                    General = ConfigObjectCloner.Clone(baseConfig.General, config => config.ActiveProvider = AiProviderType.Claude),
                     Agent = baseConfig.Agent,
                 },
                 loggerFactory.CreateLogger<AnthropicProvider>()),
@@ -311,19 +342,7 @@ internal static class TestEndpoints
                     Agent = baseConfig.Agent,
                 },
                 loggerFactory.CreateLogger<OnnxProvider>()),
-            _ => new GeminiProvider(
-                httpClient,
-                new AppConfig
-                {
-                    Gemini = ConfigObjectCloner.Clone(baseConfig.Gemini, config =>
-                    {
-                        config.ApiKey = apiKey;
-                        config.Model = string.IsNullOrWhiteSpace(model) ? baseConfig.Gemini.Model : model!;
-                    }),
-                    General = baseConfig.General,
-                    Agent = baseConfig.Agent,
-                },
-                loggerFactory.CreateLogger<GeminiProvider>()),
+            _ => throw new InvalidOperationException($"Unsupported AI provider: {providerType}.")
         };
     }
 }

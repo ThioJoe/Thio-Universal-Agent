@@ -109,7 +109,7 @@ public class GeneralConfig
     public bool HumanControlOnlyMode { get; set; } = true;
 
     [ConfigField("Active AI Provider", Description = "Which AI API provider to use for the agent")]
-    public AiProviderType ActiveProvider { get; set; } = AiProviderType.Gemini;
+    public AiProviderType? ActiveProvider { get; set; }
 
     [ConfigField("Settle Delay (ms)", Description = "Milliseconds to wait after each action before taking the next screenshot")]
     public int SettleDelayMs { get; set; } = 1000;

@@ -29,20 +29,23 @@ internal static class AgentEndpoints
             if (string.IsNullOrWhiteSpace(req.Goal))
                 return Results.BadRequest(new { error = "Goal is required." });
 
-            AiProviderType activeProvider = appConfig.General.ActiveProvider;
+            AiProviderType? activeProvider = appConfig.General.ActiveProvider;
+            if (activeProvider is null)
+                return Results.BadRequest(new { error = "No active AI provider is configured. Select one in Configuration first." });
 
             // Use the per-request key if provided; otherwise fall back to whatever is already in AppConfig for the active provider.
-            string? defaultKey = activeProvider switch
+            string? defaultKey = activeProvider.Value switch
             {
                 AiProviderType.ChatGPT => appConfig.OpenAI.ApiKey,
                 AiProviderType.OpenAICompatible => appConfig.OpenAICompatible.ApiKey,
                 AiProviderType.Claude => appConfig.Anthropic.ApiKey,
                 AiProviderType.Onnx => null,
-                _ => appConfig.Gemini.ApiKey
+                AiProviderType.Gemini => appConfig.Gemini.ApiKey,
+                _ => throw new InvalidOperationException($"Unsupported AI provider: {activeProvider.Value}.")
             };
 
             string? resolvedKey = string.IsNullOrWhiteSpace(req.ApiKey) ? defaultKey : req.ApiKey;
-            bool requiresApiKey = activeProvider is not AiProviderType.OpenAICompatible and not AiProviderType.Onnx;
+            bool requiresApiKey = activeProvider.Value is not AiProviderType.OpenAICompatible and not AiProviderType.Onnx;
             if (requiresApiKey && string.IsNullOrWhiteSpace(resolvedKey))
                 return Results.BadRequest(new { error = "No API key found. Set one in Configuration or enter it here." });
 
