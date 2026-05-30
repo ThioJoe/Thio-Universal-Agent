@@ -370,7 +370,6 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private string _wndClassName = "";
 
         private IntPtr _hwnd;
-        private IntPtr _magentaBrush;
         private readonly Thread _messageThread;
         private readonly ManualResetEventSlim _ready = new(false);
         private readonly NativeMethods.WndProcDelegate _wndProcDelegate;
@@ -488,15 +487,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             // to be read when multiple marker types are visible simultaneously.
             _wndClassName = $"TUA_MarkerWindow_{Interlocked.Increment(ref _instanceCounter)}";
 
-            // Use Magenta as the background brush so we can Color-Key it out to be perfectly transparent
-            _magentaBrush = NativeMethods.CreateSolidBrush(0x00FF00FF);
-
             NativeMethods.WNDCLASSEX wc = new NativeMethods.WNDCLASSEX
             {
                 cbSize = (uint)Marshal.SizeOf<NativeMethods.WNDCLASSEX>(),
                 lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate),
                 lpszClassName = _wndClassName,
-                hbrBackground = _magentaBrush
+                hbrBackground = IntPtr.Zero
             };
             NativeMethods.RegisterClassExW(ref wc);
 
@@ -512,7 +508,6 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 x: 0, y: 0, nWidth: w, nHeight: h,
                 hWndParent: IntPtr.Zero, hMenu: IntPtr.Zero, hInstance: IntPtr.Zero, lpParam: IntPtr.Zero
             );
-
             _ready.Set();
 
             while (NativeMethods.GetMessage(out NativeMethods.MSG msg, IntPtr.Zero, 0, 0) > 0)
@@ -520,9 +515,54 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 NativeMethods.TranslateMessage(ref msg);
                 NativeMethods.DispatchMessageW(ref msg);
             }
-
             NativeMethods.DestroyWindow(_hwnd);
-            NativeMethods.DeleteObject(_magentaBrush);
+        }
+
+        private void RenderLayeredWindow(IntPtr hWnd, int x, int y, int opacity)
+        {
+            (int width, int height, int offsetX, int offsetY) geometry;
+            lock (StateLock)
+            {
+                geometry = Geometry;
+            }
+
+            using Bitmap bitmap = new Bitmap(geometry.width, geometry.height, PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(bitmap))
+            {
+                g.Clear(Color.Transparent);
+                Paint(g);
+            }
+
+            IntPtr screenDc = NativeMethods.GetDC(IntPtr.Zero);
+            IntPtr memoryDc = NativeMethods.CreateCompatibleDC(screenDc);
+            IntPtr hBitmap = bitmap.GetHbitmap(Color.FromArgb(0));
+            IntPtr previousBitmap = NativeMethods.SelectObject(memoryDc, hBitmap);
+
+            try
+            {
+                NativeMethods.POINT topLeft = new NativeMethods.POINT { x = x - geometry.offsetX, y = y - geometry.offsetY };
+                NativeMethods.SIZE size = new NativeMethods.SIZE { cx = geometry.width, cy = geometry.height };
+                NativeMethods.POINT sourcePoint = new NativeMethods.POINT { x = 0, y = 0 };
+                NativeMethods.BLENDFUNCTION blend = new NativeMethods.BLENDFUNCTION
+                {
+                    BlendOp = NativeMethods.AC_SRC_OVER,
+                    BlendFlags = 0,
+                    SourceConstantAlpha = (byte)opacity,
+                    AlphaFormat = NativeMethods.AC_SRC_ALPHA,
+                };
+
+                if (!NativeMethods.UpdateLayeredWindow(hWnd, screenDc, ref topLeft, ref size, memoryDc, ref sourcePoint, 0, ref blend, NativeMethods.ULW_ALPHA))
+                    throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+                NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOW);
+            }
+            finally
+            {
+                NativeMethods.SelectObject(memoryDc, previousBitmap);
+                NativeMethods.DeleteObject(hBitmap);
+                NativeMethods.DeleteDC(memoryDc);
+                NativeMethods.ReleaseDC(IntPtr.Zero, screenDc);
+            }
         }
 
         private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -532,16 +572,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 case NativeMethods.WM_APP_SHOW:
                     int x, y, op;
                     lock (StateLock) { x = _x; y = _y; op = _opacity; }
-
-                    // Make magenta fully transparent, and apply the master opacity to the drawings
-                    NativeMethods.SetLayeredWindowAttributes(hWnd, 0x00FF00FF, (byte)op, NativeMethods.LWA_COLORKEY | NativeMethods.LWA_ALPHA);
-
-                    // Position the window so its visual centre lands on the target coordinate
-                    (int w, int h, int ox, int oy) = Geometry;
-                    NativeMethods.SetWindowPos(hWnd, NativeMethods.HWND_TOPMOST, x - ox, y - oy, w, h, NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
-
-                    // Force a repaint in case it was already visible
-                    NativeMethods.InvalidateRect(hWnd, IntPtr.Zero, true);
+                    RenderLayeredWindow(hWnd, x, y, op);
                     return IntPtr.Zero;
 
                 case NativeMethods.WM_APP_HIDE:
@@ -549,11 +580,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                     return IntPtr.Zero;
 
                 case NativeMethods.WM_PAINT:
-                    IntPtr hdc = NativeMethods.BeginPaint(hWnd, out NativeMethods.PAINTSTRUCT ps);
-
-                    using (Graphics g = Graphics.FromHdc(hdc))
-                        Paint(g);
-
+                    NativeMethods.BeginPaint(hWnd, out NativeMethods.PAINTSTRUCT ps);
                     NativeMethods.EndPaint(hWnd, ref ps);
                     return IntPtr.Zero;
 
@@ -635,12 +662,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
     /// <summary>
     /// Draws <paramref name="text"/> near (<paramref name="anchorX"/>, <paramref name="anchorY"/>) with a
-    /// thin dark outline so it stays readable over any background colour.
+    /// thin light outline so it stays readable over any background colour.
     /// </summary>
     private static void AddLabel(Graphics g, int anchorX, int anchorY, string text, Color color)
     {
         using Font font = new Font("Segoe UI", 11f, FontStyle.Bold, GraphicsUnit.Point);
-        using SolidBrush outline = new SolidBrush(Color.FromArgb(200, Color.Black));
+        using SolidBrush outline = new SolidBrush(Color.FromArgb(235, Color.White));
         using SolidBrush fill    = new SolidBrush(color);
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
 
@@ -680,18 +707,20 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private const int LabelOffsetX = 26;
         private const int LabelOffsetY = 26;
 
+        private readonly Color color = Color.Red;
+
         protected override void Paint(Graphics g)
         {
             (int w, int h, int cx, int cy) = Geometry;
-            AddCrosshair(g, centerX: cx, centerY: cy, circleRadius: 15, lineRadius: 22, thickness: 4, Color.Red);
+            AddCrosshair(g, centerX: cx, centerY: cy, circleRadius: 15, lineRadius: 22, thickness: 4, color);
 
             if (QueueLabel != null)
             {
-                AddLabel(g, cx + QueueLabelOffsetX, cy + QueueLabelOffsetY, QueueLabel, Color.Red);
+                AddLabel(g, cx + QueueLabelOffsetX, cy + QueueLabelOffsetY, QueueLabel, color);
             }
             else if (Label != null)
             {
-                AddLabel(g, cx + LabelOffsetX, cy + LabelOffsetY, Label, Color.Red);
+                AddLabel(g, cx + LabelOffsetX, cy + LabelOffsetY, Label, color);
             }
         }
     }
@@ -948,6 +977,8 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private const int QueueLabelOffsetY  =  6;  // gap between box bottom and label top
         private const int LabelRightMargin   =  6;  // extra right buffer against measurement rounding
 
+        private readonly Color color = Color.Red;
+
         private int _localWidth, _localHeight, _fillOpacity;
         private TypeTextTooltipWindow? _tooltip;
         internal Action? AdvanceCallback;
@@ -1015,15 +1046,15 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
             if (fillAlpha > 0)
             {
-                using SolidBrush fill = new SolidBrush(Color.FromArgb(fillAlpha, Color.Red));
+                using SolidBrush fill = new SolidBrush(Color.FromArgb(fillAlpha, color));
                 g.FillRectangle(fill, rect);
             }
 
-            using Pen border = new Pen(Color.Red, BorderThickness);
+            using Pen border = new Pen(color, BorderThickness);
             g.DrawRectangle(border, rect);
 
             if (QueueLabel != null)
-                AddLabel(g, originX + QueueLabelOffsetX, originY + localH + QueueLabelOffsetY, QueueLabel, Color.Red);
+                AddLabel(g, originX + QueueLabelOffsetX, originY + localH + QueueLabelOffsetY, QueueLabel, color);
         }
     }
 
@@ -1042,6 +1073,8 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private const int LabelOffsetX  = 16;  // gap right of the crosshair centre
         private const int LabelOffsetY  = 28;  // gap above the crosshair centre
         private const int LabelRightMargin = 6; // extra right margin so the window edge never clips the glyphs
+
+        private readonly Color color = Color.DarkOrange;
 
         /// <summary>
         /// Computes window geometry from the move screen coordinates, stores the local-space endpoint, then shows the marker.
@@ -1093,13 +1126,13 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             int endX, endY;
             (_, _, int startX, int startY) = Geometry;
             lock (StateLock) { endX = _localEndX; endY = _localEndY; }
-            AddArrow(g, startX, startY, endX, endY, thickness: 3, Color.Blue);
-            AddOpenCrosshair(g, endX, endY, circleRadius: 14, spokeLength: 10, thickness: 3, Color.Blue);
+            AddArrow(g, startX, startY, endX, endY, thickness: 3, color);
+            AddOpenCrosshair(g, endX, endY, circleRadius: 14, spokeLength: 10, thickness: 3, color);
 
             string? displayLabel = QueueLabel ?? Label;
             if (displayLabel != null)
                 // Show() already expanded the window to fit the label here, so no clamping needed.
-                AddLabel(g, endX + LabelOffsetX, endY - LabelOffsetY, displayLabel, Color.Blue);
+                AddLabel(g, endX + LabelOffsetX, endY - LabelOffsetY, displayLabel, color);
         }
     }
 
@@ -1113,6 +1146,8 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private const int LabelOffsetX    = 16;  // gap right of the endpoint crosshair centre
         private const int LabelOffsetY    = 28;  // gap above the endpoint crosshair centre
         private const int LabelRightMargin =  6;  // extra right buffer against measurement rounding
+
+        private readonly Color color = Color.DarkOrange;
 
         private int _localEndX, _localEndY;
 
@@ -1164,20 +1199,44 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             Show(x1, y1, opacity, durationMs, pool);
         }
 
+        private int circleRadius = 10;
+        // Calculate new start x and y. Shorten the line on each end by the circle radius
+        private (int newXStart, int newYStart, int newXEnd, int newYEnd) CalcShortenedLine(int startX, int startY, int endX, int endY)
+        {
+            double dx = endX - startX;
+            double dy = endY - startY;
+            double length = Math.Sqrt(dx * dx + dy * dy);
+
+            if (length == 0)
+                return (startX, startY, endX, endY);
+
+            double shortenBy = Math.Min(circleRadius, length / 2d);
+            double unitX = dx / length;
+            double unitY = dy / length;
+
+            return (
+                newXStart: (int)Math.Round(startX + unitX * shortenBy),
+                newYStart: (int)Math.Round(startY + unitY * shortenBy),
+                newXEnd: (int)Math.Round(endX - unitX * shortenBy),
+                newYEnd: (int)Math.Round(endY - unitY * shortenBy));
+        }
+
         protected override void Paint(Graphics g)
         {
             int endX, endY;
             (_, _, int startX, int startY) = Geometry;
             lock (StateLock) { endX = _localEndX; endY = _localEndY; }
 
-            AddCrosshair(g, startX, startY, circleRadius: 10, lineRadius: Padding, thickness: 3, Color.Orange);
-            AddCrosshair(g, endX,   endY,   circleRadius: 10, lineRadius: Padding, thickness: 3, Color.Orange);
-            AddArrow(g, startX, startY, endX, endY, thickness: 3, Color.Orange);
+            (int shortenedStartX, int shortenedStartY, int shortenedEndX, int shortenedEndY) = CalcShortenedLine(startX, startY, endX, endY);
+
+            AddCrosshair(g, startX, startY, circleRadius: circleRadius, lineRadius: Padding, thickness: 2, color);
+            AddCrosshair(g, endX,   endY,   circleRadius: circleRadius, lineRadius: Padding, thickness: 2, color);
+            AddArrow(g, shortenedStartX, shortenedStartY, shortenedEndX, shortenedEndY, thickness: 3, color);
 
             string? displayLabel = QueueLabel ?? Label;
             if (displayLabel != null)
                 // Show() already expanded the window to fit the label here, so no clamping needed.
-                AddLabel(g, endX + LabelOffsetX, endY - LabelOffsetY, displayLabel, Color.Orange);
+                AddLabel(g, endX + LabelOffsetX, endY - LabelOffsetY, displayLabel, color);
         }
     }
 
@@ -1587,6 +1646,9 @@ internal static class NativeMethods
 
     public const uint LWA_COLORKEY = 0x00000001;
     public const uint LWA_ALPHA = 0x00000002;
+    public const uint ULW_ALPHA = 0x00000002;
+    public const byte AC_SRC_OVER = 0x00;
+    public const byte AC_SRC_ALPHA = 0x01;
 
     public const int SW_HIDE = 0;
     public const int SW_SHOW = 5;
@@ -1637,6 +1699,22 @@ internal static class NativeMethods
         public POINT pt;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SIZE
+    {
+        public int cx;
+        public int cy;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct BLENDFUNCTION
+    {
+        public byte BlendOp;
+        public byte BlendFlags;
+        public byte SourceConstantAlpha;
+        public byte AlphaFormat;
+    }
+
     [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern IntPtr BeginPaint(IntPtr hwnd, out PAINTSTRUCT lpPaint);
 
@@ -1646,8 +1724,22 @@ internal static class NativeMethods
     [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
 
+    [DllImport("user32.dll", SetLastError = true), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool UpdateLayeredWindow(IntPtr hWnd, IntPtr hdcDst, ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, uint crKey, ref BLENDFUNCTION pblend, uint dwFlags);
+
     [DllImport("gdi32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern IntPtr CreateSolidBrush(uint crColor);
+
+    [DllImport("gdi32.dll", SetLastError = true), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll", SetLastError = true), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DeleteDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll", SetLastError = true), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
 
     [DllImport("gdi32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern bool DeleteObject(IntPtr hObject);
