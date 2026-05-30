@@ -680,6 +680,8 @@ function renderSections(sections) {
     colRight.innerHTML = '';
     colBottom.innerHTML = '';
 
+    let activeProviderField = null;
+
     for (const section of sections) {
         let fieldsToRender = section.fields;
         let systemPromptField = null;
@@ -687,7 +689,8 @@ function renderSections(sections) {
         // Extract the System Prompt from General so we can isolate it into the full-width column
         if (section.key === 'general') {
             systemPromptField = section.fields.find(f => f.key === 'systemPromptTemplate');
-            fieldsToRender = section.fields.filter(f => f.key !== 'systemPromptTemplate');
+            activeProviderField = section.fields.find(f => f.key === 'activeProvider') ?? null;
+            fieldsToRender = section.fields.filter(f => f.key !== 'systemPromptTemplate' && f.key !== 'activeProvider');
         }
 
         // Use native collapsible <details> tag for providers
@@ -748,6 +751,32 @@ function renderSections(sections) {
             colBottom.appendChild(spWrap);
         }
     }
+
+    if (activeProviderField) {
+        colRight.insertBefore(buildActiveProviderSection(activeProviderField), colRight.firstChild);
+    }
+}
+
+/**
+ * @param {ConfigField} field
+ * @returns {HTMLDivElement}
+ */
+function buildActiveProviderSection(field) {
+    const wrap = document.createElement('div');
+    wrap.className = 'config-section';
+    wrap.dataset.role = 'active-provider-section';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'section-header';
+    hdr.innerHTML = '<span class="section-title">Provider Selection</span>';
+    wrap.appendChild(hdr);
+
+    const grid = document.createElement('div');
+    grid.className = 'fields-grid';
+    grid.appendChild(buildFieldRow('general', field));
+    wrap.appendChild(grid);
+
+    return wrap;
 }
 
 /**
