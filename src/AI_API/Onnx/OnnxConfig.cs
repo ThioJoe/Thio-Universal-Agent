@@ -1,5 +1,17 @@
 namespace Thio_Universal_Agent.AI_API.Onnx;
 
+public enum OnnxExecutionProvider
+{
+    FollowConfig,
+    CPU,
+    DML,
+    CUDA,
+    OpenVINO,
+    QNN,
+    WebGPU,
+    NvTensorRtRtx
+}
+
 /// <summary>Configuration for local ONNX Runtime GenAI models.</summary>
 public class OnnxConfig : IAiProviderConfig
 {
@@ -11,10 +23,10 @@ public class OnnxConfig : IAiProviderConfig
     [ConfigField("Model Folder", Description = "Path to a local ONNX Runtime GenAI model folder containing genai_config.json, tokenizer files, and any chat template assets.")]
     public string Model { get; set; } = string.Empty;
 
-    [ConfigField("Execution Provider", Description = "Leave blank to follow the model config / CPU path, or set DML, CUDA, OpenVINO, QNN, WebGPU, or NvTensorRtRtx.")]
-    public string? ExecutionProvider { get; set; }
+    [ConfigField("Execution Provider", Description = "Choose the execution provider to request. FollowConfig uses the model/default runtime selection. The ONNX section also reports which providers and devices the installed runtime actually sees on this machine.")]
+    public OnnxExecutionProvider ExecutionProvider { get; set; } = OnnxExecutionProvider.FollowConfig;
 
-    [ConfigField("Device ID", Description = "Optional device id for execution providers that support device selection.")]
+    [ConfigField("Device ID", Description = "Optional device id for execution providers that support device selection. On Windows with DirectML, use the DxgiAdapterNumber reported in the ONNX capabilities list or device dropdown.")]
     public int? DeviceId { get; set; }
 
     [ConfigField("Use Sampling", Description = "Enable temperature / top-p / top-k sampling. Disable for greedy decoding.")]

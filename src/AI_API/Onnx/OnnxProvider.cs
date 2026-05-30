@@ -219,6 +219,12 @@ public sealed class OnnxProvider(AppConfig appConfig, ILogger<OnnxProvider> logg
     {
         string? provider = NormalizeExecutionProvider(config.ExecutionProvider);
 
+        if (provider is not null && !OnnxRuntimeCapabilities.IsProviderAvailable(provider, out string? availabilityDetail))
+        {
+            throw new InvalidOperationException(
+                $"Execution provider '{provider}' is not reported by the installed ONNX Runtime. {availabilityDetail}");
+        }
+
         using Config modelConfig = new Config(modelPath);
 
         if (provider is not null)
@@ -236,7 +242,18 @@ public sealed class OnnxProvider(AppConfig appConfig, ILogger<OnnxProvider> logg
             }
         }
 
-        Model model = new Model(modelConfig);
+        Model model;
+        try
+        {
+            model = new Model(modelConfig);
+        }
+        catch (OnnxRuntimeGenAIException ex) when (provider is not null
+            && ex.Message.Contains("Specified provider is not supported", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"The ONNX Runtime GenAI build rejected execution provider '{provider}'. {OnnxRuntimeCapabilities.GetProviderAvailabilityMessage(provider)}",
+                ex);
+        }
 
         string modelType = model.GetModelType();
         string chatTemplate = TryLoadChatTemplate(modelPath);
@@ -271,26 +288,19 @@ public sealed class OnnxProvider(AppConfig appConfig, ILogger<OnnxProvider> logg
         return string.Empty;
     }
 
-    private static string? NormalizeExecutionProvider(string? provider)
-    {
-        if (string.IsNullOrWhiteSpace(provider))
-            return null;
-
-        return provider.Trim() switch
+    private static string? NormalizeExecutionProvider(OnnxExecutionProvider provider)
+        => provider switch
         {
-            var value when value.Equals("follow_config", StringComparison.OrdinalIgnoreCase) => null,
-            var value when value.Equals("cpu", StringComparison.OrdinalIgnoreCase) => "cpu",
-            var value when value.Equals("directml", StringComparison.OrdinalIgnoreCase) => "DML",
-            var value when value.Equals("dml", StringComparison.OrdinalIgnoreCase) => "DML",
-            var value when value.Equals("cuda", StringComparison.OrdinalIgnoreCase) => "CUDA",
-            var value when value.Equals("openvino", StringComparison.OrdinalIgnoreCase) => "OpenVINO",
-            var value when value.Equals("qnn", StringComparison.OrdinalIgnoreCase) => "QNN",
-            var value when value.Equals("webgpu", StringComparison.OrdinalIgnoreCase) => "WebGPU",
-            var value when value.Equals("nvtensorrtrtx", StringComparison.OrdinalIgnoreCase) => "NvTensorRtRtx",
-            var value when value.Equals("trt-rtx", StringComparison.OrdinalIgnoreCase) => "NvTensorRtRtx",
-            var value => value,
+            OnnxExecutionProvider.FollowConfig => null,
+            OnnxExecutionProvider.CPU => "cpu",
+            OnnxExecutionProvider.DML => "DML",
+            OnnxExecutionProvider.CUDA => "CUDA",
+            OnnxExecutionProvider.OpenVINO => "OpenVINO",
+            OnnxExecutionProvider.QNN => "QNN",
+            OnnxExecutionProvider.WebGPU => "WebGPU",
+            OnnxExecutionProvider.NvTensorRtRtx => "NvTensorRtRtx",
+            _ => null,
         };
-    }
 
     private static MultiModalProcessor CreateProcessor(CachedModel cachedModel)
     {

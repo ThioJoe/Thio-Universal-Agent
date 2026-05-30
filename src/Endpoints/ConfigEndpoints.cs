@@ -78,7 +78,7 @@ internal static class ConfigEndpoints
                 ),
                 Onnx: new OnnxConfigDto(
                     Model:           appConfig.Onnx.Model,
-                    ExecutionProvider: appConfig.Onnx.ExecutionProvider,
+                    ExecutionProvider: appConfig.Onnx.ExecutionProvider.ToString(),
                     DeviceId:        appConfig.Onnx.DeviceId,
                     UseSampling:     appConfig.Onnx.UseSampling,
                     Temperature:     appConfig.Onnx.Temperature,
@@ -96,6 +96,8 @@ internal static class ConfigEndpoints
 
             return Results.Ok(response);
         });
+
+        app.MapGet("/api/config/onnx/capabilities", () => Results.Ok(OnnxRuntimeCapabilities.GetSnapshot()));
 
         // ── Schema endpoint ───────────────────────────────────────────────────
 

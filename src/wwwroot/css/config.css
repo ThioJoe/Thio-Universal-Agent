@@ -166,6 +166,60 @@ main {
     background: #242424;
 }
 
+.onnx-capabilities {
+    border-top: 1px solid #2a2a2a;
+    background: #181818;
+    padding: 16px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.onnx-capabilities-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #8cc4ff;
+}
+
+.onnx-capabilities-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.onnx-capabilities-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: #6d8296;
+}
+
+.onnx-capabilities-text {
+    font-size: 12px;
+    color: #b3bec9;
+    line-height: 1.45;
+}
+
+.onnx-capabilities-error {
+    color: #ff8a8a;
+}
+
+.onnx-capabilities-list {
+    margin: 0;
+    padding-left: 18px;
+    color: #b3bec9;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.onnx-capabilities-list li {
+    line-height: 1.45;
+}
+
 details.config-section summary {
     cursor: pointer;
     list-style: none;
@@ -242,6 +296,16 @@ details[open].config-section .collapse-icon {
     line-height: 1.4;
 }
 
+.field-inline-hint {
+    font-size: 11px;
+    color: #7fa6d1;
+    line-height: 1.4;
+}
+
+.field-inline-hint.muted {
+    color: #7c7c7c;
+}
+
 .field-input-wrap {
     position: relative;
     display: flex;
@@ -260,6 +324,11 @@ details[open].config-section .collapse-icon {
     font-family: inherit;
     outline: none;
     transition: border-color 0.15s;
+}
+
+.field-input-wrap select[data-inactive="true"] {
+    border-color: #4a4122;
+    color: #c8c0a4;
 }
 
 .field-input-wrap input[type="checkbox"] {

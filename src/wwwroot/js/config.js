@@ -1,7 +1,8 @@
 // @ts-check
 // ── Type definitions ──────────────────────────────────────────────────────
 
-/** @typedef {{ key: string, label: string, type: string, value: unknown, nullable?: boolean, options?: string[], description?: string, defaultTemplate?: string }} ConfigField */
+/** @typedef {{ value: string, label: string }} ConfigOption */
+/** @typedef {{ key: string, label: string, type: string, value: unknown, nullable?: boolean, options?: (string | ConfigOption)[], description?: string, defaultTemplate?: string }} ConfigField */
 /** @typedef {{ key: string, label: string, isProvider?: boolean, fields: ConfigField[] }} ConfigSection */
 /** @typedef {{ sectionKey: string, fieldKey: string }} PasswordFieldRef */
 /** @typedef {'ok' | 'wrong-password' | 'error'} VaultUnlockResult */
@@ -12,6 +13,9 @@
 /** @typedef {{ unlocked: boolean }} VaultStatusResponse */
 /** @typedef {{ entries: Record<string, string> }} VaultExportEntriesResponse */
 /** @typedef {{ sections: ConfigSection[] }} ConfigSchemaResponse */
+/** @typedef {{ type: string, vendor: string, vendorId: number, deviceId: number, metadata: Record<string, string> }} OnnxRuntimeHardwareDevice */
+/** @typedef {{ epName: string, epVendor: string, suggestedDeviceId?: number | null, epMetadata: Record<string, string>, epOptions: Record<string, string>, hardwareDevice: OnnxRuntimeHardwareDevice }} OnnxRuntimeEpDevice */
+/** @typedef {{ ortVersion?: string | null, availableProviders?: string[], hardwareDevices?: OnnxRuntimeHardwareDevice[], epDevices?: OnnxRuntimeEpDevice[], error?: string | null }} OnnxRuntimeCapabilitiesResponse */
 
 const STORAGE_KEY  = 'tua_config_v1';
 const VAULT_KEY    = 'tua_vault_hash_v1'; // stored only when "remember" is checked
@@ -22,6 +26,8 @@ let serverDefaults = []; // raw schema sections from /api/config/schema
 let browserValues  = {}; // persisted overrides { sectionKey: { fieldKey: value } }
 /** @type {SectionValueMap} */
 let pendingChanges = {}; // unsaved UI edits { sectionKey: { fieldKey: value } }
+/** @type {OnnxRuntimeCapabilitiesResponse | null} */
+let onnxRuntimeCapabilities = null;
 
 /** @type {string | null} */
 let vaultPasswordHash  = null;  // SHA-256 hex provided by the browser this page visit
@@ -327,13 +333,21 @@ async function init() {
     browserValues = loadFromStorage();
 
     try {
-        const res = await fetch('/api/config/schema');
-        if (!res.ok) throw new Error('Schema fetch failed');
-        const { sections } = await res.json();
+        const [schemaRes, onnxCapabilitiesRes] = await Promise.all([
+            fetch('/api/config/schema'),
+            fetch('/api/config/onnx/capabilities').catch(() => null),
+        ]);
+        if (!schemaRes.ok) throw new Error('Schema fetch failed');
+        const { sections } = await schemaRes.json();
         serverDefaults = sections;
+        onnxRuntimeCapabilities = onnxCapabilitiesRes && onnxCapabilitiesRes.ok
+            ? await onnxCapabilitiesRes.json()
+            : null;
+        applyOnnxDynamicChoices(sections, onnxRuntimeCapabilities);
         renderSections(sections);
         renderVaultSection();
         applyStoredValues();
+        syncOnnxDeviceSelectionState();
 
         // Push all stored browser values (non-password) to the server.
         if (Object.keys(browserValues).length > 0) {
@@ -366,6 +380,157 @@ async function init() {
 }
 
 // ── Render ────────────────────────────────────────────────────────────────
+
+/**
+ * @param {ConfigSection[]} sections
+ * @param {OnnxRuntimeCapabilitiesResponse | null} capabilities
+ * @returns {void}
+ */
+function applyOnnxDynamicChoices(sections, capabilities) {
+    if (!capabilities) return;
+
+    const onnxSection = sections.find(section => section.key === 'onnx');
+    if (!onnxSection) return;
+
+    const providerField = onnxSection.fields.find(field => field.key === 'executionProvider');
+    if (providerField) {
+        providerField.options = buildOnnxProviderOptions(capabilities, providerField.value);
+    }
+
+    const deviceField = onnxSection.fields.find(field => field.key === 'deviceId');
+    if (deviceField) {
+        deviceField.options = buildOnnxDeviceOptions(capabilities, deviceField.value);
+    }
+}
+
+/**
+ * @param {OnnxRuntimeCapabilitiesResponse} capabilities
+ * @param {unknown} currentValue
+ * @returns {ConfigOption[]}
+ */
+function buildOnnxProviderOptions(capabilities, currentValue) {
+    /** @type {ConfigOption[]} */
+    const options = [
+        { value: 'FollowConfig', label: 'FollowConfig' },
+    ];
+
+    const availableProviders = new Set(
+        [
+            ...(capabilities.availableProviders || []),
+            ...((capabilities.epDevices || []).map(device => device.epName)),
+        ].map(normalizeProviderName)
+    );
+
+    const candidates = [
+        { value: 'CPU', ortNames: ['CPU', 'CPUExecutionProvider'], label: 'CPU' },
+        { value: 'DML', ortNames: ['DML', 'DMLExecutionProvider', 'DirectML', 'DirectMLExecutionProvider'], label: 'DML (DirectML)' },
+        { value: 'CUDA', ortNames: ['CUDA', 'CUDAExecutionProvider'], label: 'CUDA' },
+        { value: 'OpenVINO', ortNames: ['OpenVINO', 'OpenVINOExecutionProvider'], label: 'OpenVINO' },
+        { value: 'QNN', ortNames: ['QNN', 'QNNExecutionProvider'], label: 'QNN' },
+        { value: 'WebGPU', ortNames: ['WebGPU', 'WebGPUExecutionProvider'], label: 'WebGPU' },
+        { value: 'NvTensorRtRtx', ortNames: ['NvTensorRtRtx', 'NvTensorRtRtxExecutionProvider', 'TensorRT', 'TensorRTExecutionProvider'], label: 'NvTensorRtRtx' },
+    ];
+
+    for (const candidate of candidates) {
+        if (candidate.ortNames.some(name => availableProviders.has(normalizeProviderName(name)))) {
+            options.push({ value: candidate.value, label: candidate.label });
+        }
+    }
+
+    const current = currentValue == null ? null : String(currentValue);
+    if (current && !options.some(option => option.value === current)) {
+        options.push({ value: current, label: `${current} (current, unavailable)` });
+    }
+
+    return options;
+}
+
+/**
+ * @param {OnnxRuntimeCapabilitiesResponse} capabilities
+ * @param {unknown} currentValue
+ * @returns {ConfigOption[]}
+ */
+function buildOnnxDeviceOptions(capabilities, currentValue) {
+    /** @type {Map<string, ConfigOption>} */
+    const options = new Map();
+
+    for (const epDevice of (capabilities.epDevices || [])) {
+        const suggestedId = epDevice.suggestedDeviceId
+            ?? tryReadSuggestedDeviceId(epDevice.epOptions)
+            ?? tryReadSuggestedDeviceId(epDevice.epMetadata)
+            ?? tryReadSuggestedDeviceId(epDevice.hardwareDevice.metadata);
+        if (suggestedId === null) continue;
+
+        const description = epDevice.hardwareDevice.metadata?.Description || epDevice.hardwareDevice.vendor || 'Unknown device';
+        const key = String(suggestedId);
+        if (!options.has(key)) {
+            options.set(key, {
+                value: key,
+                label: `device_id ${key} (DxgiAdapterNumber ${key}) - ${description} via ${epDevice.epName}`,
+            });
+        }
+    }
+
+    for (const hardwareDevice of (capabilities.hardwareDevices || [])) {
+        if (hardwareDevice.type === 'CPU') continue;
+
+        const adapterId = tryReadSuggestedDeviceId(hardwareDevice.metadata);
+        if (adapterId === null) continue;
+
+        const description = hardwareDevice.metadata?.Description || hardwareDevice.vendor || 'Unknown device';
+        const key = String(adapterId);
+        if (!options.has(key)) {
+            options.set(key, {
+                value: key,
+                label: `device_id ${key} (DxgiAdapterNumber ${key}) - ${description}`,
+            });
+        }
+    }
+
+    const current = currentValue == null ? null : String(currentValue);
+    if (current && !options.has(current)) {
+        options.set(current, {
+            value: current,
+            label: `${current} (current, not detected)`,
+        });
+    }
+
+    return Array.from(options.values()).sort((left, right) => Number.parseInt(left.value, 10) - Number.parseInt(right.value, 10));
+}
+
+/** @returns {void} */
+function syncOnnxDeviceSelectionState() {
+    const providerInput = findInput('onnx', 'executionProvider');
+    const deviceInput = findInput('onnx', 'deviceId');
+    if (!(providerInput instanceof HTMLSelectElement) || !(deviceInput instanceof HTMLSelectElement)) return;
+
+    const provider = providerInput.value;
+    const usesDeviceId = new Set(['DML', 'CUDA', 'OpenVINO', 'QNN', 'WebGPU', 'NvTensorRtRtx']).has(provider);
+
+    deviceInput.disabled = false;
+    deviceInput.dataset.inactive = usesDeviceId ? 'false' : 'true';
+    deviceInput.title = usesDeviceId
+        ? ''
+        : 'This selection is currently informational only. It will be ignored until you select a provider that supports device selection.';
+
+    const fieldRow = deviceInput.closest('.field-row');
+    if (!fieldRow) return;
+
+    let hint = /** @type {HTMLDivElement | null} */ (fieldRow.querySelector('.field-inline-hint'));
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'field-inline-hint';
+        fieldRow.appendChild(hint);
+    }
+
+    if (usesDeviceId) {
+        hint.textContent = 'The selected provider can use this device ID.';
+        hint.classList.remove('muted');
+    } else {
+        hint.textContent = 'You can browse device IDs here, but the current provider will ignore this selection.';
+        hint.classList.add('muted');
+    }
+}
 
 /**
  * @param {ConfigSection[]} sections
@@ -417,6 +582,10 @@ function renderSections(sections) {
         }
 
         wrap.appendChild(grid);
+
+        if (section.key === 'onnx' && onnxRuntimeCapabilities) {
+            wrap.appendChild(buildOnnxCapabilitiesPanel(onnxRuntimeCapabilities));
+        }
         
         // Push to appropriate column
         if (section.isProvider) {
@@ -485,10 +654,12 @@ function buildFieldRow(sectionKey, field) {
 
     let input;
 
+    const hasSelectableOptions = Array.isArray(field.options) && field.options.length > 0;
+
     if (field.type === 'bool') {
         input = document.createElement('input');
         input.type = 'checkbox';
-    } else if (field.type === 'enum') {
+    } else if (field.type === 'enum' || hasSelectableOptions) {
         input = document.createElement('select');
         if (field.nullable) {
             const opt = document.createElement('option');
@@ -498,8 +669,13 @@ function buildFieldRow(sectionKey, field) {
         }
         for (const opt of (field.options || [])) {
             const el = document.createElement('option');
-            el.value = opt;
-            el.textContent = opt;
+            if (typeof opt === 'string') {
+                el.value = opt;
+                el.textContent = opt;
+            } else {
+                el.value = opt.value;
+                el.textContent = opt.label;
+            }
             input.appendChild(el);
         }
     } else {
@@ -626,6 +802,182 @@ function buildFieldRow(sectionKey, field) {
     return row;
 }
 
+/**
+ * @param {OnnxRuntimeCapabilitiesResponse} capabilities
+ * @returns {HTMLDivElement}
+ */
+function buildOnnxCapabilitiesPanel(capabilities) {
+    const panel = document.createElement('div');
+    panel.className = 'onnx-capabilities';
+
+    const title = document.createElement('div');
+    title.className = 'onnx-capabilities-title';
+    title.textContent = 'Detected ONNX Runtime Capabilities';
+    panel.appendChild(title);
+
+    const intro = document.createElement('div');
+    intro.className = 'onnx-capabilities-text';
+    intro.textContent = 'This is what the installed ONNX Runtime reports right now. Providers are inference backends, while provider/device pairs are a specific backend attached to a specific hardware device. If a provider is missing here, requesting it in the ONNX config will fail.';
+    panel.appendChild(intro);
+
+    if (capabilities.error) {
+        const error = document.createElement('div');
+        error.className = 'onnx-capabilities-text onnx-capabilities-error';
+        error.textContent = capabilities.error;
+        panel.appendChild(error);
+        return panel;
+    }
+
+    appendOnnxCapabilitiesBlock(panel, 'Runtime version', capabilities.ortVersion || 'unknown');
+
+    const providers = capabilities.availableProviders || [];
+    appendOnnxCapabilitiesBlock(panel, 'Available providers', providers.length ? providers.join(', ') : 'none reported');
+
+    const epDevices = capabilities.epDevices || [];
+    if (epDevices.length) {
+        appendOnnxCapabilitiesList(
+            panel,
+            'Provider/device pairs',
+            epDevices.map(describeOnnxEpDevice));
+    }
+
+    const hardwareDevices = (capabilities.hardwareDevices || []).filter(device => device.type !== 'CPU');
+    if (hardwareDevices.length) {
+        appendOnnxCapabilitiesList(
+            panel,
+            'Hardware devices',
+            hardwareDevices.map(describeOnnxHardwareDevice));
+    }
+
+    return panel;
+}
+
+/**
+ * @param {HTMLDivElement} panel
+ * @param {string} label
+ * @param {string} value
+ * @returns {void}
+ */
+function appendOnnxCapabilitiesBlock(panel, label, value) {
+    const group = document.createElement('div');
+    group.className = 'onnx-capabilities-group';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'onnx-capabilities-label';
+    labelEl.textContent = label;
+
+    const valueEl = document.createElement('div');
+    valueEl.className = 'onnx-capabilities-text';
+    valueEl.textContent = value;
+
+    group.appendChild(labelEl);
+    group.appendChild(valueEl);
+    panel.appendChild(group);
+}
+
+/**
+ * @param {HTMLDivElement} panel
+ * @param {string} label
+ * @param {string[]} items
+ * @returns {void}
+ */
+function appendOnnxCapabilitiesList(panel, label, items) {
+    const group = document.createElement('div');
+    group.className = 'onnx-capabilities-group';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'onnx-capabilities-label';
+    labelEl.textContent = label;
+
+    const list = document.createElement('ul');
+    list.className = 'onnx-capabilities-list';
+    for (const item of items) {
+        const li = document.createElement('li');
+        li.textContent = item;
+        list.appendChild(li);
+    }
+
+    group.appendChild(labelEl);
+    group.appendChild(list);
+    panel.appendChild(group);
+}
+
+/**
+ * @param {OnnxRuntimeEpDevice} epDevice
+ * @returns {string}
+ */
+function describeOnnxEpDevice(epDevice) {
+    const hardware = epDevice.hardwareDevice;
+    const base = `${epDevice.epName} on ${hardware.type} ${hardware.vendor || 'Unknown Vendor'} (${formatPciId(hardware.vendorId)}:${formatPciId(hardware.deviceId)})`;
+    const suggestedId = epDevice.suggestedDeviceId ?? tryReadSuggestedDeviceId(epDevice.epOptions) ?? tryReadSuggestedDeviceId(epDevice.epMetadata) ?? tryReadSuggestedDeviceId(hardware.metadata);
+    const options = formatKeyValueEntries(epDevice.epOptions);
+    const metadata = formatKeyValueEntries(epDevice.epMetadata);
+
+    const parts = [base];
+    if (suggestedId !== null) parts.push(`suggested device_id=${suggestedId}`);
+    if (options) parts.push(`options: ${options}`);
+    if (metadata) parts.push(`metadata: ${metadata}`);
+    return parts.join(' | ');
+}
+
+/**
+ * @param {OnnxRuntimeHardwareDevice} hardwareDevice
+ * @returns {string}
+ */
+function describeOnnxHardwareDevice(hardwareDevice) {
+    const base = `${hardwareDevice.type} ${hardwareDevice.vendor || 'Unknown Vendor'} (${formatPciId(hardwareDevice.vendorId)}:${formatPciId(hardwareDevice.deviceId)})`;
+    const metadata = formatKeyValueEntries(hardwareDevice.metadata);
+    return metadata ? `${base} | metadata: ${metadata}` : base;
+}
+
+/**
+ * @param {Record<string, string> | undefined} entries
+ * @returns {string}
+ */
+function formatKeyValueEntries(entries) {
+    const pairs = Object.entries(entries || {}).filter(([, value]) => !!value);
+    if (!pairs.length) return '';
+    return pairs
+        .slice(0, 5)
+        .map(([key, value]) => `${key}=${value}`)
+        .join(', ');
+}
+
+/**
+ * @param {Record<string, string> | undefined} entries
+ * @returns {number | null}
+ */
+function tryReadSuggestedDeviceId(entries) {
+    if (!entries) return null;
+    for (const key of ['device_id', 'deviceId', 'adapter_index', 'adapterIndex', 'adapter_id', 'adapterId', 'DxgiAdapterNumber', 'dxgiAdapterNumber']) {
+        const raw = entries[key];
+        if (raw === undefined) continue;
+        const parsed = Number.parseInt(raw, 10);
+        if (!Number.isNaN(parsed)) return parsed;
+    }
+    return null;
+}
+
+/**
+ * @param {number} value
+ * @returns {string}
+ */
+function formatPciId(value) {
+    return value.toString(16).toUpperCase().padStart(4, '0');
+}
+
+/**
+ * @param {string} providerName
+ * @returns {string}
+ */
+function normalizeProviderName(providerName) {
+    return providerName
+        .replace(/ExecutionProvider/gi, '')
+        .replace(/[_-]/g, '')
+        .trim()
+        .toUpperCase();
+}
+
 // ── Apply stored browser values ───────────────────────────────────────────
 
 /** @returns {void} */
@@ -664,6 +1016,10 @@ function onFieldChange(e) {
         input.closest('.prompt-editor-scroller')?.classList.add('changed');
     } else {
         input.classList.add('changed');
+    }
+
+    if (section === 'onnx' && key === 'executionProvider') {
+        syncOnnxDeviceSelectionState();
     }
     setStatus('Unsaved changes');
 }
