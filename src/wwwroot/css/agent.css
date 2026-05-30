@@ -438,10 +438,10 @@ header h1 {
 /* ---- Main Layout ---- */
 main {
     flex: 1;
-    padding: 24px 32px;
+    padding: 16px 32px 20px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
     overflow: hidden;
     min-height: 0;
 }
@@ -449,7 +449,7 @@ main {
 .agent-main-top {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 12px;
     flex: 0 0 auto;
 }
 
@@ -465,8 +465,8 @@ main {
     background: #1a1a1a;
     border: 1px solid #2a2a2a;
     border-radius: 8px;
-    padding: 20px;
-    min-height: 90px;
+    padding: 16px 18px;
+    min-height: 80px;
     flex: 0 0 auto;
 }
 
@@ -669,9 +669,9 @@ main {
 
 /* ---- Final Result Banner ---- */
 .final-result {
-    padding: 14px 20px;
+    padding: 12px 18px;
     border-radius: 6px;
-    margin-bottom: 16px;
+    margin-bottom: 0;
     font-size: 14px;
     font-weight: 600;
     display: none;
