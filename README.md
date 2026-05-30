@@ -10,7 +10,7 @@
     <br>
 </h1>
 
-An AI desktop assistant app capable of interacting with your entire computer (and any apps) like you do.
+### An AI desktop assistant app capable of interacting with your entire computer (and any apps) like you do.
 
 ### ➤ Also, it's just one portable .exe file, no bloated install required.
 
