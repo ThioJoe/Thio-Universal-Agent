@@ -34,6 +34,10 @@ internal static class TestEndpoints
                 byte[] imageBytes = screenProvider.CaptureScreen().Original;
                 return Results.File(imageBytes, "image/png");
             }
+            catch (DllNotFoundException ex)
+            {
+                return Results.Problem("ONNX Runtime native libraries missing. You likely need to install the Microsoft Visual C++ Redistributable. Details: " + ex.Message);
+            }
             catch (Exception ex)
             {
                 return Results.Problem(ex.Message);

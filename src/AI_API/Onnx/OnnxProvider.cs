@@ -100,7 +100,7 @@ public sealed class OnnxProvider(AppConfig appConfig, ILogger<OnnxProvider> logg
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        string configuredModelPath = appConfig.Onnx.Model?.Trim() ?? string.Empty;
+        string configuredModelPath = appConfig.Onnx.Model?.Trim().Trim('"').Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(configuredModelPath))
             return Fail("Onnx:Model is not configured. Point it at a local ONNX Runtime GenAI model folder via the web UI.");
 
@@ -181,6 +181,11 @@ public sealed class OnnxProvider(AppConfig appConfig, ILogger<OnnxProvider> logg
                 Success: true,
                 Text: textResponse,
                 Usage: new TokenUsage(textPromptTokens, textCompletionTokens, textTotalTokens));
+        }
+        catch (DllNotFoundException ex)
+        {
+            logger.LogError(ex, "Local ONNX DLL failed to load. Likely missing Microsoft Visual C++ Redistributable.");
+            return Fail($"ONNX Runtime native libraries missing. Please install the Microsoft Visual C++ Redistributable. Details: {ex.Message}");
         }
         catch (OperationCanceledException)
         {

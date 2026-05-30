@@ -10,6 +10,18 @@ internal static class OnnxRuntimeCapabilities
     {
         try
         {
+            // If VC Redist aren't there, it will cause a crash that won't be caught
+            if (!System.IO.File.Exists(System.IO.Path.Combine(Environment.SystemDirectory, "vcruntime140.dll")) ||
+                !System.IO.File.Exists(System.IO.Path.Combine(Environment.SystemDirectory, "vcruntime140_1.dll")))
+            {
+                return new OnnxRuntimeCapabilitiesSnapshot(
+                    OrtVersion: null,
+                    AvailableProviders: Array.Empty<string>(),
+                    HardwareDevices: Array.Empty<OnnxRuntimeHardwareDeviceInfo>(),
+                    EpDevices: Array.Empty<OnnxRuntimeEpDeviceInfo>(),
+                    Error: "The Microsoft Visual C++ Redistributable is not installed on this machine. Please install it to use local ONNX models.");
+            }
+
             OrtEnv env = OrtEnv.Instance();
             object[] hardwareDevices = TryInvokeSequence(env, "GetHardwareDevices");
             object[] epDevices = TryInvokeSequence(env, "GetEpDevices");
