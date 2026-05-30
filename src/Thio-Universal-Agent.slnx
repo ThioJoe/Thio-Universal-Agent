@@ -7,7 +7,7 @@
     <Platform Name="x64" />
   </Configurations>
   <Project Path="Thio-Universal-Agent.csproj">
-    <BuildType Solution="Human_Only|*" Project="Human Only" />
+    <BuildType Solution="Human_Only|*" Project="Human_Only" />
     <Platform Solution="*|x64" Project="x64" />
   </Project>
 </Solution>

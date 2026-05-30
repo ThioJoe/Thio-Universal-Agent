@@ -23,7 +23,7 @@ internal static class ConfigEndpoints
         #if HUMAN_ONLY
         app.MapGet("/api/HumanOnlyBuild", () => true);
         #else
-        app.MapGet("/api/HumanOnlyBuild", () => null);
+        app.MapGet("/api/HumanOnlyBuild", () => Results.Ok<bool?>(null));
         #endif
 
         // Flat get, might update at some point in the future

@@ -12,13 +12,22 @@
     <AssemblyVersion>$(Version)</AssemblyVersion>
     <FileVersion>$(Version)</FileVersion>
     <Authors>ThioJoe</Authors>
-    <Version>0.5.0.0</Version>
+    <Version>0.5.1.0</Version>
+    <VersionThreePart>$([System.Version]::Parse('$(Version)').ToString(3))</VersionThreePart>
     <Title>Thio's Universal Agent</Title>
     <PackageProjectUrl>https://github.com/ThioJoe/Thio-Universal-Agent</PackageProjectUrl>
     <Copyright>© 2026 ThioJoe</Copyright>
 	<LangVersion>14.0</LangVersion>
-	<Configurations>Debug;Release;Human Only</Configurations>
+	<Configurations>Debug;Release;Human_Only</Configurations>
   </PropertyGroup>
+  
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <AssemblyName>Thio-Universal-Agent_$(VersionThreePart)</AssemblyName>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)' == 'Human_Only'">
+	  <AssemblyName>Thio-Universal-Agent-HumanOnly_$(VersionThreePart)</AssemblyName>
+	</PropertyGroup>
 
   <!-- Embed all wwwroot files into the assembly so the app works as a true single file -->
   <ItemGroup>

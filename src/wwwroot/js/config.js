@@ -218,7 +218,7 @@ async function checkAndApplyServerVaultSession() {
 }
 
 /**
- * Renders the vault section and inserts it into the left column.
+ * Renders the vault section and inserts it into the right column.
  * @returns {void}
  */
 function renderVaultSection() {
@@ -342,9 +342,17 @@ function renderVaultSection() {
     body.appendChild(row);
     wrap.appendChild(body);
 
-    const colLeft = document.getElementById('col-left');
-    if (!colLeft) return;
-    colLeft.insertBefore(wrap, colLeft.firstChild);
+    const colRight = document.getElementById('col-right');
+    if (!colRight) return;
+
+    const activeProviderSection = colRight.querySelector('[data-role="active-provider-section"]');
+    if (activeProviderSection?.nextSibling) {
+        colRight.insertBefore(wrap, activeProviderSection.nextSibling);
+    } else if (activeProviderSection) {
+        colRight.appendChild(wrap);
+    } else {
+        colRight.insertBefore(wrap, colRight.firstChild);
+    }
 }
 
 /**
