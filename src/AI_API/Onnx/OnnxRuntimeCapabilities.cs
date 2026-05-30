@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Reflection;
 using Microsoft.ML.OnnxRuntime;
 
 namespace Thio_Universal_Agent.AI_API.Onnx;
@@ -9,8 +11,8 @@ internal static class OnnxRuntimeCapabilities
         try
         {
             OrtEnv env = OrtEnv.Instance();
-            IReadOnlyList<OrtHardwareDevice> hardwareDevices = env.GetHardwareDevices();
-            IReadOnlyList<OrtEpDevice> epDevices = env.GetEpDevices();
+            object[] hardwareDevices = TryInvokeSequence(env, "GetHardwareDevices");
+            object[] epDevices = TryInvokeSequence(env, "GetEpDevices");
 
             return new OnnxRuntimeCapabilitiesSnapshot(
                 OrtVersion: env.GetVersionString(),
@@ -81,47 +83,109 @@ internal static class OnnxRuntimeCapabilities
         return $"ONNX Runtime reported these providers: {providerSummary}. Matching EP devices: {deviceSummary}.";
     }
 
-    private static OnnxRuntimeHardwareDeviceInfo ToHardwareDeviceInfo(OrtHardwareDevice device)
+    private static OnnxRuntimeHardwareDeviceInfo ToHardwareDeviceInfo(object? device)
         => new(
-            Type: device.Type.ToString(),
-            Vendor: device.Vendor,
-            VendorId: device.VendorId,
-            DeviceId: device.DeviceId,
-            Metadata: ToDictionary(device.Metadata));
+            Type: GetPropertyValue(device, "Type")?.ToString() ?? "Unknown",
+            Vendor: GetPropertyValue(device, "Vendor") as string ?? string.Empty,
+            VendorId: GetUInt32PropertyValue(device, "VendorId"),
+            DeviceId: GetUInt32PropertyValue(device, "DeviceId"),
+            Metadata: ToDictionary(GetPropertyValue(device, "Metadata")));
 
-    private static OnnxRuntimeEpDeviceInfo ToEpDeviceInfo(OrtEpDevice device)
+    private static OnnxRuntimeEpDeviceInfo ToEpDeviceInfo(object? device)
     {
-        Dictionary<string, string> epMetadata = ToDictionary(device.EpMetadata);
-        Dictionary<string, string> epOptions = ToDictionary(device.EpOptions);
-        OnnxRuntimeHardwareDeviceInfo hardwareDevice = ToHardwareDeviceInfo(device.HardwareDevice);
+        Dictionary<string, string> epMetadata = ToDictionary(GetPropertyValue(device, "EpMetadata"));
+        Dictionary<string, string> epOptions = ToDictionary(GetPropertyValue(device, "EpOptions"));
+        OnnxRuntimeHardwareDeviceInfo hardwareDevice = ToHardwareDeviceInfo(GetPropertyValue(device, "HardwareDevice"));
 
         int? suggestedDeviceId = TryGetSuggestedDeviceId(epOptions)
             ?? TryGetSuggestedDeviceId(epMetadata)
             ?? TryGetSuggestedDeviceId(hardwareDevice.Metadata);
 
         return new OnnxRuntimeEpDeviceInfo(
-            EpName: device.EpName,
-            EpVendor: device.EpVendor,
+            EpName: GetPropertyValue(device, "EpName") as string ?? string.Empty,
+            EpVendor: GetPropertyValue(device, "EpVendor") as string ?? string.Empty,
             SuggestedDeviceId: suggestedDeviceId,
             EpMetadata: epMetadata,
             EpOptions: epOptions,
             HardwareDevice: hardwareDevice);
     }
 
-    private static Dictionary<string, string> ToDictionary(OrtKeyValuePairs? pairs)
+    private static Dictionary<string, string> ToDictionary(object? pairs)
     {
         if (pairs is null)
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
-            pairs.Refresh();
-            return new Dictionary<string, string>(pairs.Entries, StringComparer.OrdinalIgnoreCase);
+            InvokeIfPresent(pairs, "Refresh");
+
+            object? entries = GetPropertyValue(pairs, "Entries") ?? pairs;
+            if (entries is IEnumerable enumerable)
+            {
+                Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
+
+                foreach (object? entry in enumerable)
+                {
+                    if (entry is null)
+                        continue;
+
+                    if (entry is DictionaryEntry dictionaryEntry)
+                    {
+                        values[dictionaryEntry.Key?.ToString() ?? string.Empty] = dictionaryEntry.Value?.ToString() ?? string.Empty;
+                        continue;
+                    }
+
+                    object? key = GetPropertyValue(entry, "Key");
+                    if (key is null)
+                        continue;
+
+                    object? value = GetPropertyValue(entry, "Value");
+                    values[key.ToString() ?? string.Empty] = value?.ToString() ?? string.Empty;
+                }
+
+                return values;
+            }
+
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
         catch
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
+    }
+
+    private static object[] TryInvokeSequence(object target, string methodName)
+    {
+        MethodInfo? method = target.GetType().GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
+        if (method is null)
+            return Array.Empty<object>();
+
+        if (method.Invoke(target, Array.Empty<object>()) is not IEnumerable enumerable)
+            return Array.Empty<object>();
+
+        return enumerable.Cast<object?>().Where(item => item is not null).Cast<object>().ToArray();
+    }
+
+    private static void InvokeIfPresent(object target, string methodName)
+    {
+        MethodInfo? method = target.GetType().GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
+        method?.Invoke(target, Array.Empty<object>());
+    }
+
+    private static object? GetPropertyValue(object? target, string propertyName)
+        => target?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
+
+    private static uint GetUInt32PropertyValue(object? target, string propertyName)
+    {
+        object? value = GetPropertyValue(target, propertyName);
+        return value switch
+        {
+            uint typedValue => typedValue,
+            int typedValue when typedValue >= 0 => (uint)typedValue,
+            long typedValue when typedValue >= 0 => (uint)typedValue,
+            string typedValue when uint.TryParse(typedValue, out uint parsedValue) => parsedValue,
+            _ => 0,
+        };
     }
 
     private static int? TryGetSuggestedDeviceId(IReadOnlyDictionary<string, string> entries)
