@@ -98,6 +98,17 @@ public interface IScreenProvider
     void ClearMarkers();
 
     /// <summary>
+    /// Registers a temporary human-mode key-combo watcher that can auto-advance once the
+    /// operator physically presses the requested combination.
+    /// </summary>
+    void RegisterHumanKeyComboWatcher(int? virtualKey, ModifierKeys modifiers, Action onPressed) { }
+
+    /// <summary>
+    /// Clears any pending human-mode key-combo watchers that were registered for auto-advance.
+    /// </summary>
+    void ClearHumanKeyComboWatchers() { }
+
+    /// <summary>
     /// When set, each <c>Draw*</c> call stamps this value onto the marker's queue-order label so the
     /// human operator can see the execution order of a queued batch. Set to <c>null</c> to suppress numbers.
     /// </summary>

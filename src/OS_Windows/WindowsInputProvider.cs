@@ -10,6 +10,9 @@ namespace Thio_Universal_Agent.OS_Windows
         /// <inheritdoc/>
         public Action? HumanClickCallback { get; set; }
 
+        /// <inheritdoc/>
+        public Action? HumanKeyComboCallback { get; set; }
+
         private readonly AppConfig _appConfig;
         private readonly IScreenProvider _screenProvider;
 
@@ -23,7 +26,18 @@ namespace Thio_Universal_Agent.OS_Windows
 
         public async Task SendModKeyComboAsync(string? key, bool? ctrl = null, bool? shift = null, bool? alt = null, bool? win = null)
         {
-            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+            if (HumanControlOnlyMode)
+            {
+                if (HumanKeyComboCallback is not null)
+                {
+                    ModifierKeys modifiers = GetModifierFlags(ctrl, shift, alt, win);
+                    int? virtualKey = TryResolveHumanComboVirtualKey(key);
+                    if (virtualKey is not null || modifiers != ModifierKeys.None)
+                        _screenProvider.RegisterHumanKeyComboWatcher(virtualKey, modifiers, HumanKeyComboCallback);
+                }
+
+                return; // HUMAN CONTROL ONLY GUARD
+            }
 
             // Make all of them nullable in case there is no primary key, meaning only modifier keys are pressed
             ushort? vk = null;
@@ -94,6 +108,31 @@ namespace Thio_Universal_Agent.OS_Windows
             {
                 _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
             }
+        }
+
+        private static ModifierKeys GetModifierFlags(bool? ctrl, bool? shift, bool? alt, bool? win)
+        {
+            ModifierKeys modifiers = ModifierKeys.None;
+            if (ctrl == true) modifiers |= ModifierKeys.Ctrl;
+            if (shift == true) modifiers |= ModifierKeys.Shift;
+            if (alt == true) modifiers |= ModifierKeys.Alt;
+            if (win == true) modifiers |= ModifierKeys.Win;
+            return modifiers;
+        }
+
+        private static int? TryResolveHumanComboVirtualKey(string? key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                return null;
+
+            if (NamedKeys.TryGetValue(key, out (ushort vk, bool extended) named))
+                return named.vk;
+
+            if (key.Length != 1)
+                return null;
+
+            TextCharCode keyChar = new TextCharCode(key);
+            return keyChar.vk == 0xFFFF ? null : keyChar.vk;
         }
 
         /// <summary>

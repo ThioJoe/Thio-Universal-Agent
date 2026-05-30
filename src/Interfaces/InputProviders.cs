@@ -50,5 +50,12 @@ namespace Thio_Universal_Agent
         /// click-only step or batch; reset to <c>null</c> afterward. Ignored outside human-control mode.
         /// </summary>
         Action? HumanClickCallback { get; set; }
+
+        /// <summary>
+        /// In human-control-only mode, this callback is invoked after the requested key combo is
+        /// physically detected from the operator. Set by the agent loop before pre-executing an
+        /// auto-advance key-combo step or batch; reset to <c>null</c> afterward.
+        /// </summary>
+        Action? HumanKeyComboCallback { get; set; }
     }
 }

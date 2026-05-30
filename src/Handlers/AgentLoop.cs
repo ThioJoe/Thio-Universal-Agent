@@ -176,30 +176,37 @@ public sealed partial class AgentLoop(
                 List<(ActionExecutionResult Result, List<AgentDebugEntry>? DebugLog)>? humanPreResults = null;
                 if (humanModeRequiresPause)
                 {
-                    screenProvider.CurrentHumanAdvanceCallback = hasTypeTextAction ? session.Resume : null;
+                    bool enableHumanActionAutoAdvance = appConfig.General.AutoAdvanceHumanActions;
+                    screenProvider.CurrentHumanAdvanceCallback = enableHumanActionAutoAdvance && hasTypeTextAction ? session.Resume : null;
 
-                    static bool IsAutoAdvanceClickAction(AgentActionKind kind) =>
+                    static bool IsAutoAdvanceDetectedAction(AgentActionKind kind) =>
                         kind is AgentActionKind.LeftClick or AgentActionKind.RightClick
                              or AgentActionKind.DoubleClick or AgentActionKind.MiddleClick
                              or AgentActionKind.LeftClickCoords or AgentActionKind.RightClickCoords
-                             or AgentActionKind.DoubleClickCoords or AgentActionKind.MiddleClickCoords;
+                             or AgentActionKind.DoubleClickCoords or AgentActionKind.MiddleClickCoords
+                             or AgentActionKind.KeyCombo;
 
-                    // If every non-terminal action is a click (target-based or COORDS-based),
-                    // wire up auto-advance: the session resumes automatically once all markers are dismissed.
-                    bool allClicks = actionsToRun.All(a =>
+                    // If every non-terminal action is auto-detectable, wire up auto-advance so the
+                    // session resumes automatically once each requested human action has been observed.
+                    bool allAutoAdvanceActions = enableHumanActionAutoAdvance && actionsToRun.All(a =>
                         a.Kind is AgentActionKind.Done or AgentActionKind.Fail
-                        || IsAutoAdvanceClickAction(a.Kind));
+                        || IsAutoAdvanceDetectedAction(a.Kind));
 
-                    int clickCount = actionsToRun.Count(a => IsAutoAdvanceClickAction(a.Kind));
+                    int autoAdvanceActionCount = enableHumanActionAutoAdvance
+                        ? actionsToRun.Count(a => IsAutoAdvanceDetectedAction(a.Kind))
+                        : 0;
 
-                    if (allClicks && clickCount > 0)
+                    if (allAutoAdvanceActions && autoAdvanceActionCount > 0)
                     {
-                        int remaining = clickCount;
-                        executor.InputProvider.HumanClickCallback = () =>
+                        int remaining = autoAdvanceActionCount;
+                        Action autoAdvanceCallback = () =>
                         {
                             if (Interlocked.Decrement(ref remaining) == 0)
                                 session.Resume();
                         };
+
+                        executor.InputProvider.HumanClickCallback = autoAdvanceCallback;
+                        executor.InputProvider.HumanKeyComboCallback = autoAdvanceCallback;
                     }
 
                     humanPreResults = new(actionsToRun.Count);
@@ -227,6 +234,7 @@ public sealed partial class AgentLoop(
                     // Callback has been captured into each marker's closure; clear the field so it
                     // isn't accidentally reused if a subsequent non-click step draws a marker.
                     executor.InputProvider.HumanClickCallback = null;
+                    executor.InputProvider.HumanKeyComboCallback = null;
                 }
 
                 // In human control mode, automatically pause after showing each step (and after markers
@@ -247,6 +255,7 @@ public sealed partial class AgentLoop(
                 if (humanModeRequiresPause)
                 {
                     screenProvider.ClearMarkers();
+                    screenProvider.ClearHumanKeyComboWatchers();
                     screenProvider.CurrentHumanAdvanceCallback = null;
                 }
 

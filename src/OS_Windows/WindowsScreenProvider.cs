@@ -174,6 +174,20 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     /// </summary>
     public Action? CurrentHumanAdvanceCallback { get; set; }
 
+    public void RegisterHumanKeyComboWatcher(int? virtualKey, ModifierKeys modifiers, Action onPressed)
+    {
+        ArgumentNullException.ThrowIfNull(onPressed);
+
+        if (virtualKey is null && modifiers == ModifierKeys.None)
+            return;
+
+        _rawInputSink ??= new RawInputSink();
+        _rawInputSink.RegisterKeyCombo(virtualKey, modifiers, onPressed);
+    }
+
+    public void ClearHumanKeyComboWatchers()
+        => _rawInputSink?.ClearKeyCombos();
+
     /// <summary>
     /// Manages the lifecycle of <see cref="MarkerWindow"/> instances: idle pool, active-marker tracking,
     /// latest-marker reference, and ID generation — all in one place.
@@ -1113,6 +1127,9 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
         // markerId -> (targetX, targetY, callback)
         private readonly ConcurrentDictionary<int, (int x, int y, Action callback)> _targets = new();
+        // keyComboId -> (primaryVirtualKey, modifiers, callback)
+        private readonly ConcurrentDictionary<int, (int? virtualKey, ModifierKeys modifiers, Action callback)> _keyCombos = new();
+        private int _keyComboCounter;
 
         public RawInputSink()
         {
@@ -1133,6 +1150,21 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         /// <summary>Removes a marker registration (called when the marker is cleared externally before being clicked).</summary>
         public void Unregister(int markerId)
             => _targets.TryRemove(markerId, out _);
+
+        /// <summary>Registers a key combo that should auto-advance once physically pressed.</summary>
+        public void RegisterKeyCombo(int? virtualKey, ModifierKeys modifiers, Action callback)
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+
+            if (virtualKey is null && modifiers == ModifierKeys.None)
+                return;
+
+            int comboId = Interlocked.Increment(ref _keyComboCounter);
+            _keyCombos[comboId] = (virtualKey, modifiers, callback);
+        }
+
+        /// <summary>Clears any pending key-combo registrations.</summary>
+        public void ClearKeyCombos() => _keyCombos.Clear();
 
         private void Pump()
         {
@@ -1182,10 +1214,17 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                         usUsage     = 0x02,
                         dwFlags     = NativeMethods.RIDEV_INPUTSINK,
                         hwndTarget  = _hwnd
+                    },
+                    new NativeMethods.RAWINPUTDEVICE
+                    {
+                        usUsagePage = 0x01,
+                        usUsage     = 0x06,
+                        dwFlags     = NativeMethods.RIDEV_INPUTSINK,
+                        hwndTarget  = _hwnd
                     }
                 ];
-                if (!NativeMethods.RegisterRawInputDevices(rid, 1, (uint)Marshal.SizeOf<NativeMethods.RAWINPUTDEVICE>()))
-                    throw CreateWin32Failure("RegisterRawInputDevices for mouse input failed");
+                if (!NativeMethods.RegisterRawInputDevices(rid, (uint)rid.Length, (uint)Marshal.SizeOf<NativeMethods.RAWINPUTDEVICE>()))
+                    throw CreateWin32Failure("RegisterRawInputDevices for mouse/keyboard input failed");
             }
             catch (Exception ex)
             {
@@ -1222,14 +1261,21 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
                 if (result != uint.MaxValue
                     && raw.header.dwType == NativeMethods.RIM_TYPEMOUSE
-                    && (raw.mouse.usButtonFlags & (NativeMethods.RI_MOUSE_LEFT_BUTTON_DOWN
-                                                 | NativeMethods.RI_MOUSE_RIGHT_BUTTON_DOWN
-                                                 | NativeMethods.RI_MOUSE_MIDDLE_BUTTON_DOWN)) != 0)
+                    && (raw.data.mouse.usButtonFlags & (NativeMethods.RI_MOUSE_LEFT_BUTTON_DOWN
+                                                      | NativeMethods.RI_MOUSE_RIGHT_BUTTON_DOWN
+                                                      | NativeMethods.RI_MOUSE_MIDDLE_BUTTON_DOWN)) != 0)
                 {
                     // Use GetCursorPos — raw deltas are relative in most HID drivers and
                     // may not reflect the actual DPI-scaled cursor position.
                     if (NativeMethods.GetCursorPos(out NativeMethods.POINT_RI pt))
                         CheckHit(pt.x, pt.y);
+                }
+                else if (result != uint.MaxValue
+                      && raw.header.dwType == NativeMethods.RIM_TYPEKEYBOARD
+                      && (raw.data.keyboard.Message == NativeMethods.WM_KEYDOWN
+                       || raw.data.keyboard.Message == NativeMethods.WM_SYSKEYDOWN))
+                {
+                    CheckKeyCombo(raw.data.keyboard.VKey);
                 }
 
                 return IntPtr.Zero;
@@ -1260,6 +1306,82 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                     return; // one dismiss per click
                 }
             }
+        }
+
+        private void CheckKeyCombo(ushort changedVirtualKey)
+        {
+            foreach (var (id, (virtualKey, modifiers, callback)) in _keyCombos)
+            {
+                if (virtualKey.HasValue)
+                {
+                    if (changedVirtualKey != virtualKey.Value)
+                        continue;
+
+                    if (!IsVirtualKeyDown(virtualKey.Value) || !AreModifiersPressed(modifiers))
+                        continue;
+                }
+                else
+                {
+                    if (!IsExpectedModifierKey(changedVirtualKey, modifiers) || !AreModifiersPressed(modifiers))
+                        continue;
+                }
+
+                if (_keyCombos.TryRemove(id, out (int? virtualKey, ModifierKeys modifiers, Action callback) matched))
+                {
+                    matched.callback();
+                    return;
+                }
+            }
+        }
+
+        private static bool AreModifiersPressed(ModifierKeys modifiers)
+        {
+            if (modifiers.HasFlag(ModifierKeys.Ctrl) && !IsAnyVirtualKeyDown(0x11, 0xA2, 0xA3))
+                return false;
+
+            if (modifiers.HasFlag(ModifierKeys.Shift) && !IsAnyVirtualKeyDown(0x10, 0xA0, 0xA1))
+                return false;
+
+            if (modifiers.HasFlag(ModifierKeys.Alt) && !IsAnyVirtualKeyDown(0x12, 0xA4, 0xA5))
+                return false;
+
+            if (modifiers.HasFlag(ModifierKeys.Win) && !IsAnyVirtualKeyDown(0x5B, 0x5C))
+                return false;
+
+            return true;
+        }
+
+        private static bool IsExpectedModifierKey(int changedVirtualKey, ModifierKeys modifiers)
+        {
+            return (modifiers.HasFlag(ModifierKeys.Ctrl) && IsOneOf(changedVirtualKey, 0x11, 0xA2, 0xA3))
+                || (modifiers.HasFlag(ModifierKeys.Shift) && IsOneOf(changedVirtualKey, 0x10, 0xA0, 0xA1))
+                || (modifiers.HasFlag(ModifierKeys.Alt) && IsOneOf(changedVirtualKey, 0x12, 0xA4, 0xA5))
+                || (modifiers.HasFlag(ModifierKeys.Win) && IsOneOf(changedVirtualKey, 0x5B, 0x5C));
+        }
+
+        private static bool IsVirtualKeyDown(int virtualKey)
+            => (NativeMethods.GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+
+        private static bool IsAnyVirtualKeyDown(params int[] virtualKeys)
+        {
+            foreach (int virtualKey in virtualKeys)
+            {
+                if (IsVirtualKeyDown(virtualKey))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsOneOf(int value, params int[] candidates)
+        {
+            foreach (int candidate in candidates)
+            {
+                if (value == candidate)
+                    return true;
+            }
+
+            return false;
         }
 
         public void Dispose()
@@ -1504,7 +1626,10 @@ internal static class NativeMethods
     // ---- Raw Input (used by RawInputSink for click-through interactive markers) ----
 
     public const uint WM_INPUT = 0x00FF;
+    public const uint WM_KEYDOWN = 0x0100;
+    public const uint WM_SYSKEYDOWN = 0x0104;
     public const uint RIM_TYPEMOUSE = 0;
+    public const uint RIM_TYPEKEYBOARD = 1;
     public const uint RIDEV_INPUTSINK = 0x00000100;
     public const ushort RI_MOUSE_LEFT_BUTTON_DOWN   = 0x0001;
     public const ushort RI_MOUSE_RIGHT_BUTTON_DOWN  = 0x0004;
@@ -1560,10 +1685,31 @@ internal static class NativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct RAWKEYBOARD
+    {
+        public ushort MakeCode;
+        public ushort Flags;
+        public ushort Reserved;
+        public ushort VKey;
+        public uint Message;
+        public uint ExtraInformation;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct RAWINPUTDATA
+    {
+        [FieldOffset(0)]
+        public RAWMOUSE mouse;
+
+        [FieldOffset(0)]
+        public RAWKEYBOARD keyboard;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct RAWINPUT
     {
         public RAWINPUTHEADER header;
-        public RAWMOUSE       mouse;   // only mouse member needed; union sized to largest (mouse)
+        public RAWINPUTDATA   data;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1583,6 +1729,9 @@ internal static class NativeMethods
 
     [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern bool GetCursorPos(out POINT_RI lpPoint);
+
+    [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern short GetAsyncKeyState(int vKey);
 
     public const uint RID_INPUT = 0x10000003;
 }

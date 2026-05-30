@@ -108,6 +108,9 @@ public class GeneralConfig
     [ConfigField("Human Control Only Mode", Description = "When enabled, the AI will tell you where to click and what to do (by drawing crosshairs), but it cannot make any inputs itself. You manually advance each step.")]
     public bool HumanControlOnlyMode { get; set; } = true;
 
+    [ConfigField("Auto-Advance Human Actions", Description = "In Human Control Only mode, automatically continue when the requested user action is detected, such as clicking the shown crosshair or pressing the requested key combo. Disable to resume every step manually.")]
+    public bool AutoAdvanceHumanActions { get; set; } = true;
+
     [ConfigField("Active AI Provider", Description = "Which AI API provider to use for the agent")]
     public AiProviderType? ActiveProvider { get; set; }
 
