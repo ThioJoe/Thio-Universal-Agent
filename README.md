@@ -54,7 +54,7 @@ Example of it queuing multiple actions at once, while accurately clicking exact 
 **A:** There's not actually a limit. You can set the max number of steps to any number in the settings. The default is arbitrarily set to 100 steps.
 
 ### **Q:** Which AI Services are supported?
-**A:** Currently  ChatGPT, Gemini, and Claude. Your own API key is required. Currently it seems Gemini works the best, especially `gemini-flash-latest`
+**A:** Currently ChatGPT, OpenAI-compatible chat-completions APIs, Gemini, and Claude. ChatGPT/Gemini/Claude require your own API key; OpenAI-compatible endpoints can also be local or self-hosted and may not require one. Currently it seems Gemini works the best, especially `gemini-flash-latest`
 
 ### **Q:** Doesn't this use a ton of tokens?
 **A:** Sort of, but not as much as you might think. Each step is maybe 3k tokens, but input tokens are cheaper. Completion tokens are usually as few as 50, up to a few hundred for many queued actions. The big factor is how many thinking tokens are used.
@@ -76,9 +76,9 @@ Example of it queuing multiple actions at once, while accurately clicking exact 
 * **Single Portable `Exe` - NO Installation Required** - Releases are compiled with single-exe mode, it's just one file.
    * _No_ bloated 🤡Python🤡 or 🤡NodeJS🤡 or other environment installation.
    * _ZERO_ Third-Party Dependencies 😤 (Uses core .NET Libraries and official Microsoft packages only) _#AllMyHomiesHateDependencies_
-   * Ideal for running in VMs and Sandboxes. Spin up a fresh sandbox instance and it's ready to go, just set the API key.
+  * Ideal for running in VMs and Sandboxes. Spin up a fresh sandbox instance and it's ready to go, just configure your provider settings.
 * **Visual-Only Operation**: Works on any app, regardless of underlying framework, because it relies strictly on screen pixels.
-* **Multiple AI Providers**: Supports Google Gemini (default), OpenAI (ChatGPT), and Anthropic (Claude).
+* **Multiple AI Providers**: Supports Google Gemini (default), OpenAI (ChatGPT), OpenAI-compatible chat-completions services, and Anthropic (Claude).
 
 ### Additional Features:
 * **Human Control Only Mode**: Enabled by default. The AI guides you with step-by-step instructions and on-screen click markers, but it never sends mouse or keyboard input until you disable that mode.
@@ -137,11 +137,11 @@ Example of it queuing multiple actions at once, while accurately clicking exact 
     </tr>
     <tr>
       <td align="left"><strong>Supported Models</strong></td>
-      <td valign="top" align="center"><img src=".github/assets/check-green.svg" width="16"> <strong>Multiple</strong><br><sub>(Gemini, OpenAI, Claude)</sub></td>
+      <td valign="top" align="center"><img src=".github/assets/check-green.svg" width="16"> <strong>Multiple</strong><br><sub>(Gemini, OpenAI, OpenAI-Compatible, Claude)</sub></td>
       <td align="center"><strong>OpenAI Only</strong></td>
       <td align="center"><strong>Gemini Only</strong></td>
       <td align="center"><strong>Claude Only</strong></td>
-      <td valign="top" align="center"><img src=".github/assets/check-green.svg" width="16"> <strong>Multiple</strong><br><sub>(Gemini, OpenAI, Claude)</sub></td>
+      <td valign="top" align="center"><img src=".github/assets/check-green.svg" width="16"> <strong>Multiple</strong><br><sub>(Gemini, OpenAI, OpenAI-Compatible, Claude)</sub></td>
     </tr>
   </tbody>
 </table>
@@ -186,11 +186,11 @@ This application executes real, unauthenticated OS-level input events. Do not ex
 
 ### Usage Instructions
 
-Note: You'll need to add your own API key for your AI of choice. I'll add local model support when I get the chance.
+Note: Configure the provider you want to use in the Config page. ChatGPT, Gemini, and Claude need an API key. OpenAI-compatible endpoints can use a custom URL and may omit the key for local or self-hosted services.
 
 1. Run the compiled executable. A local web interface will initialize (default: `http://localhost:51122`).
 2. Navigate to the **Config** menu in the web UI.
-3. Enter your required API key (e.g., Google Gemini) and adjust any desired operational parameters (model, temperature, coordinate mode). 
+3. Choose your provider and configure its settings. For ChatGPT, Gemini, and Claude, enter your API key. For OpenAI-compatible services, enter the chat-completions endpoint URL and optionally an API key, then adjust any desired operational parameters (model, temperature, coordinate mode). 
   - **Human Control Only Mode is enabled by default** near the top of Config. Leave it on if you want guided/manual control, or turn it off if you want the agent to click and type autonomously. Click **Save to browser**.
 4. Navigate to the **Agent Control** panel. The page shows a prominent Human Control Mode status banner so you can confirm whether the run will be guided or autonomous before starting.
 5. Select a target monitor, enter your task directive in the **Goal** field, and click **Start**.
