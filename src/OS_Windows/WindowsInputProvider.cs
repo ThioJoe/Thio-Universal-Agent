@@ -175,9 +175,7 @@ namespace Thio_Universal_Agent.OS_Windows
         // Mouse Events
         public async Task MoveMouse_MonitorCoords(int x, int y)
         {
-            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseMove(x, y);
-            SetThreadDpiAwarenessContext(originalContext);
             await Task.CompletedTask;
         }
 
@@ -194,9 +192,7 @@ namespace Thio_Universal_Agent.OS_Windows
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
-            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseMove(x, y);
-            SetThreadDpiAwarenessContext(originalContext);
 
             await Task.Yield();
 
@@ -216,9 +212,7 @@ namespace Thio_Universal_Agent.OS_Windows
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
-            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseMove(x, y);
-            SetThreadDpiAwarenessContext(originalContext);
 
             await Task.Yield();
 
@@ -238,9 +232,7 @@ namespace Thio_Universal_Agent.OS_Windows
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
-            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseMove(x, y);
-            SetThreadDpiAwarenessContext(originalContext);
 
             await Task.Yield();
 
@@ -260,9 +252,7 @@ namespace Thio_Universal_Agent.OS_Windows
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
-            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseMove(x, y);
-            SetThreadDpiAwarenessContext(originalContext);
 
             await Task.Yield();
 
@@ -294,14 +284,16 @@ namespace Thio_Universal_Agent.OS_Windows
         /// </summary>
         private void SendMouseMove(int screenX, int screenY, bool suppressMarker = false)
         {
+            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             int vScreenLeft   = GetSystemMetrics(76); // SM_XVIRTUALSCREEN
             int vScreenTop    = GetSystemMetrics(77); // SM_YVIRTUALSCREEN
             int vScreenWidth  = GetSystemMetrics(SM_CXVIRTUALSCREEN);
             int vScreenHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+            SetThreadDpiAwarenessContext(originalContext);
 
             // Normalize to [0, 65535]. Subtracting Left/Top is crucial to handle multi-monitor setups correctly.
-            int normalizedX = ((screenX - vScreenLeft) * 65535) / (vScreenWidth - 1);
-            int normalizedY = ((screenY - vScreenTop) * 65535) / (vScreenHeight - 1);
+            int normalizedX = (int)(((screenX - vScreenLeft) * 65536.0) / vScreenWidth);
+            int normalizedY = (int)(((screenY - vScreenTop) * 65536.0) / vScreenHeight);
 
             // Draw arrow
             if (!suppressMarker)
@@ -350,36 +342,27 @@ namespace Thio_Universal_Agent.OS_Windows
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
-            IntPtr originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-
             SendMouseMove(x_start, y_start, suppressMarker: true);
-            SetThreadDpiAwarenessContext(originalContext);
 
             await Task.Yield();
 
-            originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseEvent(MOUSEEVENTF_LEFTDOWN);
-            SetThreadDpiAwarenessContext(originalContext);
 
             await Task.Yield();
 
             int steps = 10;
             for (int i = 1; i <= steps; i++)
             {
-                originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
                 int currentX = x_start + ((x_end - x_start) * i / steps);
                 int currentY = y_start + ((y_end - y_start) * i / steps);
                 SendMouseMove(currentX, currentY, suppressMarker: true);
-                SetThreadDpiAwarenessContext(originalContext);
 
                 await Task.Yield();
             }
 
             await Task.Yield();
 
-            originalContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             SendMouseEvent(MOUSEEVENTF_LEFTUP);
-            SetThreadDpiAwarenessContext(originalContext);
         }
 
         public async Task ScrollUp(int multiple = 1)
