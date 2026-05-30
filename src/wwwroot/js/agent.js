@@ -59,6 +59,49 @@ const guidanceInput   = /** @type {HTMLInputElement} */   (document.getElementBy
 const btnGuidance     = /** @type {HTMLButtonElement} */  (document.getElementById('btn-guidance'));
 const guidanceAck     = /** @type {HTMLSpanElement} */    (document.getElementById('guidance-ack'));
 
+const AUTO_SCROLL_TOLERANCE_PX = 16;
+
+/**
+ * @param {HTMLElement} container
+ * @returns {boolean}
+ */
+function isScrolledToBottom(container) {
+    return (container.scrollHeight - container.clientHeight - container.scrollTop) <= AUTO_SCROLL_TOLERANCE_PX;
+}
+
+/**
+ * @param {HTMLElement} container
+ * @returns {void}
+ */
+function scrollToBottom(container) {
+    requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+    });
+}
+
+/**
+ * @param {HTMLElement} container
+ * @param {HTMLElement} entry
+ * @returns {void}
+ */
+function appendWithAutoScroll(container, entry) {
+    const shouldStick = isScrolledToBottom(container);
+
+    container.appendChild(entry);
+    if (!shouldStick) return;
+
+    scrollToBottom(container);
+
+    entry.querySelectorAll('img').forEach(img => {
+        if (img.complete) return;
+        img.addEventListener('load', () => {
+            if (shouldStick) {
+                scrollToBottom(container);
+            }
+        }, { once: true });
+    });
+}
+
 const SESSION_STORE_KEY = 'tua_session_id';
 const CONFIG_STORE_KEY  = 'tua_config_v1';
 
@@ -87,12 +130,24 @@ const PROVIDER_SECTION_MAP = Object.freeze({
     Onnx: 'onnx',
 });
 
+/** @typedef {keyof typeof PROVIDER_SECTION_MAP} ProviderName */
+/** @typedef {(typeof PROVIDER_SECTION_MAP)[ProviderName]} ProviderSectionKey */
+
 /**
  * @param {string | null | undefined} providerName
- * @returns {string | null}
+ * @returns {providerName is ProviderName}
+ */
+function isProviderName(providerName) {
+    return typeof providerName === 'string'
+        && Object.prototype.hasOwnProperty.call(PROVIDER_SECTION_MAP, providerName);
+}
+
+/**
+ * @param {string | null | undefined} providerName
+ * @returns {ProviderSectionKey | null}
  */
 function getProviderSectionKey(providerName) {
-    return providerName ? (PROVIDER_SECTION_MAP[providerName] ?? null) : null;
+    return isProviderName(providerName) ? PROVIDER_SECTION_MAP[providerName] : null;
 }
 
 /**
@@ -637,8 +692,7 @@ function handleGuidanceQueued(msg, cancelNext) {
     const entry = document.createElement('div');
     entry.className = 'step-entry guidance-entry' + (isCancel ? ' cancel-flag' : '');
     entry.innerHTML = `<span class="guidance-label">${isCancel ? '\u26a0\ufe0e Guidance (cancel next)' : '\ud83d\udcac Guidance'}</span><span class="guidance-text">${escapeHtml(text)}</span>`;
-    stepLog.appendChild(entry);
-    stepLog.scrollTop = stepLog.scrollHeight;
+    appendWithAutoScroll(stepLog, entry);
 
     // Flash the ack badge (only meaningful when called from the local sendGuidance path)
     guidanceAck.textContent = isCancel ? '\u26a0 Queued (will cancel next action)' : '\u2713 Queued';
@@ -727,8 +781,7 @@ function handleSubStep(msg) {
         liveSubsteps.appendChild(header);
     }
 
-    liveSubsteps.appendChild(entry);
-    liveSubsteps.scrollTop = liveSubsteps.scrollHeight;
+    appendWithAutoScroll(liveSubsteps, entry);
 }
 
 /**
@@ -810,8 +863,7 @@ function handleStep(msg) {
         img.addEventListener('click', () => img.classList.toggle('expanded'));
     });
 
-    stepLog.appendChild(entry);
-    stepLog.scrollTop = stepLog.scrollHeight;
+    appendWithAutoScroll(stepLog, entry);
 
     if (msg.isTerminal) {
         sessionFinalResult = msg.result;

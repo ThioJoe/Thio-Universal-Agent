@@ -77,18 +77,22 @@
     </div>
 
     <main>
-        <div class="final-result" id="final-result"><span class="final-result-msg" id="final-result-msg"></span><span class="final-result-time" id="final-result-time"></span></div>
+        <section class="agent-main-top">
+            <div class="final-result" id="final-result"><span class="final-result-msg" id="final-result-msg"></span><span class="final-result-time" id="final-result-time"></span></div>
 
-        <div class="current-step" id="current-step">
-            <h2>Current Step</h2>
-            <div class="thought" id="current-thought">Waiting for agent to start...</div>
-            <div class="action" id="current-action" style="display:none;"></div>
-            <div class="result" id="current-result"></div>
-            <div class="live-substeps" id="live-substeps"></div>
-        </div>
+            <div class="current-step" id="current-step">
+                <h2>Current Step</h2>
+                <div class="thought" id="current-thought">Waiting for agent to start...</div>
+                <div class="action" id="current-action" style="display:none;"></div>
+                <div class="result" id="current-result"></div>
+                <div class="live-substeps" id="live-substeps"></div>
+            </div>
+        </section>
 
-        <div class="step-log-header"><span>Step History</span><button id="btn-copy-steps" title="Copy all steps as JSON">Copy</button></div>
-        <div class="step-log" id="step-log"></div>
+        <section class="step-history-panel">
+            <div class="step-log-header"><span>Step History</span><button id="btn-copy-steps" title="Copy all steps as JSON">Copy</button></div>
+            <div class="step-log" id="step-log"></div>
+        </section>
     </main>
 
     <script type="module" src="/js/agent.js"></script>
