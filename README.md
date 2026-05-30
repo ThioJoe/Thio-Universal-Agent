@@ -24,6 +24,8 @@ It controls Windows purely through visual perception and GUI interaction. By int
 
 It now supports two ways to use it: a **Human Control Only Mode** that is enabled by default, where the AI guides you step-by-step and shows where to click without sending any real input itself, and an **autonomous mode** where it can move the mouse and type on its own.
 
+There is also a **dedicated Human-Only exe version**, in cases where you never even want the _option_ to operate in autonomous mode. In this version, the input code is physically excluded from the exe. (The other main exe can still do both)
+
 Also See: [Planned Features Page](https://github.com/ThioJoe/Thio-Universal-Agent/wiki/Planned-Features)
 
 ## Demonstration
