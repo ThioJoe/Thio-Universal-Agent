@@ -32,13 +32,17 @@ internal static class ConfigEndpoints
             AppConfigResponse response = new AppConfigResponse(
                 General: new GeneralConfigDto(
                         ActiveProvider:     appConfig.General.ActiveProvider?.ToString(),
-                        HumanControlOnlyMode: appConfig.General.HumanControlOnlyMode,
                         SettleDelayMs:      appConfig.General.SettleDelayMs,
                         QueueSettleDelayMs: appConfig.General.QueueSettleDelayMs,
                         EnableContextReset: appConfig.General.EnableContextReset,
                         StripHistoryImages: appConfig.General.StripHistoryImages,
                         EnableDebugMode:    appConfig.General.EnableDebugMode,
-                        MaxQueueSize:       appConfig.General.MaxQueueSize
+                        MaxQueueSize:       appConfig.General.MaxQueueSize,
+                    #if HUMAN_ONLY
+                        HumanControlOnlyMode: true
+                    #else
+                        HumanControlOnlyMode: appConfig.General.HumanControlOnlyMode,
+                    #endif
                     ),
                 Agent: new AgentConfigDto(
                         CoordinateMode: appConfig.Agent.CoordinateMode.ToString(),
@@ -258,13 +262,13 @@ internal sealed record AppConfigResponse(
 
 internal sealed record GeneralConfigDto(
     string? ActiveProvider,
-    bool HumanControlOnlyMode,
     int SettleDelayMs,
     int QueueSettleDelayMs,
     bool EnableContextReset,
     bool StripHistoryImages,
     bool EnableDebugMode,
-    int MaxQueueSize
+    int MaxQueueSize,
+    bool HumanControlOnlyMode
 );
 
 internal sealed record AgentConfigDto(

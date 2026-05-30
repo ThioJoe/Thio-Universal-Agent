@@ -64,6 +64,7 @@ const btnGuidance     = /** @type {HTMLButtonElement} */  (document.getElementBy
 const guidanceAck     = /** @type {HTMLSpanElement} */    (document.getElementById('guidance-ack'));
 
 const AUTO_SCROLL_TOLERANCE_PX = 16;
+const HUMAN_ONLY_BUILD_CACHE_KEY = 'tua_is_human_only_build';
 
 /**
  * @param {HTMLElement} container
@@ -112,8 +113,7 @@ function appendWithAutoScroll(container, entry) {
  * @returns {Promise<boolean>}
  */
 async function checkSessionHumanOnlyBuild() {
-    const cacheKey = 'tua_is_human_only_build';
-    const cached = sessionStorage.getItem(cacheKey);
+    const cached = sessionStorage.getItem(HUMAN_ONLY_BUILD_CACHE_KEY);
     if (cached !== null) {
         return cached === 'true';
     }
@@ -122,10 +122,10 @@ async function checkSessionHumanOnlyBuild() {
         const res = await fetch('/api/HumanOnlyBuild');
         const data = await res.json();
         const isHumanOnly = data === true || data?.isHumanOnly === true;
-        sessionStorage.setItem(cacheKey, String(isHumanOnly));
+        sessionStorage.setItem(HUMAN_ONLY_BUILD_CACHE_KEY, String(isHumanOnly));
         return isHumanOnly;
     } catch {
-        sessionStorage.setItem(cacheKey, 'false');
+        sessionStorage.setItem(HUMAN_ONLY_BUILD_CACHE_KEY, 'false');
         return false;
     }
 }
@@ -242,10 +242,12 @@ function resolveHumanControlOnlyMode(serverCfg, storedCfg) {
 
 /**
  * @param {boolean} enabled
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function updateHumanControlModeDisplay(enabled) {
+async function updateHumanControlModeDisplay(enabled) {
     if (!humanModeBanner || !humanModeState || !humanModeText) return;
+
+    enabled = enabled || await checkSessionHumanOnlyBuild();
 
     humanModeBanner.classList.remove('pending');
     humanModeBanner.classList.toggle('on', enabled);
@@ -353,11 +355,11 @@ let activePricing = {};
 /** Running total cost in dollars for the current session */
 let sessionTotalCost = 0;
 
-updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, getStoredConfig()));
+void updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, getStoredConfig()));
 
 window.addEventListener('storage', (event) => {
     if (event.key === CONFIG_STORE_KEY) {
-        updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, getStoredConfig()));
+        void updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, getStoredConfig()));
     }
 });
 
@@ -373,7 +375,7 @@ window.addEventListener('storage', (event) => {
         if (cfgRes.ok) {
             const cfg = await cfgRes.json();
             const storedCfg = getStoredConfig();
-            updateHumanControlModeDisplay(resolveHumanControlOnlyMode(cfg, storedCfg));
+            await updateHumanControlModeDisplay(resolveHumanControlOnlyMode(cfg, storedCfg));
             // Do not assume a default provider — only use the configured activeProvider when present
             const activeProv = storedCfg?.general?.activeProvider || cfg.general?.activeProvider || null;
             const sectionKey = getProviderSectionKey(activeProv);
@@ -528,7 +530,7 @@ async function startAgent() {
     await pushConfigToServer();
 
     const cfg = getStoredConfig();
-    updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, cfg));
+    await updateHumanControlModeDisplay(resolveHumanControlOnlyMode(undefined, cfg));
     const activeProvider = cfg?.general?.activeProvider || null;
     const activeSectionKey = getProviderSectionKey(activeProvider);
     const activeConfig = getConfigSection(cfg, activeSectionKey);
