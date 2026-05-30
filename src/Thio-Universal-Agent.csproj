@@ -7,14 +7,12 @@
     <RootNamespace>Thio_Universal_Agent</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
     <Platforms>AnyCPU;x64</Platforms>
-    <AssemblyTitle>Thio's Universal Agent</AssemblyTitle>
     <ApplicationIcon>Resources\Icon.ico</ApplicationIcon>
     <AssemblyVersion>$(Version)</AssemblyVersion>
     <FileVersion>$(Version)</FileVersion>
     <Authors>ThioJoe</Authors>
     <Version>0.5.1.0</Version>
     <VersionThreePart>$([System.Version]::Parse('$(Version)').ToString(3))</VersionThreePart>
-    <Title>Thio's Universal Agent</Title>
     <PackageProjectUrl>https://github.com/ThioJoe/Thio-Universal-Agent</PackageProjectUrl>
     <Copyright>© 2026 ThioJoe</Copyright>
 	<LangVersion>14.0</LangVersion>
@@ -23,10 +21,14 @@
   
 	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <AssemblyName>Thio-Universal-Agent_$(VersionThreePart)</AssemblyName>
+	<Title>Thio's Universal Agent</Title>
+	<AssemblyTitle>Thio's Universal Agent</AssemblyTitle>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)' == 'Human_Only'">
 	  <AssemblyName>Thio-Universal-Agent-HumanOnly_$(VersionThreePart)</AssemblyName>
+	  <Title>Thio's Universal Agent (Human Control Only)</Title>
+	  <AssemblyTitle>Thio's Universal Agent (Human Control Only)</AssemblyTitle>
 	</PropertyGroup>
 
   <!-- Embed all wwwroot files into the assembly so the app works as a true single file -->

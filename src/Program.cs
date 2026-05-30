@@ -122,7 +122,12 @@ app.Lifetime.ApplicationStarted.Register(() =>
 
     // Grab the root logger and print a prominent banner
     Console.WriteLine(new string('=', 55));
+#if HUMAN_ONLY
+    Console.WriteLine("THIO UNIVERSAL AGENT READY [Human Control Only Mode]");
+#else
     Console.WriteLine("THIO UNIVERSAL AGENT READY");
+#endif
+
     Console.WriteLine($"Web Interface: {url}");
     Console.WriteLine(new string('=', 55));
 });

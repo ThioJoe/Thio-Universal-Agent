@@ -41,7 +41,7 @@ internal static class ConfigEndpoints
                     #if HUMAN_ONLY
                         HumanControlOnlyMode: true
                     #else
-                        HumanControlOnlyMode: appConfig.General.HumanControlOnlyMode,
+                        HumanControlOnlyMode: appConfig.General.HumanControlOnlyMode
                     #endif
                     ),
                 Agent: new AgentConfigDto(
