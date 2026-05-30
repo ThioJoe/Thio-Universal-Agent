@@ -362,5 +362,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-
+# My Ignores
 Phi-3.5-vision-instruct-onnx
+.vscode
