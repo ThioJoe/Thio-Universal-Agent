@@ -474,7 +474,7 @@ internal static class AgentEndpoints
         AgentActionKind.ClickDrag => $"CLICK_DRAG\nFrom: \"{action.Target}\"\nTo: \"{action.DragTarget}\"",
         AgentActionKind.ClickDragCoords => $"CLICK_DRAG_COORDS\nFrom: {action.Target}\nTo: {action.DragTarget}",
         AgentActionKind.TypeText => $"TYPE_TEXT \"{action.Text}\"",
-        AgentActionKind.KeyCombo => $"KEY_COMBO {(action.Modifiers.HasFlag(ModifierKeys.Ctrl) ? "ctrl+" : "")}{(action.Modifiers.HasFlag(ModifierKeys.Shift) ? "shift+" : "")}{(action.Modifiers.HasFlag(ModifierKeys.Alt) ? "alt+" : "")}{(action.Modifiers.HasFlag(ModifierKeys.Win) ? "win+" : "")}{action.Key}",
+        AgentActionKind.KeyCombo => $"KEY_COMBO {FormatKeyCombo(action)}",
         AgentActionKind.ScrollUp => $"SCROLL_UP {action.Amount}",
         AgentActionKind.ScrollDown => $"SCROLL_DOWN {action.Amount}",
         AgentActionKind.Wait => $"WAIT {action.Amount}",
@@ -482,6 +482,24 @@ internal static class AgentEndpoints
         AgentActionKind.Fail => $"FAIL \"{action.Reason}\"",
         _ => action.Kind.ToString(),
     };
+
+    private static string FormatKeyCombo(AgentAction action)
+    {
+        List<string> keys = new List<string>(5);
+
+        if (action.Modifiers.HasFlag(ModifierKeys.Ctrl))
+            keys.Add("ctrl");
+        if (action.Modifiers.HasFlag(ModifierKeys.Shift))
+            keys.Add("shift");
+        if (action.Modifiers.HasFlag(ModifierKeys.Alt))
+            keys.Add("alt");
+        if (action.Modifiers.HasFlag(ModifierKeys.Win))
+            keys.Add("win");
+        if (!string.IsNullOrWhiteSpace(action.Key))
+            keys.Add(action.Key);
+
+        return string.Join('+', keys);
+    }
 }
 
 file record AgentStartRequest(string? Goal, string? ApiKey, string? Model, int? MonitorIndex);
