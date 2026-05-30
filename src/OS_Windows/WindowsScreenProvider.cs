@@ -656,12 +656,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
     private sealed class ClickPointMarker : MarkerWindow
     {
         public override MarkerType Type => MarkerType.ClickPoint;
-        public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (60, 60, 30, 30);
+        public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (74, 60, 30, 30);
 
         // Offset of the queue-order number label relative to the crosshair centre.
         // Positive X moves right, negative Y moves up. Target: top-right corner, outside the crosshair.
         // The crosshair arms end at ±lineRadius(22) and the circle radius is 15, so x>+15 and y<-15
-        // is clear of all drawn elements. The 60×60 window leaves ~14px to the right of the right arm.
+        // is clear of all drawn elements. The 74×60 window leaves ~28px to the right of the right arm.
         private const int QueueLabelOffsetX = +16; // lands at cx+16 = 46, just right of the circle edge
         private const int QueueLabelOffsetY = -28; // lands at cy-28 =  2, well above the top arm
 
