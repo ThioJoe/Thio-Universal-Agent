@@ -653,6 +653,17 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         g.DrawString(text, font, fill, anchorX, anchorY);
     }
 
+    /// <summary>
+    /// Measures <paramref name="text"/> using the same font as <see cref="AddLabel"/> and the real
+    /// screen DPI (via the desktop DC) so the result matches what <see cref="AddLabel"/> will paint.
+    /// </summary>
+    private static SizeF MeasureLabelSize(string text)
+    {
+        using Font font = new Font("Segoe UI", 11f, FontStyle.Bold, GraphicsUnit.Point);
+        using Graphics g = Graphics.FromHwnd(IntPtr.Zero);
+        return g.MeasureString(text, font, 0, StringFormat.GenericTypographic);
+    }
+
     private sealed class ClickPointMarker : MarkerWindow
     {
         public override MarkerType Type => MarkerType.ClickPoint;
@@ -932,11 +943,10 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         private const int BorderThickness = 3;
         // Padding so the border stroke is never clipped at the window edge (half stroke width, rounded up).
         private const int Padding = (BorderThickness + 1) / 2 + 1;
-        // Extra height added below the box when a queue-order number label is present.
-        private const int QueueLabelExtraHeight = 28;
         // Offset of the queue label from the bottom-left corner of the drawn rectangle.
-        private const int QueueLabelOffsetX = 0;
-        private const int QueueLabelOffsetY = 6; // gap between box bottom and label top
+        private const int QueueLabelOffsetX  =  0;
+        private const int QueueLabelOffsetY  =  6;  // gap between box bottom and label top
+        private const int LabelRightMargin   =  6;  // extra right buffer against measurement rounding
 
         private int _localWidth, _localHeight, _fillOpacity;
         private TypeTextTooltipWindow? _tooltip;
@@ -951,17 +961,33 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         /// </summary>
         public void Show(int x1, int y1, int x2, int y2, int borderOpacity, int fillOpacity, int durationMs, MarkerPool pool)
         {
-            int left = Math.Min(x1, x2) - Padding;
-            int top  = Math.Min(y1, y2) - Padding;
-            int w    = Math.Abs(x2 - x1) + Padding * 2;
-            // Expand the window downward when a queue label is present so the label isn't clipped.
-            int h    = Math.Abs(y2 - y1) + Padding * 2 + (QueueLabel != null ? QueueLabelExtraHeight : 0);
+            int left   = Math.Min(x1, x2) - Padding;
+            int top    = Math.Min(y1, y2) - Padding;
+            int w      = Math.Abs(x2 - x1) + Padding * 2;
+            int h      = Math.Abs(y2 - y1) + Padding * 2;
+            int localW = Math.Abs(x2 - x1);
+            int localH = Math.Abs(y2 - y1);
+
+            if (QueueLabel != null)
+            {
+                SizeF labelSize = MeasureLabelSize(QueueLabel);
+                int labelH = (int)Math.Ceiling(labelSize.Height);
+                int labelW = (int)Math.Ceiling(labelSize.Width);
+
+                // Expand downward to fit the label below the box.
+                h = Math.Max(h, localH + Padding * 2 + QueueLabelOffsetY + labelH);
+
+                // Expand right if the label is wider than the box.
+                int requiredW = Padding + QueueLabelOffsetX + labelW + LabelRightMargin;
+                if (requiredW > w)
+                    w = requiredW;
+            }
 
             lock (StateLock)
             {
                 Geometry      = (w, h, offsetX: x1 - left, offsetY: y1 - top);
-                _localWidth   = Math.Abs(x2 - x1);
-                _localHeight  = Math.Abs(y2 - y1);
+                _localWidth   = localW;
+                _localHeight  = localH;
                 _fillOpacity  = fillOpacity;
             }
 
@@ -1012,9 +1038,14 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         public override MarkerType Type => MarkerType.MouseMove;
         public override (int width, int height, int offsetX, int offsetY) Geometry { get; set; } = (0, 0, 0, 0);
 
+        // Label placement constants shared by Show (sizing) and Paint (drawing).
+        private const int LabelOffsetX  = 16;  // gap right of the crosshair centre
+        private const int LabelOffsetY  = 28;  // gap above the crosshair centre
+        private const int LabelRightMargin = 6; // extra right margin so the window edge never clips the glyphs
+
         /// <summary>
-        /// Computes window geometry from the move screen coordinates, stores the local-space endpoint,
-        /// then shows the marker.
+        /// Computes window geometry from the move screen coordinates, stores the local-space endpoint, then shows the marker.
+        /// The window is expanded as needed so the label always fits without clipping.
         /// </summary>
         public void Show(int x1, int y1, int x2, int y2, int opacity, int durationMs, MarkerPool pool)
         {
@@ -1023,11 +1054,35 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             int w    = Math.Abs(x2 - x1) + Padding * 2;
             int h    = Math.Abs(y2 - y1) + Padding * 2;
 
+            int localEndX = x2 - left;
+            int localEndY = y2 - top;
+
+            string? displayLabel = QueueLabel ?? Label;
+            if (displayLabel != null)
+            {
+                SizeF labelSize = MeasureLabelSize(displayLabel);
+
+                // Expand right if the label extends past the window's right edge.
+                int requiredW = localEndX + LabelOffsetX + (int)Math.Ceiling(labelSize.Width) + LabelRightMargin;
+                if (requiredW > w)
+                    w = requiredW;
+
+                // Expand upward if the label extends past the window's top edge.
+                int labelTopInWindow = localEndY - LabelOffsetY;
+                if (labelTopInWindow < 0)
+                {
+                    int expand = -labelTopInWindow;
+                    top      -= expand;
+                    h        += expand;
+                    localEndY += expand;
+                }
+            }
+
             lock (StateLock)
             {
                 Geometry   = (w, h, offsetX: x1 - left, offsetY: y1 - top);
-                _localEndX = x2 - left;
-                _localEndY = y2 - top;
+                _localEndX = localEndX;
+                _localEndY = localEndY;
             }
 
             Show(x1, y1, opacity, durationMs, pool);
@@ -1042,12 +1097,9 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             AddOpenCrosshair(g, endX, endY, circleRadius: 14, spokeLength: 10, thickness: 3, Color.Blue);
 
             string? displayLabel = QueueLabel ?? Label;
-            if (displayLabel != null) 
-            { 
-                // Anchor the label above the endpoint crosshair; this keeps it within the window
-                // regardless of arrow direction (the Padding guarantees room at the top).
-                AddLabel(g, endX - 8, Math.Max(2, endY - Padding - 16), displayLabel, Color.Blue); 
-            }
+            if (displayLabel != null)
+                // Show() already expanded the window to fit the label here, so no clamping needed.
+                AddLabel(g, endX + LabelOffsetX, endY - LabelOffsetY, displayLabel, Color.Blue);
         }
     }
 
@@ -1057,6 +1109,11 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
         // Should match or exceed the lineRadius used in Paint.
         private const int Padding = 15;
 
+        // Label placement constants shared by Show (sizing) and Paint (drawing).
+        private const int LabelOffsetX    = 16;  // gap right of the endpoint crosshair centre
+        private const int LabelOffsetY    = 28;  // gap above the endpoint crosshair centre
+        private const int LabelRightMargin =  6;  // extra right buffer against measurement rounding
+
         private int _localEndX, _localEndY;
 
         public override MarkerType Type => MarkerType.ClickDrag;
@@ -1064,7 +1121,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
         /// <summary>
         /// Computes window geometry from the drag screen coordinates, stores the local-space endpoint,
-        /// then shows the marker.
+        /// then shows the marker. The window is expanded as needed so the label always fits without clipping.
         /// </summary>
         public void Show(int x1, int y1, int x2, int y2, int opacity, int durationMs, MarkerPool pool)
         {
@@ -1073,11 +1130,35 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             int w    = Math.Abs(x2 - x1) + Padding * 2;
             int h    = Math.Abs(y2 - y1) + Padding * 2;
 
+            int localEndX = x2 - left;
+            int localEndY = y2 - top;
+
+            string? displayLabel = QueueLabel ?? Label;
+            if (displayLabel != null)
+            {
+                SizeF labelSize = MeasureLabelSize(displayLabel);
+
+                // Expand right if the label extends past the window's right edge.
+                int requiredW = localEndX + LabelOffsetX + (int)Math.Ceiling(labelSize.Width) + LabelRightMargin;
+                if (requiredW > w)
+                    w = requiredW;
+
+                // Expand upward if the label extends past the window's top edge.
+                int labelTopInWindow = localEndY - LabelOffsetY;
+                if (labelTopInWindow < 0)
+                {
+                    int expand = -labelTopInWindow;
+                    top       -= expand;
+                    h         += expand;
+                    localEndY += expand;
+                }
+            }
+
             lock (StateLock)
             {
                 Geometry   = (w, h, offsetX: x1 - left, offsetY: y1 - top);
-                _localEndX = x2 - left;
-                _localEndY = y2 - top;
+                _localEndX = localEndX;
+                _localEndY = localEndY;
             }
 
             Show(x1, y1, opacity, durationMs, pool);
@@ -1095,10 +1176,8 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
 
             string? displayLabel = QueueLabel ?? Label;
             if (displayLabel != null)
-            {
-                // Place the label above the destination crosshair; the Padding guarantees vertical room.
-                AddLabel(g, endX - 8, Math.Max(2, endY - Padding - 16), displayLabel, Color.Orange); 
-            }
+                // Show() already expanded the window to fit the label here, so no clamping needed.
+                AddLabel(g, endX + LabelOffsetX, endY - LabelOffsetY, displayLabel, Color.Orange);
         }
     }
 
