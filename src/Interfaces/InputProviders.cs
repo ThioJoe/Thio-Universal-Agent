@@ -8,10 +8,12 @@ namespace Thio_Universal_Agent
     {
         bool HumanControlOnlyMode { get; }
 
+#if !HUMAN_ONLY
         /// <summary>
         /// Simulates typing a string of text.        /// </summary>
         /// <param name="text">The text to type.</param>
         Task TypeTextAsync(string text);
+#endif
 
         /// <summary>
         /// Simulates pressing a single key with or without modifiers.

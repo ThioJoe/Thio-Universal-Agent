@@ -137,10 +137,12 @@ public sealed partial class AgentActionExecutor(
                         cursorMethodCalled = $"MiddleMouse_MonitorCoords({curX}, {curY})";
                         break;
 
+                    #if !HUMAN_ONLY
                     case AgentActionKind.MoveMouse or AgentActionKind.MoveMouseCoords:
                         await inputProvider.MoveMouse_MonitorCoords(curX, curY).ConfigureAwait(false);
                         cursorMethodCalled = $"MoveMouse_MonitorCoords({curX}, {curY})";
                         break;
+                    #endif
 
                     default:
                         cursorMethodCalled = "N/A";
@@ -493,7 +495,9 @@ public sealed partial class AgentActionExecutor(
         LogTypingText(logger, text);
         await EmitDebugAsync(debugLog, onProgress, new AgentDebugEntry("OS Input Call", Text: $"TypeTextAsync(\"{text}\")")).ConfigureAwait(false);
 
+        #if !HUMAN_ONLY
         await inputProvider.TypeTextAsync(text).ConfigureAwait(false);
+        #endif
 
         return new ActionExecutionResult(true, $"Typed \"{text}\".", IsTerminal: false, GoalAchieved: false);
     }

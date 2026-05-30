@@ -198,6 +198,7 @@ public partial class WindowsInputProvider : IInputProvider
     {
         if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
+     #if !HUMAN_ONLY
         List<INPUT> inputList = [];
         if (modifiers.HasFlag(ModifierKeys.Win))
             inputList.Add(CreateInput(vk: modifierKeyCodes["LWIN"].vk, scan: modifierKeyCodes["LWIN"].scan, isKeyUp: false, extended: modifierKeyCodes["LWIN"].extended));
@@ -209,6 +210,7 @@ public partial class WindowsInputProvider : IInputProvider
             inputList.Add(CreateInput(vk: modifierKeyCodes["LALT"].vk, scan: modifierKeyCodes["LALT"].scan, isKeyUp: false, extended: false));
         if (inputList.Count > 0)
             SendInput((uint)inputList.Count, [.. inputList], Marshal.SizeOf(typeof(INPUT)));
+     #endif
     }
 
     /// <inheritdoc/>
@@ -216,6 +218,7 @@ public partial class WindowsInputProvider : IInputProvider
     {
         if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
+     #if !HUMAN_ONLY
         List<INPUT> inputList = [];
         if (modifiers.HasFlag(ModifierKeys.Alt))
             inputList.Add(CreateInput(vk: modifierKeyCodes["LALT"].vk, scan: modifierKeyCodes["LALT"].scan, isKeyUp: true, extended: false));
@@ -227,12 +230,14 @@ public partial class WindowsInputProvider : IInputProvider
             inputList.Add(CreateInput(vk: modifierKeyCodes["LWIN"].vk, scan: modifierKeyCodes["LWIN"].scan, isKeyUp: true, extended: modifierKeyCodes["LWIN"].extended));
         if (inputList.Count > 0)
             SendInput((uint)inputList.Count, [.. inputList], Marshal.SizeOf(typeof(INPUT)));
+     #endif
     }
 
     private void SendMouseEvent(uint flag)
     {
         if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
+     #if !HUMAN_ONLY
         INPUT[] inputs =
             [
                 new INPUT
@@ -242,6 +247,8 @@ public partial class WindowsInputProvider : IInputProvider
                 }
             ];
         _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+     #endif
+
     }
 
     public enum ScrollMode : int
@@ -260,6 +267,7 @@ public partial class WindowsInputProvider : IInputProvider
     {
         if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
+     #if !HUMAN_ONLY
         int scrollAmount = Math.Abs(multiple); // Ensure a sign hasn't been given to multiple already
 
         // Set sign based on direction
@@ -271,6 +279,9 @@ public partial class WindowsInputProvider : IInputProvider
             ScrollMouse_WithSendInput_Async(WHEEL_DELTA * scrollAmount);
         else
             ScrollMouse_WithWM_Async(scrollAmount);
+
+     #endif
+
     }
 
     private static void ScrollMouse_WithSendInput_Async(int scrollAmount)

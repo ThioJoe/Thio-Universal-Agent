@@ -17,6 +17,7 @@
     <PackageProjectUrl>https://github.com/ThioJoe/Thio-Universal-Agent</PackageProjectUrl>
     <Copyright>© 2026 ThioJoe</Copyright>
 	<LangVersion>14.0</LangVersion>
+	<Configurations>Debug;Release;Human Only</Configurations>
   </PropertyGroup>
 
   <!-- Embed all wwwroot files into the assembly so the app works as a true single file -->

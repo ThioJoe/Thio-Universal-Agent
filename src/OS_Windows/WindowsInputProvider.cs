@@ -1,11 +1,18 @@
 ﻿// Thio-Universal-Agent/OS_Windows/WindowsInputProvider.cs
 using System.Runtime.InteropServices;
 
+#pragma warning disable CS0162 // Unreachable code detected
+
 namespace Thio_Universal_Agent.OS_Windows
 {
     public partial class WindowsInputProvider : IInputProvider
     {
+
+     #if HUMAN_ONLY
+        public bool HumanControlOnlyMode => true;
+     #else
         public bool HumanControlOnlyMode => _appConfig.General.HumanControlOnlyMode;
+     #endif
 
         /// <inheritdoc/>
         public Action? HumanClickCallback { get; set; }
@@ -39,6 +46,7 @@ namespace Thio_Universal_Agent.OS_Windows
                 return; // HUMAN CONTROL ONLY GUARD
             }
 
+         #if !HUMAN_ONLY
             await EnsureCursorOnTargetMonitorAsync();
 
             // Make all of them nullable in case there is no primary key, meaning only modifier keys are pressed
@@ -110,6 +118,8 @@ namespace Thio_Universal_Agent.OS_Windows
             {
                 _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
             }
+
+         #endif
         }
 
         private static ModifierKeys GetModifierFlags(bool? ctrl, bool? shift, bool? alt, bool? win)
@@ -137,6 +147,7 @@ namespace Thio_Universal_Agent.OS_Windows
             return keyChar.vk == 0xFFFF ? null : keyChar.vk;
         }
 
+#if !HUMAN_ONLY
         /// <summary>
         /// Types the specified text using the helper methods to construct inputs.
         /// This handles shift states for standard keys and falls back to Unicode for others.
@@ -175,7 +186,9 @@ namespace Thio_Universal_Agent.OS_Windows
 
             await Task.CompletedTask;
         }
+#endif
 
+#if !HUMAN_ONLY
         private async Task EnsureCursorOnTargetMonitorAsync()
         {
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
@@ -210,11 +223,14 @@ namespace Thio_Universal_Agent.OS_Windows
                 // Fail silently to avoid breaking input if monitor data is temporarily inaccessible
             }
         }
+#endif
 
         // Mouse Events
         public async Task MoveMouse_MonitorCoords(int x, int y)
         {
+            #if !HUMAN_ONLY
             SendMouseMove(x, y);
+            #endif
             await Task.CompletedTask;
         }
 
@@ -231,11 +247,13 @@ namespace Thio_Universal_Agent.OS_Windows
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
+         #if !HUMAN_ONLY
             SendMouseMove(x, y);
 
             await Task.Yield();
 
             SendMouseClick(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
+         #endif
         }
 
         public async Task DoubleClick_MonitorCoords(int x, int y)
@@ -251,11 +269,14 @@ namespace Thio_Universal_Agent.OS_Windows
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
+         #if !HUMAN_ONLY
             SendMouseMove(x, y);
 
             await Task.Yield();
 
             SendMouseClick(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, count: 2);
+         #endif
+
         }
 
         public async Task RightClick_MonitorCoords(int x, int y)
@@ -269,6 +290,7 @@ namespace Thio_Universal_Agent.OS_Windows
                 _screenProvider.DrawClickPointMarker(x, y, _appConfig.General.ShowClickMarkersDuration);
             }
 
+         #if !HUMAN_ONLY
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
             SendMouseMove(x, y);
@@ -276,6 +298,8 @@ namespace Thio_Universal_Agent.OS_Windows
             await Task.Yield();
 
             SendMouseClick(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP);
+         #endif
+
         }
 
         public async Task MiddleMouse_MonitorCoords(int x, int y)
@@ -291,13 +315,17 @@ namespace Thio_Universal_Agent.OS_Windows
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
 
+         #if !HUMAN_ONLY
             SendMouseMove(x, y);
 
             await Task.Yield();
 
             SendMouseClick(MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP);
+         #endif
+
         }
 
+#if !HUMAN_ONLY
         private void SendMouseClick(uint downFlag, uint upFlag, int count = 1)
         {
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
@@ -314,8 +342,9 @@ namespace Thio_Universal_Agent.OS_Windows
 
             _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
         }
+#endif
 
-
+#if !HUMAN_ONLY
         /// <summary>
         /// Injects a hardware mouse-move event via SendInput using absolute normalized coordinates.
         /// Unlike SetCursorPos, this pushes through the hardware input queue so applications
@@ -367,6 +396,7 @@ namespace Thio_Universal_Agent.OS_Windows
             ];
             _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
         }
+#endif
 
         public async Task ClickDrag_MonitorCoords(int x_start, int y_start, int x_end, int y_end)
         {
@@ -380,6 +410,8 @@ namespace Thio_Universal_Agent.OS_Windows
             }
 
             if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
+         #if !HUMAN_ONLY
 
             SendMouseMove(x_start, y_start, suppressMarker: true);
 
@@ -402,6 +434,9 @@ namespace Thio_Universal_Agent.OS_Windows
             await Task.Yield();
 
             SendMouseEvent(MOUSEEVENTF_LEFTUP);
+
+         #endif
+
         }
 
         public async Task ScrollUp(int multiple = 1)
