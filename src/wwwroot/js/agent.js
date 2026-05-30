@@ -107,6 +107,30 @@ function appendWithAutoScroll(container, entry) {
 }
 
 /**
+ * Uses "/api/HumanOnlyBuild" endpoint to check whether the entire build is human only mode. True if it is, null if it's not.
+ * Cache the result in browser temporary session storage. This is just for cosmetic changes to certain places.
+ * @returns {Promise<boolean>}
+ */
+async function checkSessionHumanOnlyBuild() {
+    const cacheKey = 'tua_is_human_only_build';
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached !== null) {
+        return cached === 'true';
+    }
+
+    try {
+        const res = await fetch('/api/HumanOnlyBuild');
+        const data = await res.json();
+        const isHumanOnly = data === true || data?.isHumanOnly === true;
+        sessionStorage.setItem(cacheKey, String(isHumanOnly));
+        return isHumanOnly;
+    } catch {
+        sessionStorage.setItem(cacheKey, 'false');
+        return false;
+    }
+}
+
+/**
  * @param {'waiting'|'executing'|'paused'|'guidance'|'error'} state
  * @param {string} label
  * @param {string} text

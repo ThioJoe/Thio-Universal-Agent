@@ -19,8 +19,14 @@ internal static class ConfigEndpoints
 
     internal static void MapConfigEndpoints(this WebApplication app)
     {
-        // ── Existing flat GET (kept for Agent.html compatibility) ──────────────
+        // Endpoint for whether this entire build is human control only mode. Return null if not to not be confused with human mode only mode being off
+        #if HUMAN_ONLY
+        app.MapGet("/api/HumanOnlyBuild", () => true);
+        #else
+        app.MapGet("/api/HumanOnlyBuild", () => null);
+        #endif
 
+        // Flat get, might update at some point in the future
         app.MapGet("/api/config", (AppConfig appConfig) =>
         {
             AppConfigResponse response = new AppConfigResponse(

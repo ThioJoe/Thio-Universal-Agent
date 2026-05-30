@@ -19,6 +19,7 @@
 
 const STORAGE_KEY  = 'tua_config_v1';
 const VAULT_KEY    = 'tua_vault_hash_v1'; // stored only when "remember" is checked
+const HUMAN_ONLY_BUILD_CACHE_KEY = 'tua_is_human_only_build';
 
 /** @type {ConfigSection[]} */
 let serverDefaults = []; // raw schema sections from /api/config/schema
@@ -36,6 +37,45 @@ let onnxCapabilitiesRequestInFlight = false;
 /** @type {string | null} */
 let vaultPasswordHash  = null;  // SHA-256 hex provided by the browser this page visit
 let vaultSessionActive = false; // true when server already has the hash from a prior unlock
+
+/**
+ * @returns {Promise<boolean>}
+ */
+async function checkSessionHumanOnlyBuild() {
+    const cached = sessionStorage.getItem(HUMAN_ONLY_BUILD_CACHE_KEY);
+    if (cached !== null) {
+        return cached === 'true';
+    }
+
+    try {
+        const res = await fetch('/api/HumanOnlyBuild');
+        const data = await res.json();
+        const isHumanOnly = data === true || data?.isHumanOnly === true;
+        sessionStorage.setItem(HUMAN_ONLY_BUILD_CACHE_KEY, String(isHumanOnly));
+        return isHumanOnly;
+    } catch {
+        sessionStorage.setItem(HUMAN_ONLY_BUILD_CACHE_KEY, 'false');
+        return false;
+    }
+}
+
+/** @returns {void} */
+function lockHumanOnlyModeField() {
+    const input = findInput('general', 'humanControlOnlyMode');
+    if (!(input instanceof HTMLInputElement) || input.type !== 'checkbox') return;
+
+    input.checked = true;
+    input.disabled = true;
+    input.title = 'Locked on because this build is Human Control Only.';
+    input.classList.remove('changed');
+
+    pendingChanges.general && delete pendingChanges.general.humanControlOnlyMode;
+    if (pendingChanges.general && Object.keys(pendingChanges.general).length === 0) {
+        delete pendingChanges.general;
+    }
+
+    markBrowserOverride('general', 'humanControlOnlyMode', false);
+}
 
 // ── Vault helpers ─────────────────────────────────────────────────────────
 
@@ -335,6 +375,7 @@ function setVaultUnlocked(on, source = 'browser') {
 /** @returns {Promise<void>} */
 async function init() {
     browserValues = loadFromStorage();
+    const isHumanOnlyBuild = await checkSessionHumanOnlyBuild();
 
     try {
         const schemaRes = await fetch('/api/config/schema');
@@ -344,6 +385,9 @@ async function init() {
         renderSections(sections);
         renderVaultSection();
         applyStoredValues();
+        if (isHumanOnlyBuild) {
+            lockHumanOnlyModeField();
+        }
         syncOnnxDeviceSelectionState();
 
         // Push all stored browser values (non-password) to the server.
