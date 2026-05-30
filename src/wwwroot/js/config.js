@@ -28,6 +28,10 @@ let browserValues  = {}; // persisted overrides { sectionKey: { fieldKey: value 
 let pendingChanges = {}; // unsaved UI edits { sectionKey: { fieldKey: value } }
 /** @type {OnnxRuntimeCapabilitiesResponse | null} */
 let onnxRuntimeCapabilities = null;
+/** @type {boolean} */
+let onnxCapabilitiesProbeAttempted = false;
+/** @type {boolean} */
+let onnxCapabilitiesRequestInFlight = false;
 
 /** @type {string | null} */
 let vaultPasswordHash  = null;  // SHA-256 hex provided by the browser this page visit
@@ -333,17 +337,10 @@ async function init() {
     browserValues = loadFromStorage();
 
     try {
-        const [schemaRes, onnxCapabilitiesRes] = await Promise.all([
-            fetch('/api/config/schema'),
-            fetch('/api/config/onnx/capabilities').catch(() => null),
-        ]);
+        const schemaRes = await fetch('/api/config/schema');
         if (!schemaRes.ok) throw new Error('Schema fetch failed');
         const { sections } = await schemaRes.json();
         serverDefaults = sections;
-        onnxRuntimeCapabilities = onnxCapabilitiesRes && onnxCapabilitiesRes.ok
-            ? await onnxCapabilitiesRes.json()
-            : null;
-        applyOnnxDynamicChoices(sections, onnxRuntimeCapabilities);
         renderSections(sections);
         renderVaultSection();
         applyStoredValues();
@@ -394,12 +391,14 @@ function applyOnnxDynamicChoices(sections, capabilities) {
 
     const providerField = onnxSection.fields.find(field => field.key === 'executionProvider');
     if (providerField) {
-        providerField.options = buildOnnxProviderOptions(capabilities, providerField.value);
+        const providerValue = findInput('onnx', 'executionProvider')?.value ?? providerField.value;
+        providerField.options = buildOnnxProviderOptions(capabilities, providerValue);
     }
 
     const deviceField = onnxSection.fields.find(field => field.key === 'deviceId');
     if (deviceField) {
-        deviceField.options = buildOnnxDeviceOptions(capabilities, deviceField.value);
+        const deviceValue = findInput('onnx', 'deviceId')?.value ?? deviceField.value;
+        deviceField.options = buildOnnxDeviceOptions(capabilities, deviceValue);
     }
 }
 
@@ -533,6 +532,93 @@ function syncOnnxDeviceSelectionState() {
 }
 
 /**
+ * @param {string} sectionKey
+ * @param {string} fieldKey
+ * @returns {void}
+ */
+function syncSelectOptions(sectionKey, fieldKey) {
+    const field = findFieldMeta(sectionKey, fieldKey);
+    const input = findInput(sectionKey, fieldKey);
+    if (!field || !(input instanceof HTMLSelectElement)) return;
+
+    const currentValue = input.value;
+    input.innerHTML = '';
+
+    if (field.nullable) {
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '— server default —';
+        input.appendChild(emptyOption);
+    }
+
+    for (const option of (field.options || [])) {
+        const el = document.createElement('option');
+        if (typeof option === 'string') {
+            el.value = option;
+            el.textContent = option;
+        } else {
+            el.value = option.value;
+            el.textContent = option.label;
+        }
+
+        input.appendChild(el);
+    }
+
+    input.value = currentValue;
+    if (input.value !== currentValue) {
+        setInputValue(input, field.value, field.type);
+    }
+}
+
+/** @returns {void} */
+function refreshOnnxCapabilitiesPanel() {
+    const panel = document.getElementById('onnx-capabilities-panel');
+    if (!(panel instanceof HTMLDivElement)) return;
+    renderOnnxCapabilitiesPanel(panel);
+}
+
+/** @returns {Promise<void>} */
+async function probeOnnxCapabilities() {
+    if (onnxCapabilitiesRequestInFlight) return;
+
+    onnxCapabilitiesProbeAttempted = true;
+    onnxCapabilitiesRequestInFlight = true;
+    refreshOnnxCapabilitiesPanel();
+
+    try {
+        const response = await fetch('/api/config/onnx/capabilities');
+        if (response.ok) {
+            onnxRuntimeCapabilities = await response.json();
+        } else {
+            onnxRuntimeCapabilities = {
+                ortVersion: null,
+                availableProviders: [],
+                hardwareDevices: [],
+                epDevices: [],
+                error: `Capability probe failed with HTTP ${response.status}.`,
+            };
+        }
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        onnxRuntimeCapabilities = {
+            ortVersion: null,
+            availableProviders: [],
+            hardwareDevices: [],
+            epDevices: [],
+            error: `Capability request failed: ${message}`,
+        };
+    } finally {
+        onnxCapabilitiesRequestInFlight = false;
+    }
+
+    applyOnnxDynamicChoices(serverDefaults, onnxRuntimeCapabilities);
+    syncSelectOptions('onnx', 'executionProvider');
+    syncSelectOptions('onnx', 'deviceId');
+    syncOnnxDeviceSelectionState();
+    refreshOnnxCapabilitiesPanel();
+}
+
+/**
  * @param {ConfigSection[]} sections
  * @returns {void}
  */
@@ -541,6 +627,10 @@ function renderSections(sections) {
     const colRight = document.getElementById('col-right');
     const colBottom = document.getElementById('col-bottom');
     if (!colLeft || !colRight || !colBottom) return;
+
+    if (onnxRuntimeCapabilities) {
+        applyOnnxDynamicChoices(sections, onnxRuntimeCapabilities);
+    }
 
     colLeft.innerHTML = '';
     colRight.innerHTML = '';
@@ -583,8 +673,8 @@ function renderSections(sections) {
 
         wrap.appendChild(grid);
 
-        if (section.key === 'onnx' && onnxRuntimeCapabilities) {
-            wrap.appendChild(buildOnnxCapabilitiesPanel(onnxRuntimeCapabilities));
+        if (section.key === 'onnx') {
+            wrap.appendChild(buildOnnxCapabilitiesPanel());
         }
         
         // Push to appropriate column
@@ -803,12 +893,23 @@ function buildFieldRow(sectionKey, field) {
 }
 
 /**
- * @param {OnnxRuntimeCapabilitiesResponse} capabilities
  * @returns {HTMLDivElement}
  */
-function buildOnnxCapabilitiesPanel(capabilities) {
+function buildOnnxCapabilitiesPanel() {
     const panel = document.createElement('div');
     panel.className = 'onnx-capabilities';
+    panel.id = 'onnx-capabilities-panel';
+
+    renderOnnxCapabilitiesPanel(panel);
+    return panel;
+}
+
+/**
+ * @param {HTMLDivElement} panel
+ * @returns {void}
+ */
+function renderOnnxCapabilitiesPanel(panel) {
+    panel.replaceChildren();
 
     const title = document.createElement('div');
     title.className = 'onnx-capabilities-title';
@@ -817,15 +918,28 @@ function buildOnnxCapabilitiesPanel(capabilities) {
 
     const intro = document.createElement('div');
     intro.className = 'onnx-capabilities-text';
-    intro.textContent = 'This is what the installed ONNX Runtime reports right now. Providers are inference backends, while provider/device pairs are a specific backend attached to a specific hardware device. If a provider is missing here, requesting it in the ONNX config will fail.';
+    intro.textContent = onnxRuntimeCapabilities
+        ? 'This is what the installed ONNX Runtime reports right now. Providers are inference backends, while provider/device pairs are a specific backend attached to a specific hardware device. If a provider is missing here, requesting it in the ONNX config will fail.'
+        : 'Capability detection is manual because some environments can terminate the process when ONNX Runtime initializes. The rest of the config page does not require this probe.';
     panel.appendChild(intro);
+
+    const capabilities = onnxRuntimeCapabilities;
+    if (!capabilities) {
+        const caution = document.createElement('div');
+        caution.className = 'onnx-capabilities-text';
+        caution.textContent = 'Run detection only on a machine where you expect ONNX Runtime to work. This is mainly for refining the provider and device dropdowns.';
+        panel.appendChild(caution);
+        panel.appendChild(buildOnnxCapabilitiesActions(onnxCapabilitiesProbeAttempted ? 'Retry detection' : 'Detect capabilities'));
+        return;
+    }
 
     if (capabilities.error) {
         const error = document.createElement('div');
         error.className = 'onnx-capabilities-text onnx-capabilities-error';
         error.textContent = capabilities.error;
         panel.appendChild(error);
-        return panel;
+        panel.appendChild(buildOnnxCapabilitiesActions('Retry detection'));
+        return;
     }
 
     appendOnnxCapabilitiesBlock(panel, 'Runtime version', capabilities.ortVersion || 'unknown');
@@ -849,7 +963,26 @@ function buildOnnxCapabilitiesPanel(capabilities) {
             hardwareDevices.map(describeOnnxHardwareDevice));
     }
 
-    return panel;
+    panel.appendChild(buildOnnxCapabilitiesActions('Refresh capabilities'));
+}
+
+/**
+ * @param {string} buttonLabel
+ * @returns {HTMLDivElement}
+ */
+function buildOnnxCapabilitiesActions(buttonLabel) {
+    const actions = document.createElement('div');
+    actions.className = 'onnx-capabilities-actions';
+
+    const button = document.createElement('button');
+    button.className = onnxRuntimeCapabilities ? 'btn' : 'btn btn-primary';
+    button.type = 'button';
+    button.disabled = onnxCapabilitiesRequestInFlight;
+    button.textContent = onnxCapabilitiesRequestInFlight ? 'Detecting…' : buttonLabel;
+    button.addEventListener('click', () => { void probeOnnxCapabilities(); });
+    actions.appendChild(button);
+
+    return actions;
 }
 
 /**
