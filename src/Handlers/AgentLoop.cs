@@ -517,9 +517,17 @@ public sealed partial class AgentLoop(
         }
         catch (OperationCanceledException)
         {
-            session.Status = AgentSessionStatus.Cancelled;
-            session.FinalResult = "Session was cancelled.";
-            LogSessionCancelled(logger, session.SessionId);
+            if (session.Status == AgentSessionStatus.Completed)
+            {
+                session.FinalResult = "Session ended.";
+                LogSessionEndedAfterCompletion(logger, session.SessionId);
+            }
+            else
+            {
+                session.Status = AgentSessionStatus.Cancelled;
+                session.FinalResult = "Session was cancelled.";
+                LogSessionCancelled(logger, session.SessionId);
+            }
         }
         catch (Exception ex)
         {
@@ -706,6 +714,9 @@ public sealed partial class AgentLoop(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Session {SessionId} was cancelled.")]
     private static partial void LogSessionCancelled(ILogger logger, string sessionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Session {SessionId} ended after completion.")]
+    private static partial void LogSessionEndedAfterCompletion(ILogger logger, string sessionId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Unexpected error in session {SessionId}.")]
     private static partial void LogUnexpectedError(ILogger logger, Exception ex, string sessionId);
