@@ -80,12 +80,25 @@
         <section class="agent-main-top">
             <div class="final-result" id="final-result"><span class="final-result-msg" id="final-result-msg"></span><span class="final-result-time" id="final-result-time"></span></div>
 
-            <div class="current-step" id="current-step">
-                <h2>Current Step</h2>
-                <div class="thought" id="current-thought">Waiting for agent to start...</div>
-                <div class="action" id="current-action" style="display:none;"></div>
-                <div class="result" id="current-result"></div>
+            <div class="session-activity idle" id="session-activity" hidden aria-live="polite">
+                <div class="session-activity-main">
+                    <div class="session-activity-indicator" aria-hidden="true">
+                        <span class="session-activity-spinner"></span>
+                    </div>
+                    <div class="session-activity-copy">
+                        <div class="session-activity-label" id="session-activity-label">Agent Activity</div>
+                        <div class="session-activity-text" id="session-activity-text"></div>
+                        <div class="session-activity-detail" id="session-activity-detail"></div>
+                    </div>
+                </div>
                 <div class="live-substeps" id="live-substeps"></div>
+            </div>
+
+            <div class="current-step" id="current-step">
+                <h2>Most Recent Step</h2>
+                <div class="thought" id="current-thought">No completed steps yet.</div>
+                <div class="action" id="current-action" style="display:none;"></div>
+                <div class="result" id="current-result">The latest finished instruction will appear here.</div>
             </div>
         </section>
 

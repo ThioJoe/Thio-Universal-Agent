@@ -263,6 +263,11 @@ header h1 {
     50% { opacity: 0.4; }
 }
 
+@keyframes activity-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 @media (max-width: 700px) {
     .mode-banner {
         align-items: flex-start;
@@ -460,6 +465,143 @@ main {
     flex-direction: column;
 }
 
+.session-activity {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px;
+    border: 1px solid #24303d;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #111820 0%, #0d1218 100%);
+}
+
+.session-activity[hidden] {
+    display: none;
+}
+
+.session-activity-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.session-activity-indicator {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.session-activity-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid #29425c;
+    border-top-color: #66adff;
+    animation: activity-spin 0.8s linear infinite;
+}
+
+.session-activity-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.session-activity-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #7f97af;
+}
+
+.session-activity-text {
+    color: #d6e6f7;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.session-activity-detail {
+    color: #8ea7c2;
+    font-size: 12px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    background: #0b1015;
+    border: 1px solid #1c2731;
+    border-radius: 5px;
+    padding: 5px 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.session-activity.waiting {
+    border-color: #27415c;
+    background: linear-gradient(180deg, #101923 0%, #0d1218 100%);
+}
+
+.session-activity.executing {
+    border-color: #28492e;
+    background: linear-gradient(180deg, #101b13 0%, #0d1210 100%);
+}
+
+.session-activity.executing .session-activity-spinner {
+    border-color: #35593a;
+    border-top-color: #7dde8f;
+}
+
+.session-activity.executing .session-activity-label {
+    color: #8ac99a;
+}
+
+.session-activity.paused {
+    border-color: #5a470e;
+    background: linear-gradient(180deg, #1b1707 0%, #141108 100%);
+}
+
+.session-activity.paused .session-activity-spinner {
+    border-color: #6c5714;
+    border-top-color: #f0c85a;
+    animation: none;
+}
+
+.session-activity.paused .session-activity-label {
+    color: #d8b25a;
+}
+
+.session-activity.guidance {
+    border-color: #2d5f34;
+    background: linear-gradient(180deg, #112015 0%, #0d1510 100%);
+}
+
+.session-activity.guidance .session-activity-spinner {
+    border-color: #376f3f;
+    border-top-color: #8ee09e;
+    animation: none;
+}
+
+.session-activity.guidance .session-activity-label {
+    color: #8fdd9f;
+}
+
+.session-activity.error {
+    border-color: #6a2525;
+    background: linear-gradient(180deg, #211010 0%, #180c0c 100%);
+}
+
+.session-activity.error .session-activity-spinner {
+    border-color: #7a3030;
+    border-top-color: #f07c7c;
+    animation: none;
+}
+
+.session-activity.error .session-activity-label {
+    color: #ea8f8f;
+}
+
 /* ---- Current Step Card ---- */
 .current-step {
     background: #1a1a1a;
@@ -504,16 +646,21 @@ main {
 
 /* ---- Live Sub-Steps ---- */
 .live-substeps {
-    margin-top: 12px;
+    margin-top: 0;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-height: 400px;
+    max-height: 240px;
     overflow-y: auto;
 }
 
 .live-substeps:empty {
     display: none;
+}
+
+.session-activity .live-substeps {
+    padding-top: 4px;
+    border-top: 1px solid rgba(126, 151, 175, 0.16);
 }
 
 .live-substep-header {

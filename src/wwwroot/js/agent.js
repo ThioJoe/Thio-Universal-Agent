@@ -44,6 +44,10 @@ const stopHotkeyChip  = /** @type {HTMLSpanElement} */    (document.getElementBy
 const finalResultEl   = /** @type {HTMLDivElement} */     (document.getElementById('final-result'));
 const finalResultMsg  = /** @type {HTMLSpanElement} */    (document.getElementById('final-result-msg'));
 const finalResultTime = /** @type {HTMLSpanElement} */    (document.getElementById('final-result-time'));
+const sessionActivity = /** @type {HTMLDivElement} */     (document.getElementById('session-activity'));
+const sessionActivityLabel = /** @type {HTMLDivElement} */ (document.getElementById('session-activity-label'));
+const sessionActivityText = /** @type {HTMLDivElement} */ (document.getElementById('session-activity-text'));
+const sessionActivityDetail = /** @type {HTMLDivElement} */ (document.getElementById('session-activity-detail'));
 const currentThought  = /** @type {HTMLDivElement} */     (document.getElementById('current-thought'));
 const currentAction   = /** @type {HTMLDivElement} */     (document.getElementById('current-action'));
 const currentResult   = /** @type {HTMLDivElement} */     (document.getElementById('current-result'));
@@ -100,6 +104,45 @@ function appendWithAutoScroll(container, entry) {
             }
         }, { once: true });
     });
+}
+
+/**
+ * @param {'waiting'|'executing'|'paused'|'guidance'|'error'} state
+ * @param {string} label
+ * @param {string} text
+ * @param {string} [detail]
+ * @returns {void}
+ */
+function setActivityState(state, label, text, detail = '') {
+    sessionActivity.hidden = false;
+    sessionActivity.className = `session-activity ${state}`;
+    sessionActivityLabel.textContent = label;
+    sessionActivityText.textContent = text;
+    sessionActivityDetail.textContent = detail;
+    sessionActivityDetail.style.display = detail ? 'block' : 'none';
+}
+
+/** @returns {void} */
+function clearActivityState() {
+    sessionActivity.hidden = true;
+    sessionActivity.className = 'session-activity idle';
+    sessionActivityLabel.textContent = 'Agent Activity';
+    sessionActivityText.textContent = '';
+    sessionActivityDetail.textContent = '';
+    sessionActivityDetail.style.display = 'none';
+    liveSubsteps.innerHTML = '';
+}
+
+/**
+ * @param {string} thought
+ * @param {string} result
+ * @returns {void}
+ */
+function setMostRecentStepPlaceholder(thought, result) {
+    currentThought.textContent = thought;
+    currentAction.style.display = 'none';
+    currentAction.textContent = '';
+    currentResult.textContent = result;
 }
 
 const SESSION_STORE_KEY = 'tua_session_id';
@@ -362,12 +405,15 @@ window.addEventListener('storage', (event) => {
                     elapsedTimer.textContent = formatElapsed(Date.now() - (sessionStartTime ?? 0));
                 }, 500);
 
+                setMostRecentStepPlaceholder('Loading recent steps...', 'Replaying session history...');
+
                 if (isAwaitingGuidance) {
                     setAwaitingGuidanceUi(status.finalResult || 'Goal completed.');
                 } else {
                     awaitingGuidance = false;
                     setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
                     setLiveControls(true);
+                    setActivityState('waiting', 'Session Active', 'Reconnected to the live session. Waiting for the next agent update...');
                 }
 
                 guidanceInput.value = '';
@@ -375,6 +421,7 @@ window.addEventListener('storage', (event) => {
                 if (isActive && isPausedStatus) {
                     setPauseButtonState(true);
                     setStatus('paused', debugEnabled ? 'Paused (Debug Mode)' : 'Paused');
+                    setActivityState('paused', 'Paused', 'Execution is paused. Resume when you want the agent to continue.');
                 }
             } else {
                 // Show the final result immediately from the status response so it
@@ -489,16 +536,14 @@ async function startAgent() {
     finalResultMsg.textContent = '';
     finalResultTime.textContent = '';
     finalResultEl.style.display = 'none';
-    currentThought.textContent = 'Starting...';
-    currentAction.style.display = 'none';
-    currentAction.textContent = '';
-    currentResult.textContent = '';
-    liveSubsteps.innerHTML = '';
+    setMostRecentStepPlaceholder('No completed steps yet.', 'The first finished instruction will appear here.');
+    clearActivityState();
     stepCounter.textContent = '';
     updateTokenCounter(0);
     sessionTotalCost = 0;
     updateCostCounter(0);
     setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
+    setActivityState('waiting', 'Starting Session', 'Capturing the screen and sending the first request to the AI...');
 
     btnStart.disabled = true;
     btnPause.disabled = false;
@@ -523,6 +568,7 @@ async function startAgent() {
 
         if (!res.ok) {
             const err = await res.json();
+            clearActivityState();
             showFinalResult('error', err.error || 'Failed to start agent.');
             resetControls();
             return;
@@ -534,6 +580,7 @@ async function startAgent() {
 
         connectStream(sessionId);
     } catch (err) {
+        clearActivityState();
         showFinalResult('error', 'Network error: ' + (err instanceof Error ? err.message : String(err)));
         resetControls();
     }
@@ -562,6 +609,7 @@ function connectStream(id) {
         eventSource = null;
         if (statusText.textContent?.startsWith('Running') || statusText.textContent?.startsWith('Paused') || awaitingGuidance) {
             setStatus('error', 'Connection lost');
+            setActivityState('error', 'Connection Lost', 'Live session updates were interrupted.');
             resetControls();
         }
     };
@@ -611,11 +659,8 @@ async function newSession() {
     finalResultEl.style.display = 'none';
     finalResultMsg.textContent = '';
     finalResultTime.textContent = '';
-    currentThought.textContent = 'Waiting for agent to start...';
-    currentAction.style.display = 'none';
-    currentAction.textContent = '';
-    currentResult.textContent = '';
-    liveSubsteps.innerHTML = '';
+    setMostRecentStepPlaceholder('No completed steps yet.', 'The latest finished instruction will appear here.');
+    clearActivityState();
     stepCounter.textContent = '';
     updateTokenCounter(0);
     sessionTotalCost = 0;
@@ -663,7 +708,7 @@ async function sendGuidance() {
                 setLiveControls(true);
                 setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
                 finalResultEl.style.display = 'none';
-                currentResult.textContent = 'Reassessing with new guidance...';
+                setActivityState('waiting', 'Guidance Sent', 'Sending your guidance to the AI and waiting for the next instruction...');
             }
             // The SSE guidanceQueued event will fire shortly and add the log entry + ack badge.
         } else {
@@ -707,12 +752,14 @@ function handleGuidanceQueued(msg, cancelNext) {
 function handlePaused() {
     setPauseButtonState(true);
     setStatus('paused', debugEnabled ? 'Paused (Debug Mode)' : 'Paused');
+    setActivityState('paused', 'Paused', 'Execution is paused. Resume when you want the agent to continue.');
 }
 
 /** @returns {void} */
 function handleResumed() {
     setPauseButtonState(false);
     setStatus('running', debugEnabled ? 'Running (Debug Mode)' : 'Running');
+    setActivityState('waiting', 'Resuming', 'Resume requested. Waiting for the next live update...');
     // Countdown will appear via countdown events; clear any leftover banner just in case.
     countdownBanner.style.display = 'none';
 }
@@ -725,6 +772,8 @@ function handleCountdown(msg) {
     if (msg.seconds > 0) {
         countdownNum.textContent = String(msg.seconds);
         countdownBanner.style.display = 'flex';
+        const secondLabel = msg.seconds === 1 ? 'second' : 'seconds';
+        setActivityState('waiting', 'Resume Countdown', `Resuming execution in ${msg.seconds} ${secondLabel}...`);
     } else {
         countdownBanner.style.display = 'none';
     }
@@ -741,13 +790,12 @@ function handleStepStarting(msg) {
     finalResultEl.style.display = 'none';
 
     stepCounter.textContent = `Step ${msg.stepNumber}`;
-
-    currentThought.textContent = msg.thought;
-    const queueBadge = (msg.queueSize > 1) ? ` <span class="queue-badge">QUEUE ×${msg.queueSize}</span>` : '';
-    currentAction.innerHTML = escapeHtml(msg.action) + queueBadge;
-    currentAction.style.display = 'inline-block';
-    currentResult.textContent = 'Executing…';
     liveSubsteps.innerHTML = '';
+
+    const activityText = msg.queueSize > 1
+        ? `AI responded with a queued batch for step ${msg.stepNumber}. Executing it now...`
+        : `AI responded with step ${msg.stepNumber}. Executing it now...`;
+    setActivityState('executing', 'Instruction Received', activityText, msg.action);
 }
 
 /**
@@ -875,11 +923,15 @@ function handleStep(msg) {
         }
 
         awaitingGuidance = false;
+        setActivityState('error', 'Failed', 'The agent stopped because the latest step failed.', msg.result);
         setStatus('failed', 'Failed');
         showFinalResult('failed', msg.result);
         stopElapsedTimer(null);
         cleanup();
+        return;
     }
+
+    setActivityState('waiting', 'Waiting For AI', `Step ${msg.stepNumber} finished. Sending the latest observation for the next instruction...`);
 }
 
 /**
@@ -942,6 +994,7 @@ function handleDone(msg) {
     const statusKey = msg.status.toLowerCase();
     if (msg.finalResult) sessionFinalResult = msg.finalResult;
     setStatus(statusKey, msg.status);
+    clearActivityState();
     if (msg.finalResult) showFinalResult(statusKey, msg.finalResult);
     stopElapsedTimer(msg.totalDurationMs);
     localStorage.removeItem(SESSION_STORE_KEY);
@@ -1066,6 +1119,7 @@ function cleanup() {
         eventSource = null;
     }
     countdownBanner.style.display = 'none';
+    clearActivityState();
     resetControls();
 }
 
@@ -1108,6 +1162,7 @@ function setAwaitingGuidanceUi(message) {
     isPaused = false;
     setLiveControls(false);
     setStatus('completed', 'Completed (awaiting guidance)');
+    setActivityState('guidance', 'Awaiting Guidance', 'Goal achieved. The agent is waiting for your next instruction.', 'Use the Guidance box above to continue from here.');
     if (message) showFinalResult('completed', message);
 }
 
