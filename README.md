@@ -12,7 +12,9 @@
 
 An AI desktop assistant app capable of interacting with your entire computer (and any apps) like you do.
 
-## What It Does (And Why "Universal"?)
+### ➤ Also, it's just one portable .exe file, no bloated install required.
+
+# What It Does (And Why "Universal"?)
 
 **Simply put, it lets your AI works across the whole computer.** Unlike most AI "computer use" tools which only work in a browser or via command line, this uses the computer like you do.
 
