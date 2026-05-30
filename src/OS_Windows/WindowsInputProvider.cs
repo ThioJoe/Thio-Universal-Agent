@@ -39,6 +39,8 @@ namespace Thio_Universal_Agent.OS_Windows
                 return; // HUMAN CONTROL ONLY GUARD
             }
 
+            await EnsureCursorOnTargetMonitorAsync();
+
             // Make all of them nullable in case there is no primary key, meaning only modifier keys are pressed
             ushort? vk = null;
             ushort? scan = null;
@@ -145,6 +147,8 @@ namespace Thio_Universal_Agent.OS_Windows
 
             if (string.IsNullOrEmpty(text)) return;
 
+            await EnsureCursorOnTargetMonitorAsync();
+
             // Convert the string into a list of TextCharCode objects.
             // TextCharCode logic determines if a character is a standard key (needing Shift/VK)
             // or if it should be treated as a Unicode packet.
@@ -170,6 +174,41 @@ namespace Thio_Universal_Agent.OS_Windows
             }
 
             await Task.CompletedTask;
+        }
+
+        private async Task EnsureCursorOnTargetMonitorAsync()
+        {
+            if (HumanControlOnlyMode) return; // HUMAN CONTROL ONLY GUARD
+
+            try
+            {
+                var monitors = _screenProvider.GetMonitors();
+                int? monitorIndex = _appConfig.Agent.MonitorIndex;
+
+                if (monitorIndex.HasValue && monitorIndex.Value >= 0 && monitorIndex.Value < monitors.Count)
+                {
+                    var m = monitors[monitorIndex.Value];
+                    (int currentX, int currentY) = GetCursorPosition();
+
+                    // Check if cursor is outside the target monitor bounds
+                    if (currentX < m.X || currentX >= m.X + m.Width ||
+                        currentY < m.Y || currentY >= m.Y + m.Height)
+                    {
+                        // Move to the center of the target monitor
+                        int targetX = m.X + (m.Width / 2);
+                        int targetY = m.Y + (m.Height / 2);
+
+                        SendMouseMove(targetX, targetY, suppressMarker: true);
+
+                        // Brief pause to allow Windows to update the active Taskbar context
+                        await Task.Delay(50);
+                    }
+                }
+            }
+            catch
+            {
+                // Fail silently to avoid breaking input if monitor data is temporarily inaccessible
+            }
         }
 
         // Mouse Events
