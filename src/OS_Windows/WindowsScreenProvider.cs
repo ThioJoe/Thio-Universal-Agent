@@ -1411,9 +1411,13 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                 else if (result != uint.MaxValue
                       && raw.header.dwType == NativeMethods.RIM_TYPEKEYBOARD
                       && (raw.data.keyboard.Message == NativeMethods.WM_KEYDOWN
-                       || raw.data.keyboard.Message == NativeMethods.WM_SYSKEYDOWN))
+                       || raw.data.keyboard.Message == NativeMethods.WM_SYSKEYDOWN
+                       || raw.data.keyboard.Message == NativeMethods.WM_KEYUP
+                       || raw.data.keyboard.Message == NativeMethods.WM_SYSKEYUP))
                 {
-                    CheckKeyCombo(raw.data.keyboard.VKey);
+                    bool isKeyDown = raw.data.keyboard.Message == NativeMethods.WM_KEYDOWN
+                                  || raw.data.keyboard.Message == NativeMethods.WM_SYSKEYDOWN;
+                    CheckKeyCombo(raw.data.keyboard.VKey, isKeyDown);
                 }
 
                 return IntPtr.Zero;
@@ -1446,7 +1450,7 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
             }
         }
 
-        private void CheckKeyCombo(ushort changedVirtualKey)
+        private void CheckKeyCombo(ushort changedVirtualKey, bool isKeyDown)
         {
             foreach (var (id, (virtualKey, modifiers, callback)) in _keyCombos)
             {
@@ -1455,12 +1459,12 @@ public class WindowsScreenProvider(AppConfig appConfig) : IScreenProvider
                     if (changedVirtualKey != virtualKey.Value)
                         continue;
 
-                    if (!IsVirtualKeyDown(virtualKey.Value) || !AreModifiersPressed(modifiers))
+                    if (!AreModifiersPressed(modifiers))
                         continue;
                 }
                 else
                 {
-                    if (!IsExpectedModifierKey(changedVirtualKey, modifiers) || !AreModifiersPressed(modifiers))
+                    if (!isKeyDown || !IsExpectedModifierKey(changedVirtualKey, modifiers) || !AreModifiersPressed(modifiers))
                         continue;
                 }
 
@@ -1798,7 +1802,9 @@ internal static class NativeMethods
 
     public const uint WM_INPUT = 0x00FF;
     public const uint WM_KEYDOWN = 0x0100;
+    public const uint WM_KEYUP = 0x0101;
     public const uint WM_SYSKEYDOWN = 0x0104;
+    public const uint WM_SYSKEYUP = 0x0105;
     public const uint RIM_TYPEMOUSE = 0;
     public const uint RIM_TYPEKEYBOARD = 1;
     public const uint RIDEV_INPUTSINK = 0x00000100;
