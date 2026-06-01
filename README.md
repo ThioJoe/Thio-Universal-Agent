@@ -12,7 +12,7 @@
 
 ### An AI desktop assistant app capable of interacting with your entire computer (and any apps) like you do.
 
-### ➤ Also, it's just one portable .exe file, no bloated install required.
+### &emsp;&emsp;➤ It's also just one portable .exe file, no bloated install required.
 
 # What It Does (And Why "Universal"?)
 
@@ -20,13 +20,13 @@
 
 It controls Windows purely through visual perception and GUI interaction. By interpreting raw pixels and sending hardware-level input (mouse movements, clicks, keystrokes), it operates exactly like a human would. This makes it **universally compatible** with any graphical application on your machine.
 
+#### Also See: Guides and planned features on [The Wiki](https://github.com/ThioJoe/Thio-Universal-Agent/wiki)
+
 ## Optional: Human Control Only Mode
 
 It now supports two ways to use it: a **Human Control Only Mode** that is enabled by default, where the AI guides you step-by-step and shows where to click without sending any real input itself, and an **autonomous mode** where it can move the mouse and type on its own.
 
 There is also a **dedicated Human-Only exe version**, in cases where you never even want the _option_ to operate in autonomous mode. In this version, the input code is physically excluded from the exe. (The other main exe can still do both)
-
-Also See: [Planned Features Page](https://github.com/ThioJoe/Thio-Universal-Agent/wiki/Planned-Features)
 
 ## Demonstration
 
