@@ -1,0 +1,2 @@
+For this test, click on the squares that are the exact same color as the target color. Use maximum multistep queue. An X means incorrect. It turns to a white square if correct.
+Click on the numbered circles in numerical order. Use maximum multistep queue.

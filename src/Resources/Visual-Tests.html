@@ -248,13 +248,13 @@
             transform: scale(0.95);
         }
 
-        .red-x {
+        .incorrect-x {
             position: absolute;
             top: 0; left: 0; right: 0; bottom: 0;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--error);
+            color: var(--bg-color);
             font-weight: bold;
             pointer-events: none;
             line-height: 1;
@@ -273,10 +273,47 @@
 
         #target-color-box {
             width: 100%;
-            height: 60px;
+            height: 120px;
             border-radius: 6px;
             border: 2px solid var(--border);
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        /* Color Blindness Test Styles - Hide settings from AI vision unless hovered */
+        #cb-settings-container {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            background: var(--bg-color);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        #cb-settings-container:hover {
+            opacity: 1;
+        }
+
+        .cb-setting-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .cb-setting-item label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .cb-setting-item select, .cb-setting-item input[type="range"] {
+            width: 100%;
+            padding: 6px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            border-radius: 4px;
         }
 
     </style>
@@ -289,6 +326,35 @@
         <div id="color-target-container">
             <div class="section-title">Target Color</div>
             <div id="target-color-box"></div>
+        </div>
+
+        <div id="cb-settings-container">
+            <div class="section-title">Color Blindness Settings</div>
+            <div class="cb-setting-item">
+                <label for="cb-type-select">Deficiency Type</label>
+                <select id="cb-type-select">
+                    <option value="protanopia">Protanopia (Red-Blind)</option>
+                    <option value="deuteranopia">Deuteranopia (Green-Blind)</option>
+                    <option value="tritanopia">Tritanopia (Blue-Blind)</option>
+                    <option value="monochromacy">Monochromacy</option>
+                </select>
+            </div>
+            <div class="cb-setting-item">
+                <label for="cb-strength-input">Strength: <span id="cb-strength-val">50</span>%</label>
+                <input type="range" id="cb-strength-input" min="0" max="100" value="50">
+            </div>
+            <div class="cb-setting-item">
+                <label for="cb-min-dot-input">Min Dot Size: <span id="cb-min-dot-val">36</span>% of max (<span id="cb-min-dot-px">4</span>px)</label>
+                <input type="range" id="cb-min-dot-input" min="0" max="100" value="36">
+            </div>
+            <div class="cb-setting-item">
+                <label for="cb-max-dot-input">Max Dot Size: <span id="cb-max-dot-val">11</span>px</label>
+                <input type="range" id="cb-max-dot-input" min="5" max="30" value="11">
+            </div>
+            <div class="cb-setting-item">
+                <label for="cb-density-input">Dot Density: <span id="cb-density-val">3000</span></label>
+                <input type="range" id="cb-density-input" min="500" max="100000" step="100" value="3000">
+            </div>
         </div>
 
         <div>
@@ -353,11 +419,12 @@
         <div class="tabs">
             <div class="tab active" data-tab="sequential">Sequential Numbers Test</div>
             <div class="tab" data-tab="colorGrid">Color Grid Test</div>
+            <div class="tab" data-tab="colorBlindness">Color Blindness Test</div>
         </div>
         
         <div id="test-canvas">
             <div id="error-flash" class="flash-error"></div>
-            <!-- Circles injected here by JS -->
+            <!-- Circles / Grid / Canvas injected here by JS -->
         </div>
     </div>
 
@@ -394,9 +461,16 @@
             maxPlacementAttempts: 500,// Max loops to find non-overlapping coordinates
             minFontSize: 14,          // Minimum font size; if smaller, text goes outside the circle
 			// Square Grid Test
-            gridSquareSize: 60,       // Size of squares in Color Grid Test
-            gridTargetCount: 15,      // Number of correct color squares to spawn
-            minColorDifference: 50    // Minimum color difference (scale 0-50) between target and grid bg squares. Above 50 will start becoming more similar again, and 100 is basically the same as zero.
+            gridSquareSize: 120,       // Size of squares in Color Grid Test
+            gridTargetCount: 20,      // Number of correct color squares to spawn
+            minColorDifference: 50,   // Minimum color difference (scale 0-50) between target and grid bg squares. Above 50 will start becoming more similar again, and 100 is basically the same as zero.
+            // Color Blindness Test
+            cbType: 'protanopia',     // Type of deficiency: protanopia, deuteranopia, tritanopia, monochromacy
+            cbStrength: 50,          // Strength of perception difficulty (0 - 100%)
+            cbMinDotPercent: 36,      // Minimum dot radius, as a % of cbMaxDotRadius (100% = same size as max)
+            cbMinDotRadius: 4,        // Minimum dot radius in Ishihara plate (derived from cbMinDotPercent * cbMaxDotRadius)
+            cbMaxDotRadius: 11,       // Maximum dot radius in Ishihara plate
+            cbDotDensity: 3000        // Maximum dot placement attempts (plate fill density)
         };
 
         /**
@@ -424,7 +498,7 @@
                 this.settings = { ...DEFAULT_SETTINGS };
                 
                 /** @type {string} Current active test type */
-                this.currentTestType = 'sequential'; // 'sequential' | 'colorGrid'
+                this.currentTestType = 'sequential'; // 'sequential' | 'colorGrid' | 'colorBlindness'
                 
                 /** @type {Target[]} Array of current targets */
                 this.targets = [];
@@ -447,6 +521,16 @@
                 this.remainingTargets = 0;
                 /** @type {number} Total targets spawned */
                 this.totalGridTargets = 0;
+
+                // Color Blindness Test State
+                /** @type {number|null} Hidden 2-digit number in Ishihara plate */
+                this.cbNumber = null;
+                /** @type {number} Remaining targets to click */
+                this.cbRemaining = 0;
+                /** @type {number} Total targets needed for completion */
+                this.cbTotalTargets = 0;
+                /** @type {ImageData|null} Pixel mask of drawn number */
+                this.cbNumberMask = null;
                 
                 /** @type {number} Number of wrong clicks in current run */
                 this.currentErrors = 0;
@@ -480,10 +564,22 @@
                     btnRestartSame: document.getElementById('btn-restart-same'),
                     tabs: document.querySelectorAll('.tab'),
                     colorTargetContainer: document.getElementById('color-target-container'),
-                    targetColorBox: document.getElementById('target-color-box')
+                    targetColorBox: document.getElementById('target-color-box'),
+                    cbSettingsContainer: document.getElementById('cb-settings-container'),
+                    cbTypeSelect: document.getElementById('cb-type-select'),
+                    cbStrengthInput: document.getElementById('cb-strength-input'),
+                    cbStrengthVal: document.getElementById('cb-strength-val'),
+                    cbMinDotInput: document.getElementById('cb-min-dot-input'),
+                    cbMinDotVal: document.getElementById('cb-min-dot-val'),
+                    cbMinDotPx: document.getElementById('cb-min-dot-px'),
+                    cbMaxDotInput: document.getElementById('cb-max-dot-input'),
+                    cbMaxDotVal: document.getElementById('cb-max-dot-val'),
+                    cbDensityInput: document.getElementById('cb-density-input'),
+                    cbDensityVal: document.getElementById('cb-density-val')
                 };
 
                 this.initEventListeners();
+                this.updateMinDotRadius();
             }
 
             /**
@@ -506,6 +602,45 @@
                         this.updateUI();
                     });
                 });
+
+                // Color Blindness Settings Controls
+                this.dom.cbTypeSelect.addEventListener('change', (e) => {
+                    this.settings.cbType = e.target.value;
+                    if (this.currentTestType === 'colorBlindness' && this.isRunning) {
+                        this.renderColorBlindnessTest();
+                    }
+                });
+
+                const rerenderColorBlindnessOnRelease = () => {
+                    if (this.currentTestType === 'colorBlindness' && this.isRunning) {
+                        this.renderColorBlindnessTest();
+                    }
+                };
+
+                this.dom.cbStrengthInput.addEventListener('input', (e) => {
+                    this.settings.cbStrength = parseInt(e.target.value, 10);
+                    this.dom.cbStrengthVal.textContent = e.target.value;
+                });
+                this.dom.cbStrengthInput.addEventListener('change', rerenderColorBlindnessOnRelease);
+
+                this.dom.cbMinDotInput.addEventListener('input', (e) => {
+                    this.settings.cbMinDotPercent = parseInt(e.target.value, 10);
+                    this.updateMinDotRadius();
+                });
+                this.dom.cbMinDotInput.addEventListener('change', rerenderColorBlindnessOnRelease);
+
+                this.dom.cbMaxDotInput.addEventListener('input', (e) => {
+                    this.settings.cbMaxDotRadius = parseInt(e.target.value, 10);
+                    this.dom.cbMaxDotVal.textContent = this.settings.cbMaxDotRadius;
+                    this.updateMinDotRadius();
+                });
+                this.dom.cbMaxDotInput.addEventListener('change', rerenderColorBlindnessOnRelease);
+
+                this.dom.cbDensityInput.addEventListener('input', (e) => {
+                    this.settings.cbDotDensity = parseInt(e.target.value, 10);
+                    this.dom.cbDensityVal.textContent = e.target.value;
+                });
+                this.dom.cbDensityInput.addEventListener('change', rerenderColorBlindnessOnRelease);
 
                 // Canvas Click Handling
                 this.dom.canvas.addEventListener('mousedown', (e) => this.handleCanvasClick(e));
@@ -540,6 +675,19 @@
                         e.target.value = '';
                     }
                 });
+            }
+
+            /**
+             * Recalculates the min dot radius (in px) from cbMinDotPercent as a
+             * percentage of cbMaxDotRadius, and refreshes the related labels.
+             * At 100% the min dot size will equal the max dot size.
+             */
+            updateMinDotRadius() {
+                const percent = this.settings.cbMinDotPercent;
+                const px = Math.round(this.settings.cbMaxDotRadius * (percent / 100));
+                this.settings.cbMinDotRadius = px;
+                this.dom.cbMinDotVal.textContent = percent;
+                this.dom.cbMinDotPx.textContent = px;
             }
 
             /**
@@ -622,6 +770,11 @@
                     } else {
                         this.renderStoredColorGrid();
                     }
+                } else if (this.currentTestType === 'colorBlindness') {
+                    // Color blindness test requires exactly 1 correct click on the hidden number
+                    this.cbTotalTargets = 1; 
+                    this.cbRemaining = 1;
+                    this.renderColorBlindnessTest(isNew);
                 }
                 
                 // Timer will start on first click in the test area
@@ -643,9 +796,12 @@
                 if (this.currentTestType === 'sequential') {
                     totalClicks = this.settings.targetCount + this.currentErrors;
                     correctClicks = this.settings.targetCount;
-                } else {
+                } else if (this.currentTestType === 'colorGrid') {
                     totalClicks = this.totalGridTargets + this.currentErrors;
                     correctClicks = this.totalGridTargets;
+                } else if (this.currentTestType === 'colorBlindness') {
+                    totalClicks = this.cbTotalTargets + this.currentErrors;
+                    correctClicks = this.cbTotalTargets;
                 }
                 
                 const accuracy = totalClicks > 0 ? (correctClicks / totalClicks) * 100 : 0;
@@ -674,18 +830,133 @@
                 this.expectedTarget = 1;
                 this.suppressClicksUntil = 0;
                 this.remainingTargets = 0;
+                this.cbRemaining = 0;
                 this.currentErrors = 0;
                 this.isRunning = false;
                 
                 if (this.currentTestType === 'colorGrid') {
                     this.dom.colorTargetContainer.style.display = 'flex';
+                    this.dom.cbSettingsContainer.style.display = 'none';
+                } else if (this.currentTestType === 'colorBlindness') {
+                    this.dom.colorTargetContainer.style.display = 'none';
+                    this.dom.cbSettingsContainer.style.display = 'flex';
                 } else {
                     this.dom.colorTargetContainer.style.display = 'none';
+                    this.dom.cbSettingsContainer.style.display = 'none';
                 }
                 
                 // Remove all current targets from DOM
-                const existingTargets = this.dom.canvas.querySelectorAll('.target-circle, .grid-square');
+                const existingTargets = this.dom.canvas.querySelectorAll('.target-circle, .grid-square, #cb-canvas');
                 existingTargets.forEach(el => el.remove());
+            }
+
+            /**
+             * Renders an Ishihara-style plate on an HTML canvas for the Color Blindness Test.
+             * @param {boolean} forceNewNumber - Whether to generate a new hidden number or reuse the existing one.
+             */
+            renderColorBlindnessTest(forceNewNumber = false) {
+                const existingCanvas = document.getElementById('cb-canvas');
+                if (existingCanvas) existingCanvas.remove();
+
+                const width = this.dom.canvas.clientWidth;
+                const height = this.dom.canvas.clientHeight;
+
+                const cbCanvas = document.createElement('canvas');
+                cbCanvas.id = 'cb-canvas';
+                cbCanvas.width = width;
+                cbCanvas.height = height;
+                cbCanvas.style.position = 'absolute';
+                cbCanvas.style.top = '0';
+                cbCanvas.style.left = '0';
+
+                this.dom.canvas.appendChild(cbCanvas);
+                const ctx = cbCanvas.getContext('2d');
+
+                // Generate random 2-digit target number if needed
+                if (forceNewNumber || this.cbNumber === null) {
+                    this.cbNumber = Math.floor(Math.random() * 90) + 10;
+                }
+
+                // Create offscreen mask canvas to draw number
+                const offCanvas = document.createElement('canvas');
+                offCanvas.width = width;
+                offCanvas.height = height;
+                const offCtx = offCanvas.getContext('2d');
+
+                const plateRadius = Math.min(width, height) * 0.4;
+                const fontSize = plateRadius * 1.2;
+
+                offCtx.fillStyle = '#000000';
+                offCtx.font = `900 ${fontSize}px sans-serif`;
+                offCtx.textAlign = 'center';
+                offCtx.textBaseline = 'middle';
+                offCtx.fillText(this.cbNumber.toString(), width / 2, height / 2);
+
+                this.cbNumberMask = offCtx.getImageData(0, 0, width, height);
+
+                // Render dot matrix plate
+                const centerX = width / 2;
+                const centerY = height / 2;
+                const strengthRatio = this.settings.cbStrength / 100;
+
+                const dots = [];
+                const attempts = this.settings.cbDotDensity;
+                const minR = this.settings.cbMinDotRadius;
+                const maxR = this.settings.cbMaxDotRadius;
+
+                for (let i = 0; i < attempts; i++) {
+                    const r = minR + Math.random() * (maxR - minR);
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = Math.random() * (plateRadius - r);
+                    const x = centerX + Math.cos(angle) * dist;
+                    const y = centerY + Math.sin(angle) * dist;
+
+                    let overlap = false;
+                    for (const dot of dots) {
+                        if (Math.hypot(dot.x - x, dot.y - y) < (dot.r + r + 1)) {
+                            overlap = true;
+                            break;
+                        }
+                    }
+
+                    if (!overlap) {
+                        const maskIdx = (Math.floor(y) * width + Math.floor(x)) * 4 + 3;
+                        const isNumberPixel = this.cbNumberMask.data[maskIdx] > 128;
+
+                        let color;
+                        const type = this.settings.cbType;
+
+                        if (type === 'monochromacy') {
+                            const bgLightness = 50 + (Math.random() * 20 - 10);
+                            const numLightness = 50 + (1 - strengthRatio) * 35 + (Math.random() * 10 - 5);
+                            color = `hsl(0, 0%, ${isNumberPixel ? numLightness : bgLightness}%)`;
+                        } else {
+                            let bgHue, numHue;
+                            if (type === 'protanopia') {
+                                bgHue = 120;
+                                numHue = 120 - (1 - strengthRatio) * 80;
+                            } else if (type === 'deuteranopia') {
+                                bgHue = 140;
+                                numHue = 140 - (1 - strengthRatio) * 85;
+                            } else { // tritanopia
+                                bgHue = 210;
+                                numHue = 210 - (1 - strengthRatio) * 110;
+                            }
+
+                            const chosenHue = (isNumberPixel ? numHue : bgHue) + (Math.random() * 20 - 10);
+                            const chosenSat = 60 + (Math.random() * 20 - 10);
+                            const chosenLight = 50 + (Math.random() * 20 - 10);
+                            color = `hsl(${chosenHue}, ${chosenSat}%, ${chosenLight}%)`;
+                        }
+
+                        dots.push({ x, y, r, color });
+                        
+                        ctx.beginPath();
+                        ctx.arc(x, y, r, 0, Math.PI * 2);
+                        ctx.fillStyle = color;
+                        ctx.fill();
+                    }
+                }
             }
 
             /**
@@ -921,7 +1192,7 @@
                             squareEl.style.pointerEvents = 'none'; // Prevent further clicks
                             
                             // Remove any wrong X markers if the agent corrected its target (though usually shouldn't happen)
-                            const previousX = squareEl.querySelector('.red-x');
+                            const previousX = squareEl.querySelector('.incorrect-x');
                             if (previousX) previousX.remove();
 
                             this.remainingTargets--;
@@ -938,6 +1209,24 @@
                         // Clicked outside any square
                         this.registerError();
                     }
+                } else if (this.currentTestType === 'colorBlindness') {
+                    const rect = this.dom.canvas.getBoundingClientRect();
+                    const clickX = Math.floor(e.clientX - rect.left);
+                    const clickY = Math.floor(e.clientY - rect.top);
+
+                    if (this.cbNumberMask) {
+                        const idx = (clickY * Math.floor(rect.width) + clickX) * 4 + 3;
+                        if (this.cbNumberMask.data[idx] > 128) {
+                            // Click landed inside the target number pixel mask
+                            this.cbRemaining--;
+                            if (this.cbRemaining <= 0) {
+                                this.endTest();
+                            }
+                        } else {
+                            // Click landed on background dots
+                            this.registerError();
+                        }
+                    }
                 }
                 
                 this.updateUI();
@@ -948,10 +1237,10 @@
              * @param {HTMLElement} squareEl - The element representing the clicked grid square.
              */
             drawRedX(squareEl) {
-                if (squareEl.querySelector('.red-x')) return; // Already marked with X
+                if (squareEl.querySelector('.incorrect-x')) return; // Already marked with X
                 
                 const xEl = document.createElement('div');
-                xEl.className = 'red-x';
+                xEl.className = 'incorrect-x';
                 
                 // Scale X size proportionally with the grid size settings
                 const size = parseFloat(squareEl.style.width) || 40;
@@ -981,9 +1270,12 @@
                 if (this.currentTestType === 'sequential') {
                     const current = Math.min(this.expectedTarget, this.settings.targetCount);
                     this.dom.statTarget.textContent = this.isRunning ? `${current} / ${this.settings.targetCount}` : "- / -";
-                } else {
+                } else if (this.currentTestType === 'colorGrid') {
                     const found = this.totalGridTargets - this.remainingTargets;
                     this.dom.statTarget.textContent = this.isRunning ? `${found} / ${this.totalGridTargets}` : "- / -";
+                } else if (this.currentTestType === 'colorBlindness') {
+                    const found = this.cbTotalTargets - this.cbRemaining;
+                    this.dom.statTarget.textContent = this.isRunning ? `${found} / ${this.cbTotalTargets}` : "- / -";
                 }
                 
                 this.dom.statErrors.textContent = this.currentErrors;
@@ -995,8 +1287,10 @@
                     let totalAttempts = 0;
                     if (this.currentTestType === 'sequential') {
                         totalAttempts = (this.expectedTarget - 1) + this.currentErrors;
-                    } else {
+                    } else if (this.currentTestType === 'colorGrid') {
                         totalAttempts = (this.totalGridTargets - this.remainingTargets) + this.currentErrors;
+                    } else if (this.currentTestType === 'colorBlindness') {
+                        totalAttempts = (this.cbTotalTargets - this.cbRemaining) + this.currentErrors;
                     }
                     
                     const correctAttempts = totalAttempts - this.currentErrors;
@@ -1102,7 +1396,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             app = new ClickTestApp();
         });
-
     </script>
 </body>
 </html>
