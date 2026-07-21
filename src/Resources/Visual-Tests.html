@@ -115,13 +115,16 @@
             background-color: var(--border);
         }
 
-        /* Hide the main start/restart button from AI Agent vision unless hovered */
-        #btn-start {
+        /* Hide the main buttons from AI Agent vision unless hovered */
+        .test-btn-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
             opacity: 0;
-            transition: opacity 0.2s, background-color 0.2s;
+            transition: opacity 0.2s;
         }
 
-        #btn-start:hover {
+        .test-btn-container:hover {
             opacity: 1;
         }
 
@@ -201,6 +204,11 @@
                 -1px  1px 0 #fff,
                  1px  1px 0 #fff;
             transform: translate(-50%, -50%); /* Centers the coordinate precisely */
+        }
+
+        .target-circle span {
+            /* Numbers shouldn't block clicks on the circle itself or other circles beneath them */
+            pointer-events: none;
         }
 
         /* Feedback overlays */
@@ -305,7 +313,10 @@
             </div>
         </div>
 
-        <button id="btn-start" onclick="app.startTest()">Start Test Run</button>
+        <div class="test-btn-container">
+            <button id="btn-start-new" onclick="app.startTest(true)">Start New Test</button>
+            <button id="btn-restart-same" class="secondary" onclick="app.startTest(false)" disabled title="Only available after at least one test has started">Restart Same Test</button>
+        </div>
 
         <div style="flex-grow: 1;">
             <div class="section-title">Score History</div>
@@ -359,20 +370,33 @@
         const CORS_PROXY = "https://localhost:5001/?url=";
 
         /**
+         * After a mistaken click in the Sequential Numbers test, an AI agent may have
+         * already queued up several more clicks based on its (now stale) plan. Those
+         * queued clicks are guaranteed to also be errors, so any click arriving within
+         * this many milliseconds of the previous click is ignored rather than counted.
+         * Each ignored/erroring click resets the window, so a burst of rapid clicks is
+         * only re-evaluated once things settle down for this long.
+         * @constant {number}
+         */
+        const RAPID_CLICK_IGNORE_MS = 350;
+
+        /**
          * Centralized default settings for the tool.
          * Modifying these values changes the core behavior of the test.
          * @constant {Object}
          */
         const DEFAULT_SETTINGS = {
-            targetCount: 20,          // Number of circles to generate
+			// Numbered Circle Test
+            targetCount: 50,          // Number of circles to generate
             minRadius: 5,             // Minimum circle size in pixels
             maxRadius: 20,            // Maximum circle size in pixels
             preventOverlap: true,     // Attempt to prevent circles from overlapping
             maxPlacementAttempts: 500,// Max loops to find non-overlapping coordinates
             minFontSize: 14,          // Minimum font size; if smaller, text goes outside the circle
+			// Square Grid Test
             gridSquareSize: 60,       // Size of squares in Color Grid Test
             gridTargetCount: 15,      // Number of correct color squares to spawn
-            minColorDifference: 50    // Minimum color difference (scale 0-100) between target and grid bg squares
+            minColorDifference: 50    // Minimum color difference (scale 0-50) between target and grid bg squares. Above 50 will start becoming more similar again, and 100 is basically the same as zero.
         };
 
         /**
@@ -411,6 +435,8 @@
                 // Sequential Test State
                 /** @type {number} The current number the AI must click */
                 this.expectedTarget = 1;
+                /** @type {number} Timestamp (performance.now()) until which clicks are ignored following an error */
+                this.suppressClicksUntil = 0;
                 
                 // Color Grid Test State
                 /** @type {Object|null} Target HSL color object */
@@ -434,6 +460,11 @@
                 /** @type {boolean} Is the test currently active? */
                 this.isRunning = false;
 
+                /** @type {Target[]|null} Cache for Restart Same Test (Sequential) */
+                this.lastSequentialTargets = null;
+                /** @type {Object|null} Cache for Restart Same Test (Color) */
+                this.lastColorGridData = null;
+
                 // DOM Elements
                 this.dom = {
                     canvas: document.getElementById('test-canvas'),
@@ -445,7 +476,8 @@
                     historyTable: document.getElementById('history-table').querySelector('tbody'),
                     importZone: document.getElementById('import-zone'),
                     fileInput: document.getElementById('file-input'),
-                    btnStart: document.getElementById('btn-start'),
+                    btnStartNew: document.getElementById('btn-start-new'),
+                    btnRestartSame: document.getElementById('btn-restart-same'),
                     tabs: document.querySelectorAll('.tab'),
                     colorTargetContainer: document.getElementById('color-target-container'),
                     targetColorBox: document.getElementById('target-color-box')
@@ -466,7 +498,10 @@
                         this.dom.tabs.forEach(t => t.classList.remove('active'));
                         e.target.classList.add('active');
                         this.currentTestType = e.target.dataset.tab;
-                        this.dom.btnStart.textContent = "Start Test Run";
+                        this.dom.btnStartNew.textContent = "Start Test Run";
+                        this.dom.btnRestartSame.disabled = true;
+                        this.lastSequentialTargets = null;
+                        this.lastColorGridData = null;
                         this.resetState();
                         this.updateUI();
                     });
@@ -556,24 +591,41 @@
 
             /**
              * Starts a new test run. Generates targets and starts the timer.
+             * @param {boolean} isNew - If true, generates new random placements.
              */
-            startTest() {
+            startTest(isNew = true) {
+                if (isNew) {
+                    this.history = [];
+                    this.updateHistoryTable();
+                }
+
                 this.resetState();
                 this.isRunning = true;
-                this.dom.btnStart.textContent = "Restart Test";
+                this.dom.btnStartNew.textContent = "Start New Test";
+                this.dom.btnRestartSame.disabled = false;
                 
                 const width = this.dom.canvas.clientWidth;
                 const height = this.dom.canvas.clientHeight;
 
                 if (this.currentTestType === 'sequential') {
-                    this.targets = this.generateTargets(this.settings.targetCount, width, height);
+                    if (isNew || !this.lastSequentialTargets) {
+                        this.targets = this.generateTargets(this.settings.targetCount, width, height);
+                        this.lastSequentialTargets = JSON.parse(JSON.stringify(this.targets));
+                    } else {
+                        // Restore from same-test cache (strip any old element references if they exist)
+                        this.targets = this.lastSequentialTargets.map(t => ({...t, element: null}));
+                    }
                     this.renderTargets();
                 } else if (this.currentTestType === 'colorGrid') {
-                    this.generateAndRenderColorGrid(width, height);
+                    if (isNew || !this.lastColorGridData) {
+                        this.generateAndRenderColorGrid(width, height);
+                    } else {
+                        this.renderStoredColorGrid();
+                    }
                 }
                 
-                this.startTime = performance.now();
-                this.timerInterval = setInterval(() => this.updateUI(), 100);
+                // Timer will start on first click in the test area
+                this.startTime = 0;
                 this.updateUI();
             }
 
@@ -584,7 +636,7 @@
                 this.isRunning = false;
                 clearInterval(this.timerInterval);
                 
-                const timeTaken = (performance.now() - this.startTime) / 1000;
+                const timeTaken = this.startTime === 0 ? 0 : (performance.now() - this.startTime) / 1000;
                 let totalClicks = 0;
                 let correctClicks = 0;
 
@@ -610,7 +662,7 @@
                 this.updateHistoryTable();
                 this.updateUI();
                 
-                this.dom.btnStart.textContent = "Start Next Run";
+                this.dom.btnStartNew.textContent = "Start Next Run";
             }
 
             /**
@@ -618,7 +670,9 @@
              */
             resetState() {
                 clearInterval(this.timerInterval);
+                this.startTime = 0;
                 this.expectedTarget = 1;
+                this.suppressClicksUntil = 0;
                 this.remainingTargets = 0;
                 this.currentErrors = 0;
                 this.isRunning = false;
@@ -643,6 +697,8 @@
              */
             generateTargets(count, areaWidth, areaHeight) {
                 const targets = [];
+                // Padding to ensure targets and their labels stay within the canvas
+                const padding = { top: 20, right: 60, bottom: 20, left: 20 };
                 
                 for (let i = 1; i <= count; i++) {
                     let placed = false;
@@ -651,9 +707,9 @@
                     while (!placed && attempts < this.settings.maxPlacementAttempts) {
                         const r = this.settings.minRadius + Math.random() * (this.settings.maxRadius - this.settings.minRadius);
                         
-                        // Ensure circle center keeps the whole circle inside the boundaries
-                        const x = r + Math.random() * (areaWidth - r * 2);
-                        const y = r + Math.random() * (areaHeight - r * 2);
+                        // Ensure circle center keeps the whole circle (and potential side label) inside the boundaries
+                        const x = padding.left + r + Math.random() * (areaWidth - r * 2 - padding.left - padding.right);
+                        const y = padding.top + r + Math.random() * (areaHeight - r * 2 - padding.top - padding.bottom);
                         
                         let overlap = false;
                         if (this.settings.preventOverlap) {
@@ -760,17 +816,45 @@
                 const offsetX = (width - (cols * size)) / 2;
                 const offsetY = (height - (rows * size)) / 2;
 
+                // Cache for "Restart Same Test"
+                this.lastColorGridData = {
+                    targetColorObj: { ...this.targetColorObj },
+                    targetColor: this.targetColor,
+                    totalGridTargets: this.totalGridTargets,
+                    cellColors: [...cellColors],
+                    cols,
+                    rows,
+                    size,
+                    offsetX,
+                    offsetY
+                };
+
+                this.renderStoredColorGrid();
+            }
+
+            /**
+             * Renders the Color Grid using cached data.
+             */
+            renderStoredColorGrid() {
+                const data = this.lastColorGridData;
+                this.targetColorObj = { ...data.targetColorObj };
+                this.targetColor = data.targetColor;
+                this.totalGridTargets = data.totalGridTargets;
+                this.remainingTargets = data.totalGridTargets;
+                
+                this.dom.targetColorBox.style.backgroundColor = this.targetColor;
+
                 let colorIndex = 0;
-                for (let row = 0; row < rows; row++) {
-                    for (let col = 0; col < cols; col++) {
+                for (let row = 0; row < data.rows; row++) {
+                    for (let col = 0; col < data.cols; col++) {
                         const el = document.createElement('div');
                         el.className = 'grid-square';
-                        el.style.width = `${size}px`;
-                        el.style.height = `${size}px`;
-                        el.style.left = `${offsetX + col * size}px`;
-                        el.style.top = `${offsetY + row * size}px`;
+                        el.style.width = `${data.size}px`;
+                        el.style.height = `${data.size}px`;
+                        el.style.left = `${data.offsetX + col * data.size}px`;
+                        el.style.top = `${data.offsetY + row * data.size}px`;
                         
-                        const color = cellColors[colorIndex++];
+                        const color = data.cellColors[colorIndex++];
                         el.style.backgroundColor = color;
                         el.dataset.color = color;
 
@@ -786,27 +870,44 @@
             handleCanvasClick(e) {
                 if (!this.isRunning) return;
 
+                // Start the timer on the very first click in the test area, regardless of accuracy
+                if (this.startTime === 0) {
+                    this.startTime = performance.now();
+                    this.timerInterval = setInterval(() => this.updateUI(), 100);
+                }
+
                 if (this.currentTestType === 'sequential') {
-                    const targetEl = e.target.closest('.target-circle');
-                    
-                    if (targetEl) {
-                        const clickedId = parseInt(targetEl.dataset.id, 10);
-                        
-                        if (clickedId === this.expectedTarget) {
-                            // Correct Target Clicked
-                            targetEl.remove();
-                            this.expectedTarget++;
-                            
-                            if (this.expectedTarget > this.settings.targetCount) {
-                                this.endTest();
+                    const now = performance.now();
+
+                    if (now < this.suppressClicksUntil) {
+                        // Rapid click following a recent error - almost certainly another
+                        // queued-up mistake from the same burst, so ignore it entirely and
+                        // push the suppression window out further.
+                        this.suppressClicksUntil = now + RAPID_CLICK_IGNORE_MS;
+                    } else {
+                        const targetEl = e.target.closest('.target-circle');
+
+                        if (targetEl) {
+                            const clickedId = parseInt(targetEl.dataset.id, 10);
+
+                            if (clickedId === this.expectedTarget) {
+                                // Correct Target Clicked
+                                targetEl.remove();
+                                this.expectedTarget++;
+
+                                if (this.expectedTarget > this.settings.targetCount) {
+                                    this.endTest();
+                                }
+                            } else {
+                                // Wrong Target Clicked
+                                this.registerError();
+                                this.suppressClicksUntil = now + RAPID_CLICK_IGNORE_MS;
                             }
                         } else {
-                            // Wrong Target Clicked
+                            // Clicked Background
                             this.registerError();
+                            this.suppressClicksUntil = now + RAPID_CLICK_IGNORE_MS;
                         }
-                    } else {
-                        // Clicked Background
-                        this.registerError();
                     }
                 } else if (this.currentTestType === 'colorGrid') {
                     const squareEl = e.target.closest('.grid-square');
@@ -888,7 +989,7 @@
                 this.dom.statErrors.textContent = this.currentErrors;
                 
                 if (this.isRunning) {
-                    const timeNow = (performance.now() - this.startTime) / 1000;
+                    const timeNow = this.startTime === 0 ? 0 : (performance.now() - this.startTime) / 1000;
                     this.dom.statTime.textContent = timeNow.toFixed(1);
                     
                     let totalAttempts = 0;
